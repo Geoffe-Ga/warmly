@@ -16,10 +16,10 @@ layers =
     warmly.api
     (warmly.services)
     (warmly.auth)
-    (warmly.db)
+    warmly.db
     warmly.schemas
     warmly.logs
-    (warmly.config)
+    warmly.config
 
 # The wire contract must stay free of framework and storage concerns.
 [importlinter:contract:schemas-are-pure]
@@ -31,3 +31,19 @@ forbidden_modules =
     fastapi
     starlette
     uvicorn
+    psycopg
+    psycopg_pool
+
+# Only the database layer talks to PostgreSQL.
+[importlinter:contract:db-driver-is-contained]
+name = Only warmly.db imports the database driver
+type = forbidden
+source_modules =
+    warmly.api
+    warmly.middleware
+    warmly.schemas
+    warmly.logs
+    warmly.config
+forbidden_modules =
+    psycopg
+    psycopg_pool

@@ -1016,7 +1016,7 @@
     },
     "/v1/ready": {
       "get": {
-        "description": "Report that the API can serve requests.\n\nThere are no dependencies to check yet; the database check arrives with\nthe persistence layer.\n\nReturns:\n    A ``ready`` status with an empty set of dependency checks.",
+        "description": "Report whether every dependency is usable.\n\nReturns:\n    A ``ready`` status naming each passing check, or a 503 problem as\n    soon as one fails.",
         "operationId": "get_ready_v1_ready_get",
         "responses": {
           "200": {
@@ -1028,6 +1028,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "A dependency is unavailable"
           }
         },
         "summary": "Readiness check",

@@ -8,6 +8,7 @@ else was considered, and why. Write one before the code that depends on it.
 | ADR | Decision | Status |
 | --- | --- | --- |
 | [0001](0001-ui-framework.md) | UI framework: Preact with TSX | Accepted |
+| [0002](0002-backend-data-access.md) | Backend data access: private schema, restricted role, owner per transaction, SQL migrations | Accepted |
 | [0013](0013-api-contract-from-code.md) | API contract generated from code, with an isolated type generator | Accepted |
 
 ## How to add one

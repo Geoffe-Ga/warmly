@@ -62,7 +62,10 @@ docs/plans/              PRD and plans (source of truth)
 git-issues/              Source files for the filed MVP backlog; start at the
                          *_SPEC_summary.md decision register and FILED.md
 plans/architecture/      import-linter rules for Python layering
-warmly/                  FastAPI backend: api/ (routers), schemas/ (wire models)
+warmly/                  FastAPI backend: api/ (routers), schemas/ (wire models),
+                         middleware/, db/ (pool, owner-scoped transactions, migrations)
+supabase/migrations/     Forward-only SQL migrations (ADR-0002); never edit one that
+                         has been applied
 openapi/                 Committed API contract; src/api/schema.d.ts is generated from it
                          (regenerate both with ./scripts/contract.sh, never by hand)
 src/                     TypeScript PWA: app/ (route table, router, shell), ui/ (screens,
@@ -117,6 +120,15 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - [Testing](.claude/docs/testing.md)
 - [Tools](.claude/docs/tools.md)
 - [Troubleshooting](.claude/docs/troubleshooting.md)
+
+## Backend conventions
+
+- All data access goes through `Database.as_owner(owner_id)` (ADR-0002). The owner ID
+  comes from the verified session, never from a request field.
+- Every table lives in `warmly_private`, enables and forces row-level security, and
+  has the owner-only policy. Copy the four statements from the baseline migration.
+- Database tests need `WARMLY_TEST_DATABASE_URL` (see README). They fail when it is
+  missing; never mark them to skip.
 
 ## Frontend conventions
 

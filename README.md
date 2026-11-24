@@ -68,7 +68,8 @@ warmly/
 ├── docs/security/         # Threat model
 ├── config/                # Build-time config shared with tests (security headers)
 ├── plans/architecture/    # import-linter layer rules for the Python backend
-├── warmly/                # FastAPI backend: api/ (routers), schemas/ (wire models); routes are stubs
+├── warmly/                # FastAPI backend: api/, schemas/, middleware/, db/ (pool, migrations)
+├── supabase/migrations/   # Forward-only SQL migrations, applied by `python -m warmly.db.migrate`
 ├── openapi/               # Committed API contract, exported from the code
 ├── src/                   # TypeScript PWA: app/ (routes, shell), ui/, api/ (generated types)
 ├── tools/contract/        # Isolated toolchain that generates src/api/schema.d.ts
@@ -91,8 +92,14 @@ pip install -r requirements.txt -r requirements-dev.txt
 npm install
 npx playwright install chromium webkit   # browsers for E2E (once)
 pre-commit install
+docker compose -f docker-compose.dev.yml up -d    # local PostgreSQL
+export WARMLY_TEST_DATABASE_URL=postgresql://warmly_admin@127.0.0.1:5432/postgres
+python -m warmly.db.migrate                       # create the schema in warmly_dev
 ./scripts/check-all.sh     # Python gates, then TypeScript gates
 ```
+
+The database tests need a real PostgreSQL and fail, rather than skip, when
+`WARMLY_TEST_DATABASE_URL` is not set. Each run creates and drops its own database.
 
 ## Quality gates
 
