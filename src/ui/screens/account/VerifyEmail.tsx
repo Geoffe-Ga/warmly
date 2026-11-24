@@ -30,15 +30,23 @@ export function VerifyEmail(): JSX.Element {
         action={action}
         validate={() => true}
         onValid={async () => {
-          const verified = await auth.completeVerification();
-          setNotYet(!verified);
-          if (!verified) {
-            return;
+          // Verification can only be completed once. Remember that it
+          // succeeded, so that if creating the keys fails the user can press
+          // the button again and only the failed step is retried.
+          if (!onboarding.emailVerified) {
+            const verified = await auth.completeVerification();
+            setNotYet(!verified);
+            if (!verified) {
+              return;
+            }
+            onboarding.markEmailVerified();
           }
-          onboarding.recoveryKey = await vault.createAccountKeys();
+          onboarding.holdRecoveryKey(await vault.createAccountKeys());
           // Change the session and the destination together, with no await
           // between them, so the access rules never see one without the other.
-          session.signIn();
+          if (session.state === "signed_out") {
+            session.signIn();
+          }
           navigate(pathFor("recovery-key"));
         }}
       >

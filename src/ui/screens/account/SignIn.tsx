@@ -49,7 +49,9 @@ export function SignIn(): JSX.Element {
           const trusted = await vault.hasKeysOnThisDevice();
           // Change the session and the destination together, with no await
           // between them, so the access rules never see one without the other.
-          session.signIn();
+          if (session.state === "signed_out") {
+            session.signIn();
+          }
           navigate(trusted ? LOCKED_PATH : pathFor("recover"));
         }}
       >

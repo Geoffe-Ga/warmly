@@ -61,7 +61,7 @@ describe("onboarding (AC-01, DEV-006)", () => {
 
   it("says plainly that losing the key and every device loses the journal", async () => {
     const services = testServices("signed_in_locked");
-    services.onboarding.recoveryKey = FAKE_RECOVERY_KEY;
+    services.onboarding.holdRecoveryKey(FAKE_RECOVERY_KEY);
 
     await renderApp("/welcome/recovery-key", services);
 
@@ -73,7 +73,7 @@ describe("onboarding (AC-01, DEV-006)", () => {
 
   it("does not continue until the last group of the key is typed back", async () => {
     const services = testServices("signed_in_locked");
-    services.onboarding.recoveryKey = FAKE_RECOVERY_KEY;
+    services.onboarding.holdRecoveryKey(FAKE_RECOVERY_KEY);
     await renderApp("/welcome/recovery-key", services);
 
     await fill("Type the last group of your key", "nope");
@@ -114,6 +114,34 @@ describe("onboarding (AC-01, DEV-006)", () => {
     expect(screen.getByText(/does not unlock your journal/)).toBeDefined();
   });
 
+  it("can retry key creation after it fails, without verifying again", async () => {
+    const services = testServices();
+    await services.auth.register(ACCOUNT.email, ACCOUNT.password);
+    const createKeys = services.vault.createAccountKeys.bind(services.vault);
+    let attempts = 0;
+    services.vault.createAccountKeys = () => {
+      attempts += 1;
+      return attempts === 1
+        ? Promise.reject(new Error("storage unavailable"))
+        : createKeys();
+    };
+    await renderApp("/welcome/verify", services);
+
+    await press("I've opened the link");
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Something went wrong",
+    );
+    expect(heading().textContent).toBe("Check your email");
+    expect(services.session.state).toBe("signed_out");
+
+    await press("I've opened the link");
+    await onHeading("Save your recovery key");
+
+    expect(attempts).toBe(2);
+    expect(screen.queryByText(/couldn't confirm your email/)).toBeNull();
+    expect(services.session.state).toBe("signed_in_locked");
+  });
+
   it("stays on the verify screen when the email is not verified yet", async () => {
     const services = await renderApp("/welcome/verify");
 
@@ -124,6 +152,61 @@ describe("onboarding (AC-01, DEV-006)", () => {
     ).toBeDefined();
     expect(services.session.state).toBe("signed_out");
     expect(heading().textContent).toBe("Check your email");
+  });
+});
+
+describe("the recovery key never outlives its onboarding (DEV-006)", () => {
+  async function atRecoveryKeyScreen() {
+    const services = await renderApp("/welcome");
+    await fill("Email", ACCOUNT.email);
+    await fill("Password", ACCOUNT.password);
+    await press("Create account");
+    await onHeading("Check your email");
+    await press("I've opened the link");
+    await onHeading("Save your recovery key");
+    return services;
+  }
+
+  it("is forgotten on sign out, so the next account cannot see it", async () => {
+    const services = await atRecoveryKeyScreen();
+    expect(services.onboarding.recoveryKey).toBe(FAKE_RECOVERY_KEY);
+
+    await press("Sign out");
+    await onHeading("Sign in");
+    expect(services.onboarding.recoveryKey).toBeUndefined();
+    expect(services.onboarding.emailVerified).toBe(false);
+
+    await fill("Email", ACCOUNT.email);
+    await fill("Password", ACCOUNT.password);
+    await press("Sign in");
+    await onHeading("Warmly is locked");
+    cleanup();
+    await renderApp("/welcome/recovery-key", services);
+
+    expect(screen.queryByTestId("recovery-key")).toBeNull();
+    expect(document.body.textContent).not.toContain(FAKE_RECOVERY_KEY);
+  });
+
+  it("is forgotten when the app is locked", async () => {
+    const services = testServices("unlocked");
+    services.onboarding.holdRecoveryKey(FAKE_RECOVERY_KEY);
+    await services.vault.createAccountKeys();
+    await renderApp("/journal", services);
+
+    await press("Lock");
+    await onHeading("Warmly is locked");
+
+    expect(services.onboarding.recoveryKey).toBeUndefined();
+  });
+
+  it("is forgotten once confirmed", async () => {
+    const services = await atRecoveryKeyScreen();
+
+    await fill("Type the last group of your key", "test");
+    await press("I've saved my key");
+    await onHeading("Warmly");
+
+    expect(services.onboarding.recoveryKey).toBeUndefined();
   });
 });
 

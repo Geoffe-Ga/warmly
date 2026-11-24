@@ -79,7 +79,7 @@ export function RecoveryKey(): JSX.Element {
         action={action}
         validate={validate}
         onValid={() => {
-          onboarding.recoveryKey = undefined;
+          onboarding.clear();
           session.unlock();
           navigate(HOME_PATH);
           return Promise.resolve();

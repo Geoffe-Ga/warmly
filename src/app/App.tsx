@@ -128,26 +128,44 @@ export function resolve(path: string, state: SessionState): Resolution {
   };
 }
 
+/**
+ * End the unlocked part of a session on this device: drop the keys from
+ * memory and forget anything held for onboarding, such as an unconfirmed
+ * recovery key. Used by both Lock and Sign out, so neither can leave key
+ * material behind for whoever uses the device next.
+ *
+ * @param services - The app's services.
+ */
+export function dropSecrets(services: Services): void {
+  services.vault.lock();
+  services.onboarding.clear();
+}
+
 function SessionControls(props: {
   readonly navigate: (path: string) => void;
 }): JSX.Element | null {
-  const { auth, vault, session } = useServices();
+  const services = useServices();
+  const { auth, session } = services;
   if (session.state === "signed_out") {
     return null;
   }
-  const signOut = (): void => {
-    const finishLocally = (): void => {
-      vault.lock();
+  const finishSignOut = (): void => {
+    dropSecrets(services);
+    // A second press while the first is still in flight lands here again;
+    // by then the session has already ended, and that is fine.
+    if (session.state !== "signed_out") {
       session.signOut();
-      props.navigate(SIGN_IN_PATH);
-    };
+    }
+    props.navigate(SIGN_IN_PATH);
+  };
+  const signOut = (): void => {
     // Signing out on this device must always succeed. If the server cannot be
     // told, for example while offline, the keys are still dropped and the
     // private screens still close.
-    auth.signOut().then(finishLocally, finishLocally);
+    auth.signOut().then(finishSignOut, finishSignOut);
   };
   const lock = (): void => {
-    vault.lock();
+    dropSecrets(services);
     session.lock();
     props.navigate(LOCKED_PATH);
   };
@@ -221,18 +239,20 @@ export function App(props: AppProps): JSX.Element {
   // A reload keeps the user signed in but never unlocked: keys live in memory.
   useEffect(() => {
     let cancelled = false;
-    void auth
-      .isSignedIn()
-      .then((signedIn) => {
-        if (!cancelled && signedIn && session.state === "signed_out") {
-          session.signIn();
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setReady(true);
-        }
-      });
+    const finish = (signedIn: boolean): void => {
+      if (cancelled) {
+        return;
+      }
+      if (signedIn && session.state === "signed_out") {
+        session.signIn();
+      }
+      setReady(true);
+    };
+    // If the session cannot be restored, start signed out. Failing closed is
+    // the safe reading of "unknown".
+    auth.isSignedIn().then(finish, () => {
+      finish(false);
+    });
     return () => {
       cancelled = true;
     };

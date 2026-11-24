@@ -8,6 +8,7 @@ import { UnavailableAuthClient, type AuthClient } from "../auth/auth-client";
 import { UnavailableKeyVault, type KeyVault } from "../crypto/key-vault";
 import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeKeyVault } from "../testing/fake-key-vault";
+import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
 
 /** Everything a screen may use to act on the account. */
@@ -15,12 +16,8 @@ export interface Services {
   readonly auth: AuthClient;
   readonly vault: KeyVault;
   readonly session: Session;
-  /**
-   * State that lives only for the length of onboarding. The recovery key is
-   * held here, in memory, between being created and being confirmed. It is
-   * never written to storage.
-   */
-  readonly onboarding: { recoveryKey: string | undefined };
+  /** In-memory state of an account being set up; see {@link Onboarding}. */
+  readonly onboarding: Onboarding;
 }
 
 /**
@@ -40,7 +37,7 @@ export function createServices(): Services {
     auth: useDoubles ? new FakeAuthClient() : new UnavailableAuthClient(),
     vault: useDoubles ? new FakeKeyVault() : new UnavailableKeyVault(),
     session: createSession(),
-    onboarding: { recoveryKey: undefined },
+    onboarding: createOnboarding(),
   };
 }
 

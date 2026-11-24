@@ -5,11 +5,12 @@
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
-import { AuthError } from "../../../auth/auth-client";
-import { VaultError } from "../../../crypto/key-vault";
+import { AuthError, type AuthErrorCode } from "../../../auth/auth-client";
+import { VaultError, type VaultErrorCode } from "../../../crypto/key-vault";
 import { StatusBanner } from "../../components/StatusBanner";
 
-const MESSAGES: Readonly<Record<string, string>> = {
+// Keyed by every error code, so adding a code without wording is a type error.
+const MESSAGES: Readonly<Record<AuthErrorCode | VaultErrorCode, string>> = {
   invalid_credentials:
     "That email and password don't match. Check both and try again, or reset your password.",
   email_not_verified:
@@ -35,7 +36,7 @@ const UNEXPECTED =
  */
 export function describeError(error: unknown): string {
   if (error instanceof AuthError || error instanceof VaultError) {
-    return MESSAGES[error.code] ?? UNEXPECTED;
+    return MESSAGES[error.code];
   }
   return UNEXPECTED;
 }
