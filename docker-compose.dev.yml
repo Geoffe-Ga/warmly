@@ -1,0 +1,27 @@
+# Local development and test database. Not for production.
+#
+#   docker compose -f docker-compose.dev.yml up -d
+#   export WARMLY_TEST_DATABASE_URL=postgresql://warmly_admin@127.0.0.1:5432/postgres
+#   python -m warmly.db.migrate          # creates the schema in warmly_dev
+#
+# The server accepts connections without a password and is published on the
+# loopback interface only, so nothing here is a credential.
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: warmly_admin
+      POSTGRES_DB: warmly_dev
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U warmly_admin -d warmly_dev"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    volumes:
+      - warmly_dev_pgdata:/var/lib/postgresql/data
+
+volumes:
+  warmly_dev_pgdata:

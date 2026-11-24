@@ -60,6 +60,9 @@ repos:
     - pydantic==2.14.4
     - uvicorn==0.54.0
     - httpx2>=2.16.0
+    - psycopg==3.3.9
+    - psycopg-pool==3.3.3
+    - pytest-asyncio>=0.21.0
 - repo: https://github.com/PyCQA/bandit
   rev: 1.7.7
   hooks:

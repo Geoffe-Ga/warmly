@@ -216,13 +216,11 @@ export interface paths {
     };
     /**
      * Readiness check
-     * @description Report that the API can serve requests.
-     *
-     *     There are no dependencies to check yet; the database check arrives with
-     *     the persistence layer.
+     * @description Report whether every dependency is usable.
      *
      *     Returns:
-     *         A ``ready`` status with an empty set of dependency checks.
+     *         A ``ready`` status naming each passing check, or a 503 problem as
+     *         soon as one fails.
      */
     get: operations["get_ready_v1_ready_get"];
     put?: never;
@@ -975,6 +973,15 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Readiness"];
+        };
+      };
+      /** @description A dependency is unavailable */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
         };
       };
     };
