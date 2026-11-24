@@ -111,6 +111,16 @@ read it. Binding each request to a device key is planned in #21.
 Without the two `VITE_` variables, a production build says accounts are not
 available, and every other build uses the in-memory double.
 
+## Before real users: tracked follow-ups
+
+| What | Why | Tracked in |
+| --- | --- | --- |
+| Smoke-test the real client and verifier against a live Supabase project | Claim names and error codes were taken from the client library's source, not from a live project | #78 |
+| Keep **Confirm email** on, use an asymmetric signing key, register the two redirect URLs | The API's `email_verified` check alone is not a control | #78 (dev project), #68 (release checklist), #61 (deploy pipeline) |
+| Every deployed environment, including staging and previews, sets `WARMLY_ENV=production` and `WARMLY_AUTH_ISSUER` | Outside production the API defaults to the local development issuer | #61 |
+| Bind each request to a device key | A stolen access token is valid until it expires; there is no revocation check | #21 |
+| Load the auth client on demand | It is imported statically and adds to the first download | #63 |
+
 ## Tests
 
 No test contacts a real auth provider. Backend tests sign tokens with a key
