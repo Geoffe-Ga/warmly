@@ -52,7 +52,9 @@ Keys come from `<issuer>/.well-known/jwks.json`. They are cached for ten
 minutes. A token naming an unknown key triggers one fresh fetch, so key
 rotation works without a wait, but fetches are never less than 30 seconds
 apart, so a flood of made-up key IDs cannot make the API hammer the provider.
-During a provider outage, keys already cached keep working.
+During a provider outage, keys already cached keep working. A fresh cached
+key is returned without waiting, even while another request is blocked on a
+slow fetch.
 
 ### Email verification: where the guarantee really comes from
 

@@ -25,40 +25,52 @@ export interface Services {
 }
 
 /**
- * Choose the auth client for this build.
+ * Choose the auth client for a build.
  *
- * A build configured with a Supabase project gets the real client. Without
- * one, a production build gets the "unavailable" stand-in, and every other
- * build (development, unit tests, the `e2e` build) gets the in-memory double.
- * The build mode is a compile-time constant, so the double is removed from
- * production bundles.
+ * The `e2e` build always gets the in-memory double, whatever is configured,
+ * so the browser tests can never reach a real auth service. Otherwise a build
+ * configured with a Supabase project gets the real client. Without one, the
+ * double is used where there is one, and the "unavailable" stand-in where
+ * there is not.
  *
- * @param env - The build-time variables.
+ * @param env - The build-time variables, including `MODE`.
+ * @param makeDouble - Builds the in-memory double. Production builds pass
+ *   nothing, which is how the double stays out of the production bundle.
  * @returns The auth client.
  */
 export function createAuthClient(
   env: Readonly<Record<string, unknown>>,
+  makeDouble?: () => AuthClient,
 ): AuthClient {
+  if (makeDouble !== undefined && env["MODE"] === "e2e") {
+    return makeDouble();
+  }
   const config = readSupabaseAuthConfig(env);
   if (config !== undefined) {
     return createSupabaseAuthClient(config);
   }
-  return import.meta.env.MODE !== "production"
-    ? new FakeAuthClient()
-    : new UnavailableAuthClient();
+  return makeDouble === undefined ? new UnavailableAuthClient() : makeDouble();
 }
 
 /**
  * Build the services for this build.
  *
- * The key vault is still a double outside production and "unavailable" in
- * production, until the real one lands (issues #19 and #20).
+ * `import.meta.env.MODE` is a compile-time constant. In a production build
+ * the conditions below are `false`, so the bundler drops the in-memory
+ * doubles from the bundle; a browser test checks the built files. The key
+ * vault is "unavailable" in production until the real one lands (issues #19
+ * and #20).
  *
  * @returns Fresh services with a signed-out session.
  */
 export function createServices(): Services {
   return {
-    auth: createAuthClient(import.meta.env),
+    auth: createAuthClient(
+      import.meta.env,
+      import.meta.env.MODE !== "production"
+        ? () => new FakeAuthClient()
+        : undefined,
+    ),
     vault:
       import.meta.env.MODE !== "production"
         ? new FakeKeyVault()

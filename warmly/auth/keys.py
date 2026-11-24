@@ -66,7 +66,9 @@ def parse_keys(jwks: Sequence[Jwk]) -> dict[str, PyJWK]:
             continue
         try:
             key = PyJWK(dict(jwk))
-        except PyJWTError:
+        except (PyJWTError, ValueError, TypeError):
+            # The library raises its own error for most bad keys, but a field
+            # of the wrong type or with bad base64 can surface as these.
             continue
         if key.algorithm_name in ALLOWED_ALGORITHMS:
             keys[key_id] = key
@@ -151,7 +153,9 @@ class JwksKeySource:
         self._attempted_at = self._clock()
         try:
             self._keys = parse_keys(await self._fetch())
-        except (OSError, ValueError):
+        except (OSError, ValueError, http.client.HTTPException):
+            # HTTPException covers a garbled or cut-off response, which is
+            # not an OSError.
             self._last_attempt_failed = True
             return
         self._last_attempt_failed = False
@@ -170,6 +174,10 @@ class JwksKeySource:
             KeysUnavailableError: If the key is not cached and the key set
                 could not be fetched.
         """
+        # The common case takes no lock: a fresh cached key is returned even
+        # while another request is waiting on a slow fetch.
+        if self._is_fresh() and key_id in self._keys:
+            return self._keys[key_id]
         async with self._lock:
             needs_fetch = not self._is_fresh() or key_id not in self._keys
             if needs_fetch and self._may_fetch():

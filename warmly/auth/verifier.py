@@ -22,6 +22,8 @@ MAX_TOKEN_LENGTH = 8192
 # Allowance for clock difference between the auth provider and this server.
 LEEWAY_SECONDS = 30
 _SIGNED_IN_ROLE = "authenticated"
+# `nbf` is honoured when present but not required: the provider does not
+# always send it, and `iat` plus `exp` already bound the token's lifetime.
 _REQUIRED_CLAIMS = ("exp", "iat", "iss", "aud", "sub")
 
 

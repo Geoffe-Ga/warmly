@@ -31,7 +31,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003); storage planned: #25 |
 | Backend or operator curiosity | Same, plus logs that cannot contain request content | Logging: **in place** (this issue) |
 | Cross-account access | Owner taken only from a verified token ([authentication](authentication.md)); owner-only database policies (ADR-0002) | **In place**; per-route ownership checks arrive with each route, rate limits: #38 |
-| Stolen session token | Every request also signed by a device key | Planned: #21 |
+| Stolen session token | The auth library keeps the session in `localStorage`; strict CSP limits what script could read it; the token decrypts nothing by itself. Every request also signed by a device key | CSP **in place**; device binding planned: #21 |
 | Stolen locked device | Root key wrapped at rest; inactivity lock | Planned: #20 |
 | Offline edit conflicts | Compare-and-swap; both versions kept | Planned: #33, #36 |
 | Revoked device reconnecting | Device check on every request | Planned: #23 |

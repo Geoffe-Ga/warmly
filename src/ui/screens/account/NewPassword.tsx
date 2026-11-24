@@ -52,8 +52,9 @@ export function NewPassword(): JSX.Element {
       <AccountForm
         action={action}
         validate={() => {
-          setError(newPasswordError(password));
-          return newPasswordError(password) === undefined;
+          const problem = newPasswordError(password);
+          setError(problem);
+          return problem === undefined;
         }}
         onValid={async () => {
           await auth.completePasswordReset(password);

@@ -211,22 +211,51 @@ describe("stand-ins for builds without real services", () => {
 });
 
 describe("createAuthClient", () => {
-  it("uses the real client when a Supabase project is configured", () => {
-    const auth = createAuthClient({
-      VITE_SUPABASE_URL: "https://project.example",
-      VITE_SUPABASE_PUBLISHABLE_KEY: ["sb", "publishable", "synthetic"].join(
-        "_",
-      ),
-    });
+  const CONFIGURED = {
+    VITE_SUPABASE_URL: "https://project.example",
+    VITE_SUPABASE_PUBLISHABLE_KEY: ["sb", "publishable", "synthetic"].join("_"),
+  };
+  const double = (): FakeAuthClient => new FakeAuthClient();
 
-    expect(auth).toBeInstanceOf(SupabaseAuthClient);
+  it.each(["production", "development"])(
+    "uses the real client in a %s build configured with a project",
+    (MODE) => {
+      const makeDouble = MODE === "production" ? undefined : double;
+
+      expect(
+        createAuthClient({ ...CONFIGURED, MODE }, makeDouble),
+      ).toBeInstanceOf(SupabaseAuthClient);
+    },
+  );
+
+  it("never uses the real client in the e2e build, whatever is configured", () => {
+    expect(
+      createAuthClient({ ...CONFIGURED, MODE: "e2e" }, double),
+    ).toBeInstanceOf(FakeAuthClient);
   });
 
-  it("uses the in-memory double when nothing is configured", () => {
-    expect(createAuthClient({})).toBeInstanceOf(FakeAuthClient);
+  it("uses the in-memory double in an unconfigured development build", () => {
+    expect(createAuthClient({ MODE: "development" }, double)).toBeInstanceOf(
+      FakeAuthClient,
+    );
     expect(
-      createAuthClient({ VITE_SUPABASE_URL: "https://project.example" }),
+      createAuthClient(
+        { MODE: "test", VITE_SUPABASE_URL: "https://project.example" },
+        double,
+      ),
     ).toBeInstanceOf(FakeAuthClient);
+  });
+
+  it("says accounts are unavailable in an unconfigured production build", () => {
+    expect(createAuthClient({ MODE: "production" })).toBeInstanceOf(
+      UnavailableAuthClient,
+    );
+  });
+
+  it("has no double to fall back on when none is supplied, even in e2e mode", () => {
+    expect(createAuthClient({ MODE: "e2e" })).toBeInstanceOf(
+      UnavailableAuthClient,
+    );
   });
 });
 

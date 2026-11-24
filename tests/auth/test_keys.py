@@ -1,5 +1,6 @@
 """Signing keys: only asymmetric ones, cached, and fetched sparingly (SEC-006)."""
 
+import asyncio
 import http.client
 import json
 import threading
@@ -86,6 +87,10 @@ async def test_parse_keeps_asymmetric_keys_by_id(first: Signer) -> None:
         pytest.param({"kty": "EC", "kid": 7}, id="key id is not a string"),
         pytest.param({"kty": "EC", "kid": "broken", "crv": "P-256"}, id="malformed"),
         pytest.param({"kid": "untyped"}, id="no key type"),
+        pytest.param(
+            {"kty": "EC", "kid": "bad", "crv": "P-256", "x": "!!", "y": 5},
+            id="fields of the wrong type",
+        ),
         pytest.param(
             {"kty": "OKP", "kid": "ed", "crv": "Ed25519", "x": "AAAA"},
             id="an algorithm that is not allowed",
@@ -180,8 +185,14 @@ async def test_unknown_keys_cannot_make_the_api_hammer_the_provider(
 
 @pytest.mark.parametrize(
     "failure",
-    [OSError("refused"), TimeoutError(), ValueError("not json")],
-    ids=["network error", "timeout", "bad document"],
+    [
+        OSError("refused"),
+        TimeoutError(),
+        ValueError("not json"),
+        http.client.IncompleteRead(b""),
+        http.client.BadStatusLine("garbled"),
+    ],
+    ids=["network error", "timeout", "bad document", "cut off", "garbled"],
 )
 async def test_a_failed_first_fetch_is_reported_as_unavailable(
     failure: Exception,
@@ -230,6 +241,31 @@ async def test_cached_keys_keep_working_when_a_refresh_fails(
     assert await source.key_for("first") is not None
     with pytest.raises(KeysUnavailableError):
         await source.key_for("second")
+
+
+async def test_a_cached_key_is_served_while_a_slow_fetch_is_in_flight(
+    first: Signer,
+) -> None:
+    """One slow fetch for an unknown key must not hold up everyone else."""
+    clock = Clock()
+    provider = Provider(first.jwk())
+    source = JwksKeySource(provider, min_refresh_seconds=0, clock=clock)
+    await source.key_for("first")
+    release = asyncio.Event()
+
+    async def slow() -> Sequence[dict[str, Any]]:
+        await release.wait()
+        return provider.keys
+
+    source._fetch = slow
+    waiting = asyncio.create_task(source.key_for("unknown"))
+    await asyncio.sleep(0)
+
+    assert await asyncio.wait_for(source.key_for("first"), timeout=1) is not None
+    assert not waiting.done()
+
+    release.set()
+    assert await waiting is None
 
 
 async def test_an_unexpected_fetch_error_is_not_swallowed() -> None:
