@@ -85,7 +85,9 @@ the launch checklist.
   ordinary signed-in session is not enough, and the link's session is ended
   as soon as the password is set.
 - Signing out removes the local session before the server is contacted, so it
-  works offline.
+  works offline. The client then removes the stored session itself as well,
+  whatever the library reported. A test runs the real library against a
+  server that fails, errors or succeeds, and checks that nothing is left.
 - Never reveals whether an address has an account: registering an existing
   address and asking for a reset for an unknown one look the same as the
   normal case.

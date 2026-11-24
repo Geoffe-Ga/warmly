@@ -4,10 +4,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AuthError } from "../../../src/auth/auth-client";
 import {
   NEW_PASSWORD_PATH,
+  SESSION_STORAGE_KEY,
   SupabaseAuthClient,
   VERIFY_RETURN_PATH,
   browserLocation,
   createSupabaseAuthClient,
+  forgetStoredSession,
   readSupabaseAuthConfig,
   type AuthApi,
   type PageLocation,
@@ -91,12 +93,17 @@ class StubPage implements PageLocation {
 
 let api: StubApi;
 let page: StubPage;
+let forgotten: number;
 let client: SupabaseAuthClient;
 
 beforeEach(() => {
+  localStorage.clear();
   api = new StubApi();
   page = new StubPage();
-  client = new SupabaseAuthClient(api, page);
+  forgotten = 0;
+  client = new SupabaseAuthClient(api, page, () => {
+    forgotten += 1;
+  });
 });
 
 async function failure(work: Promise<unknown>): Promise<unknown> {
@@ -279,6 +286,22 @@ describe("sign in and out", () => {
     await expect(client.signOut()).resolves.toBeUndefined();
   });
 
+  it("removes the stored session itself, whatever the library reports", async () => {
+    api.errors.signOut = OFFLINE;
+
+    await client.signOut();
+
+    expect(forgotten).toBe(1);
+  });
+
+  it("removes the stored session even if the library throws", async () => {
+    api.signOut = () => Promise.reject(new Error("library bug"));
+
+    await expect(client.signOut()).rejects.toThrow("library bug");
+
+    expect(forgotten).toBe(1);
+  });
+
   it("forgets credentials typed at registration when signing out", async () => {
     await client.register(EMAIL, PHRASE);
 
@@ -381,6 +404,17 @@ describe("password reset (DEV-006)", () => {
     expect(api.called("signOut")).toHaveLength(1);
   });
 
+  it("reports the failed change even if ending the link's session also fails", async () => {
+    page.code = "one-time-code";
+    api.errors.updateUser = apiError("over_request_rate_limit", 429);
+    api.errors.signOut = OFFLINE;
+
+    expect(
+      await failure(client.completePasswordReset(NEW_PHRASE)),
+    ).toMatchObject({ code: "rate_limited" });
+    expect(forgotten).toBe(1);
+  });
+
   it("reports being offline while trading the code", async () => {
     page.code = "one-time-code";
     api.errors.exchangeCodeForSession = OFFLINE;
@@ -416,6 +450,86 @@ describe("the browser address", () => {
     window.history.replaceState(null, "", "/sign-in");
 
     expect(browserLocation().readCode()).toBeNull();
+  });
+});
+
+describe("the real library, with a stand-in for the server", () => {
+  const CONFIG = {
+    url: "https://project.example",
+    publishableKey: ["sb", "publishable", "synthetic"].join("_"),
+  };
+
+  function storeSession(): void {
+    const inAnHour = Math.floor(Date.now() / 1000) + 3600;
+    localStorage.setItem(
+      SESSION_STORAGE_KEY,
+      JSON.stringify({
+        access_token: "synthetic.access.token",
+        refresh_token: "synthetic-refresh",
+        token_type: "bearer",
+        expires_in: 3600,
+        expires_at: inAnHour,
+        user: {
+          id: "0a1b2c3d-0000-4000-8000-00000000000a",
+          aud: "authenticated",
+        },
+      }),
+    );
+    localStorage.setItem(`${SESSION_STORAGE_KEY}-code-verifier`, "synthetic");
+    localStorage.setItem("unrelated", "kept");
+  }
+
+  it("restores a stored session without the network", async () => {
+    storeSession();
+    const real = createSupabaseAuthClient(CONFIG, {
+      fetch: () => Promise.reject(new TypeError("Failed to fetch")),
+    });
+
+    expect(await real.isSignedIn()).toBe(true);
+  });
+
+  it.each([
+    [
+      "the server cannot be reached",
+      () => Promise.reject(new TypeError("Failed to fetch")),
+    ],
+    [
+      "the server answers with an error",
+      () => Promise.resolve(new Response("{}", { status: 500 })),
+    ],
+    [
+      "the server confirms",
+      () => Promise.resolve(new Response(null, { status: 204 })),
+    ],
+  ])("sign out leaves nothing stored when %s", async (_name, respond) => {
+    storeSession();
+    const real = createSupabaseAuthClient(CONFIG, { fetch: respond });
+    expect(await real.isSignedIn()).toBe(true);
+
+    await real.signOut();
+
+    expect(localStorage.getItem(SESSION_STORAGE_KEY)).toBeNull();
+    expect(
+      localStorage.getItem(`${SESSION_STORAGE_KEY}-code-verifier`),
+    ).toBeNull();
+    expect(localStorage.getItem("unrelated")).toBe("kept");
+    expect(await real.isSignedIn()).toBe(false);
+  });
+});
+
+describe("forgetting a stored session", () => {
+  it("removes the session key and its companions only", () => {
+    localStorage.setItem(SESSION_STORAGE_KEY, "session");
+    localStorage.setItem(`${SESSION_STORAGE_KEY}-user`, "user");
+    localStorage.setItem(`${SESSION_STORAGE_KEY}.other`, "not ours");
+    localStorage.setItem("warmly.fake.auth", "not ours either");
+
+    forgetStoredSession(localStorage);
+
+    expect(Object.keys(localStorage).sort()).toEqual([
+      "warmly.auth.other",
+      "warmly.fake.auth",
+    ]);
   });
 });
 

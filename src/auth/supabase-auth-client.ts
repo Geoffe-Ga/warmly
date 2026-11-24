@@ -75,6 +75,8 @@ export const VERIFY_RETURN_PATH = "/welcome/verify";
 export const NEW_PASSWORD_PATH = "/sign-in/new-password";
 
 const CODE_PARAMETER = "code";
+/** Where the auth library keeps the session in `localStorage`. */
+export const SESSION_STORAGE_KEY = "warmly.auth";
 
 // Provider error codes that have their own wording. Anything else is shown as
 // an unexpected failure, with no detail.
@@ -131,10 +133,31 @@ export function browserLocation(): PageLocation {
   };
 }
 
+/**
+ * Remove everything the auth library stored for this app: the session and
+ * its companion entries, which share the session key as a prefix.
+ *
+ * @param storage - The storage the library was given.
+ */
+export function forgetStoredSession(storage: Storage): void {
+  const keys = Array.from({ length: storage.length }, (_, index) =>
+    storage.key(index),
+  );
+  for (const key of keys) {
+    if (
+      key === SESSION_STORAGE_KEY ||
+      key?.startsWith(`${SESSION_STORAGE_KEY}-`)
+    ) {
+      storage.removeItem(key);
+    }
+  }
+}
+
 /** See the module comment. */
 export class SupabaseAuthClient implements AuthClient {
   readonly #api: AuthApi;
   readonly #page: PageLocation;
+  readonly #forgetStoredSession: () => void;
   /**
    * The credentials typed at registration, kept in memory only until the
    * address is verified, so the user does not have to type them twice.
@@ -143,9 +166,16 @@ export class SupabaseAuthClient implements AuthClient {
   /** True once this page has traded a reset link for a short-lived session. */
   #resetLinkAccepted = false;
 
-  constructor(api: AuthApi, page: PageLocation) {
+  /**
+   * @param api - The provider calls to use.
+   * @param page - The page's address.
+   * @param forgetSession - Removes any session the library persisted. Called
+   *   on every sign-out, whatever the library reports.
+   */
+  constructor(api: AuthApi, page: PageLocation, forgetSession: () => void) {
     this.#api = api;
     this.#page = page;
+    this.#forgetStoredSession = forgetSession;
   }
 
   async isSignedIn(): Promise<boolean> {
@@ -191,10 +221,16 @@ export class SupabaseAuthClient implements AuthClient {
   async signOut(): Promise<void> {
     this.#pending = undefined;
     this.#resetLinkAccepted = false;
-    // "local" removes this device's session before the server is contacted,
-    // so signing out works offline. Failing to reach the server afterwards is
-    // not something the user can act on.
-    await this.#api.signOut({ scope: "local" });
+    try {
+      // "local" asks the library to remove this device's session before the
+      // server is contacted. Failing to reach the server afterwards is not
+      // something the user can act on, so its error is not reported.
+      await this.#api.signOut({ scope: "local" });
+    } finally {
+      // Not left to the library: whatever it did or threw, nothing may stay
+      // signed in on a device someone else might use next.
+      this.#forgetStoredSession();
+    }
   }
 
   async requestPasswordReset(email: string): Promise<void> {
@@ -228,10 +264,13 @@ export class SupabaseAuthClient implements AuthClient {
       // The link stays accepted so the user can choose a stronger password.
       throw new AuthError("weak_password");
     }
-    // Success or not, the link's session ends here: the user signs in with
-    // the new password, and nothing is left signed in on a shared device.
-    await this.signOut();
-    check(update);
+    try {
+      check(update);
+    } finally {
+      // Success or not, the link's session ends here: the user signs in with
+      // the new password, and nothing is left signed in on a shared device.
+      await this.signOut();
+    }
   }
 }
 
@@ -239,18 +278,23 @@ export class SupabaseAuthClient implements AuthClient {
  * Build the real client for a Supabase project.
  *
  * @param config - The project URL and publishable key.
+ * @param options - `fetch` replaces the network function; tests use it to
+ *   stand in for the server.
  * @returns A client that talks to the project's auth endpoint only.
  */
 export function createSupabaseAuthClient(
   config: SupabaseAuthConfig,
+  options: { readonly fetch?: typeof fetch } = {},
 ): SupabaseAuthClient {
   const api = new SupabaseAuth({
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
     url: new URL("auth/v1", ensureTrailingSlash(config.url)).href,
     headers: {
       apikey: config.publishableKey,
       Authorization: `Bearer ${config.publishableKey}`,
     },
-    storageKey: "warmly.auth",
+    storageKey: SESSION_STORAGE_KEY,
+    storage: localStorage,
     // The code in an email link is exchanged explicitly, and only to set a
     // new password. Nothing in a URL can sign anyone in by itself.
     flowType: "pkce",
@@ -258,7 +302,9 @@ export function createSupabaseAuthClient(
     persistSession: true,
     autoRefreshToken: true,
   });
-  return new SupabaseAuthClient(api, browserLocation());
+  return new SupabaseAuthClient(api, browserLocation(), () => {
+    forgetStoredSession(localStorage);
+  });
 }
 
 function ensureTrailingSlash(url: string): string {
