@@ -71,6 +71,11 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "integration: tests that need a real external service such as PostgreSQL",
+    "e2e: end-to-end tests that exercise the whole backend",
+]
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 source = ["warmly"]

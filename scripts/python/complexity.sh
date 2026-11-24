@@ -66,7 +66,7 @@ if command -v radon &> /dev/null; then
 
     echo ""
     echo "Maintainability Index (should be >= 20):"
-    radon mi -a warmly/ || true
+    radon mi -s warmly/ || true
 else
     echo "Warning: radon not installed, skipping cyclomatic complexity check" >&2
 fi

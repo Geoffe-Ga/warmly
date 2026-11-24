@@ -1,9 +1,9 @@
 # Private Relationship Journal & Conversation Aid — Agent-Ready PRD
 
-**Status:** Implementation specification (MVP)  
-**Version:** 1.0 — 2026-11-23  
-**Audience:** Autonomous implementation and verification agents  
-**Primary users:** Two adults using **completely independent** accounts. The system does **not** link partners, share household data, or enable in-app collaboration in the MVP.  
+**Status:** Implementation specification (MVP)
+**Version:** 1.0 — 2026-11-23
+**Audience:** Autonomous implementation and verification agents
+**Primary users:** Two adults using **completely independent** accounts. The system does **not** link partners, share household data, or enable in-app collaboration in the MVP.
 **Document purpose:** Decompose into implementable work and acceptance tests. This is **not** an epic/issue backlog.
 
 ## 0. Normative interpretation and implementation rules
