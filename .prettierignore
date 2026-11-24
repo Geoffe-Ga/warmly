@@ -7,3 +7,11 @@ coverage
 *.yml
 .github/
 scripts/
+playwright-report
+test-results
+dev-dist
+reports
+.stryker-tmp
+package-lock.json
+htmlcov
+.venv

@@ -52,7 +52,7 @@ The full threat model, including residual risks, is in §4 of the PRD.
 
 | Layer | Technology | Responsibility |
 | --- | --- | --- |
-| Frontend | TypeScript PWA | All UI, client-side crypto, IndexedDB storage, local search, AI provider adapters (`AIProvider`: OpenAI / Anthropic) |
+| Frontend | TypeScript PWA (Vite + vite-plugin-pwa) | All UI, client-side crypto, IndexedDB storage, local search, AI provider adapters (`AIProvider`: OpenAI / Anthropic) |
 | Backend | Python **FastAPI** | Owner-scoped encrypted sync (`/v1/sync/*`), device enrollment/revocation, health. Never sees plaintext. |
 | Data / Auth | Supabase Auth + managed PostgreSQL | Identity; ciphertext persistence with deny-by-default row-level ownership |
 | Ops | GitHub Actions | Fail-closed CI/CD, autonomous deploy with rollback gates, 30-day encrypted backups |
@@ -67,11 +67,14 @@ warmly/
 ├── docs/plans/            # PRD and implementation plans (source of truth)
 ├── plans/architecture/    # import-linter layer rules for the Python backend
 ├── warmly/                # Python package: FastAPI backend (currently a stub)
-├── src/                   # TypeScript frontend (currently a stub)
-├── tests/                 # pytest (test_*.py) and TS tests (*.test.ts)
+├── src/                   # TypeScript PWA (app shell: Home with three primary actions)
+├── public/                # Static PWA assets (icon)
+├── index.html             # PWA entry; vite.config.ts holds build, manifest, SW and Vitest config
+├── tests/                 # pytest (test_*.py); tests/frontend/ for Vitest unit tests
+├── e2e/                   # Playwright E2E + axe-core accessibility tests
 ├── scripts/               # Quality gates; root scripts run both languages
 │   ├── python/            #   Python-only gates (ruff, mypy, bandit, pytest, mutmut…)
-│   └── typescript/        #   TypeScript-only gates (eslint, tsc, prettier, jest, stryker)
+│   └── typescript/        #   TypeScript-only gates (eslint, tsc, prettier, vitest, playwright, stryker)
 ├── .github/workflows/     # CI and AI code review
 └── .claude/               # Agent context: docs, skills, subagents
 ```
@@ -82,6 +85,7 @@ warmly/
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 npm install
+npx playwright install chromium webkit   # browsers for E2E (once)
 pre-commit install
 ./scripts/check-all.sh     # Python gates, then TypeScript gates
 ```
@@ -94,7 +98,8 @@ variant. Call `scripts/python/<gate>.sh` or `scripts/typescript/<gate>.sh` to ru
 | Command | Purpose |
 | --- | --- |
 | `./scripts/check-all.sh` | Every gate; must exit 0 before you commit |
-| `./scripts/test.sh` / `coverage.sh` | Tests with ≥90% coverage |
+| `./scripts/test.sh` / `coverage.sh` | Unit tests with ≥90% coverage (pytest, Vitest) |
+| `./scripts/e2e.sh` | Playwright E2E + axe accessibility on desktop Chromium and mobile Safari |
 | `./scripts/lint.sh` / `typecheck.sh` / `format.sh` | Static checks and formatting |
 | `./scripts/security.sh` / `complexity.sh` | Bandit, pip-audit, radon/xenon |
 | `./scripts/mutation.sh` | **Optional**, release-time only (see below) |
@@ -106,12 +111,14 @@ you can run when cutting a final release. CI runs it automatically when a GitHub
 Release is published, or on manual dispatch with `run_mutation` checked. A score below
 the 80% target produces a warning and never blocks the release.
 
-## Known scaffold gaps (to resolve in the Foundation phase)
+Frontend dev server: `npm run dev`. Production build: `npm run build`, then `npm run preview`.
 
-- CI (`.github/workflows/ci.yml`) currently covers only Python; TypeScript lint,
-  typecheck and test jobs still need to be added.
-- The PRD calls for **Vitest + Playwright + axe-core**; the scaffold ships Jest.
-- The TypeScript config targets Node/CommonJS; the PWA needs a browser bundler setup.
+## Open decisions
+
+- **UI framework:** the shell is framework-free TypeScript. Record the choice in an ADR
+  before building features.
+- **PWA icons:** a single SVG icon ships now; PNG/maskable icons are still needed for the
+  widest install support.
 
 ## License
 

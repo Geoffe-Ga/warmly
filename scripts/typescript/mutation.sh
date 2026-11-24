@@ -62,7 +62,7 @@ fi
 if ! npx --no-install stryker --version > /dev/null 2>&1; then
     echo "Error: StrykerJS is not installed" >&2
     echo "Install with: npm install --save-dev @stryker-mutator/core" \
-        "@stryker-mutator/jest-runner" >&2
+        "@stryker-mutator/vitest-runner" >&2
     exit 2
 fi
 
