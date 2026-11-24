@@ -1,0 +1,76 @@
+/*
+ * Warmly design tokens (PRD UI-001): warm, journal-like, light theme only.
+ * Brand references are not guaranteed-accessible text colours, so text uses
+ * darker variants that meet WCAG 2.2 AA contrast on the paper background.
+ */
+:root {
+  color-scheme: light;
+
+  --color-coral: #e35d7a; /* brand reference: accents, focus, decoration */
+  --color-coral-text: #a8324e; /* AA-contrast coral for text/links */
+  --color-blush: #fde4e8;
+  --color-soft-pink: #f7a7b5;
+  --color-paper: #fff7f8;
+  --color-ink: #2e2a2b;
+
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --radius: 0.75rem;
+  --space: 1rem;
+  --touch-target: 2.75rem; /* ≥44px comfortable touch targets */
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 1.125rem;
+  line-height: 1.6;
+}
+
+.shell {
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: calc(var(--space) * 2) var(--space);
+}
+
+.shell h1 {
+  color: var(--color-coral-text);
+}
+
+.shell ul {
+  display: grid;
+  gap: var(--space);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shell button {
+  width: 100%;
+  min-height: var(--touch-target);
+  padding: var(--space);
+  border: 2px solid var(--color-soft-pink);
+  border-radius: var(--radius);
+  background: var(--color-blush);
+  color: var(--color-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.shell button:focus-visible {
+  outline: 3px solid var(--color-coral-text);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}

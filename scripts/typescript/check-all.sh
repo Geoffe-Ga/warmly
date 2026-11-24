@@ -25,7 +25,8 @@ Runs:
   1. Linting (ESLint)
   2. Formatting (Prettier)
   3. Type checking (TypeScript)
-  4. Tests (Jest)
+  4. Unit tests with coverage (Vitest, ≥90% lines)
+  5. E2E + accessibility (Playwright, axe-core)
 
 OPTIONS:
     --verbose   Show detailed output
@@ -78,7 +79,8 @@ run_check() {
 run_check "Linting" "lint.sh" --check
 run_check "Formatting" "format.sh" --check
 run_check "Type checking" "typecheck.sh"
-run_check "Tests" "test.sh"
+run_check "Tests" "test.sh" --coverage
+run_check "E2E + accessibility" "e2e.sh"
 
 echo "=== Quality Checks Summary ==="
 echo "Passed: ${#PASSED_CHECKS[@]}"

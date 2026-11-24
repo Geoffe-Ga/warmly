@@ -9,7 +9,7 @@ Read the relevant PRD section (IDs such as `JR-`, `RF-`, `CC-`, `SEC-`, `SYNC-`,
 `AI-`, `AC-`) before implementing anything, and cite those IDs in issues, PRs and tests.
 Human-facing overview: [README.md](README.md).
 
-**Status:** scaffold only. `warmly/` (Python) and `src/` (TypeScript) hold hello-world stubs.
+**Status:** scaffold only. `warmly/` (Python) is a stub; `src/` is a framework-free Home shell.
 
 ---
 
@@ -17,10 +17,10 @@ Human-facing overview: [README.md](README.md).
 
 | Layer | Tech | Rule |
 | --- | --- | --- |
-| Frontend | TypeScript PWA (`src/`) | Owns UI, client-side crypto (AEAD, key wrapping), IndexedDB, local search, `AIProvider` adapters (OpenAI, Anthropic) |
+| Frontend | TypeScript PWA (`src/`), Vite + vite-plugin-pwa | Owns UI, client-side crypto (AEAD, key wrapping), IndexedDB, local search, `AIProvider` adapters (OpenAI, Anthropic) |
 | Backend | Python FastAPI (`warmly/`) | Owner-scoped ciphertext sync (`GET /v1/sync/changes`, `POST /v1/sync/operations`), devices, health. **Never receives plaintext.** |
 | Auth/DB | Supabase Auth + PostgreSQL | Deny-by-default row-level ownership; service credentials never ship to the browser |
-| Tests | pytest, Vitest, Playwright, axe-core (per PRD) | The scaffold currently has Jest; migrate to Vitest in the Foundation phase |
+| Tests | pytest; Vitest + jsdom + fake-indexeddb (`tests/frontend/`); Playwright + axe-core (`e2e/`, desktop Chromium + mobile Safari) | Unit coverage ≥90%; E2E runs against the production build |
 
 ## Non-negotiable invariants (PRD §0, §4–§6)
 
@@ -59,8 +59,10 @@ revocation and invalidation infrastructure exist.
 docs/plans/              PRD and plans (source of truth)
 plans/architecture/      import-linter rules for Python layering
 warmly/                  FastAPI backend package
-src/                     TypeScript PWA
-tests/                   pytest (test_*.py) + TS (*.test.ts)
+src/                     TypeScript PWA (app.ts shell, main.ts bootstrap + SW registration)
+public/, index.html      PWA static assets and entry; vite.config.ts = build, manifest, SW, Vitest
+tests/                   pytest (test_*.py); tests/frontend/ Vitest unit tests
+e2e/                     Playwright E2E + axe accessibility tests
 scripts/<gate>.sh        Runs the gate for Python, then TypeScript
 scripts/python/          Python-only gates
 scripts/typescript/      TypeScript-only gates
@@ -74,7 +76,8 @@ Always use the scripts rather than invoking the tools directly.
 
 ```bash
 ./scripts/check-all.sh            # Gate 1: every check, both languages; must exit 0
-./scripts/test.sh                 # tests + coverage (≥90%)
+./scripts/test.sh                 # unit tests + coverage (≥90%)
+./scripts/e2e.sh                  # Playwright + axe (first run: scripts/typescript/e2e.sh --install)
 ./scripts/lint.sh | typecheck.sh | format.sh | security.sh | complexity.sh
 ./scripts/python/<gate>.sh        # one language only
 ./scripts/typescript/<gate>.sh
@@ -104,11 +107,18 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - [Tools](.claude/docs/tools.md)
 - [Troubleshooting](.claude/docs/troubleshooting.md)
 
-## Known scaffold gaps
+## Frontend conventions
 
-- CI covers only Python; TypeScript lint, typecheck and test jobs, plus Playwright and
-  axe, still need to be added.
-- Jest is installed, but the PRD specifies Vitest.
-- `tsconfig.json` targets Node/CommonJS; the PWA needs a browser build (bundler,
-  service worker, DOM lib).
-- `.claude/docs/*` code examples are generic Python. Follow the PRD where they conflict.
+- The service worker uses `registerType: "prompt"`: never auto-activate an update while
+  a draft may be unsaved. Precache only the public app shell; never add runtime caching
+  of API responses or anything containing plaintext.
+- `no-console` is an ESLint error, because logs must never contain journal content.
+- Strict TypeScript (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`). Use
+  `tsconfig.node.json` for config and E2E files.
+
+## Open decisions and notes
+
+- **UI framework** is undecided (the shell is framework-free). Record it in an ADR
+  before feature work.
+- `.claude/docs/*` and `.claude/skills/*` examples are generic (Python, Jest). This
+  project uses Vitest; follow the PRD and this file where they conflict.

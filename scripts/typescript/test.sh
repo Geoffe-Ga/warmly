@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/test.sh - Run tests with Jest
+# scripts/typescript/test.sh - Run unit tests with Vitest
 # Usage: ./scripts/test.sh [--coverage] [--watch] [--verbose] [--help]
 
 set -euo pipefail
@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
             cat << EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Run tests using Jest.
+Run unit tests using Vitest (jsdom). E2E tests live in e2e.sh.
 
 OPTIONS:
     --coverage  Generate coverage report
@@ -57,19 +57,23 @@ if $VERBOSE; then
     set -x
 fi
 
-echo "=== Running Tests (Jest) ==="
+echo "=== Running Tests (Vitest) ==="
 
-JEST_ARGS=()
+VITEST_ARGS=()
+
+if ! $WATCH; then
+    VITEST_ARGS+=(run)
+fi
 
 if $COVERAGE; then
-    JEST_ARGS+=(--coverage)
+    VITEST_ARGS+=(--coverage)
 fi
 
 if $WATCH; then
-    JEST_ARGS+=(--watch)
+    VITEST_ARGS+=(--watch)  # vitest without `run` watches by default
 fi
 
-npx jest ${JEST_ARGS[@]+"${JEST_ARGS[@]}"} || { echo "✗ Tests failed" >&2; exit 1; }
+npx vitest ${VITEST_ARGS[@]+"${VITEST_ARGS[@]}"} || { echo "✗ Tests failed" >&2; exit 1; }
 
 echo "✓ Tests passed"
 exit 0

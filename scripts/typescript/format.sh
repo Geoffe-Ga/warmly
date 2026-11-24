@@ -60,9 +60,10 @@ fi
 echo "=== Formatting (Prettier) ==="
 
 PRETTIER_GLOBS=(
-    "src/**/*.{ts,tsx}"
+    "src/**/*.{ts,tsx,css}"
     "tests/**/*.{ts,tsx}"
-    "*.{js,json}"
+    "e2e/**/*.ts"
+    "*.{js,ts,json}"
 )
 
 if $CHECK; then

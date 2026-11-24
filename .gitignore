@@ -66,6 +66,7 @@ node_modules/
 .npm/
 .eslintcache
 .vite/
+dev-dist/
 .cache/
 npm-debug.log*
 yarn-debug.log*
