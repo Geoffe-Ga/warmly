@@ -23,6 +23,9 @@ MIGRATIONS_DIR = Path(__file__).resolve().parents[2] / "supabase" / "migrations"
 
 _FILE_NAME = re.compile(r"^(?P<version>\d{14})_(?P<name>[a-z0-9_]+)\.sql$")
 
+# Arbitrary constant identifying the migration lock among advisory locks.
+_MIGRATION_LOCK_ID = 7_274_651_001
+
 _ENSURE_LEDGER = """
 CREATE SCHEMA IF NOT EXISTS warmly_private;
 CREATE TABLE IF NOT EXISTS warmly_private.schema_migrations (
@@ -101,9 +104,11 @@ def apply_migrations(
         MigrationError: If an already-applied migration's file has changed.
     """
     with conn.transaction():
+        # One migrator per database at a time, for the length of this
+        # transaction. Taken before anything is created, so two first-ever
+        # runs cannot race to create the ledger.
+        conn.execute("SELECT pg_advisory_xact_lock(%s)", (_MIGRATION_LOCK_ID,))
         conn.execute(_ENSURE_LEDGER)
-        # One migrator at a time, for the length of this transaction.
-        conn.execute("LOCK TABLE warmly_private.schema_migrations IN EXCLUSIVE MODE")
         rows = conn.execute(
             "SELECT version, checksum FROM warmly_private.schema_migrations"
         ).fetchall()
@@ -127,7 +132,11 @@ def apply_migrations(
 
 
 def main() -> None:
-    """Apply pending migrations to the configured database."""
+    """Apply pending migrations to the configured database.
+
+    This is a command-line entry point, so it reports to standard output. The
+    message contains migration versions only, never a connection URL.
+    """
     settings = load_settings()
     with connect(settings.database_url) as conn:
         applied = apply_migrations(conn, discover())

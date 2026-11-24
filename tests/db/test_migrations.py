@@ -1,10 +1,13 @@
 """The migration runner applies each file once and refuses edited history."""
 
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
 from pathlib import Path
 
 import psycopg
 import pytest
 
+from tests.db.conftest import throwaway_database
 from warmly.config import Settings
 from warmly.db import migrate
 from warmly.db.migrate import (
@@ -15,6 +18,9 @@ from warmly.db.migrate import (
 )
 
 pytestmark = pytest.mark.integration
+
+# How many databases or runners migrate simultaneously in the race tests.
+PARALLEL_DATABASES = 6
 
 
 def _applied_versions(url: str) -> list[str]:
@@ -94,6 +100,49 @@ def test_a_failing_migration_leaves_nothing_behind(database_url: str) -> None:
 
     assert exists == (None,)
     assert good.version not in _applied_versions(database_url)
+
+
+def _migrate(url: str) -> list[str]:
+    """Apply every repository migration to the database at ``url``."""
+    with psycopg.connect(url) as conn:
+        return apply_migrations(conn, discover())
+
+
+def test_databases_in_one_cluster_can_migrate_at_the_same_moment(
+    admin_url: str,
+) -> None:
+    """Parallel test workers each migrate their own database of one cluster.
+
+    The API role is shared by the whole cluster, so several fresh databases
+    race to create it. Every one of them must still end up fully migrated.
+    """
+    expected = [m.version for m in discover()]
+    with ExitStack() as stack:
+        urls = [
+            stack.enter_context(throwaway_database(admin_url))
+            for _ in range(PARALLEL_DATABASES)
+        ]
+        with ThreadPoolExecutor(max_workers=PARALLEL_DATABASES) as pool:
+            applied = list(pool.map(_migrate, urls))
+
+        assert applied == [expected] * PARALLEL_DATABASES
+        assert [_applied_versions(url) for url in urls] == [expected] * len(urls)
+
+
+def test_one_database_migrated_by_several_runners_at_once(
+    admin_url: str,
+) -> None:
+    """Concurrent runners on the same database apply each migration once."""
+    expected = [m.version for m in discover()]
+    with throwaway_database(admin_url) as url:
+        with ThreadPoolExecutor(max_workers=PARALLEL_DATABASES) as pool:
+            applied = list(pool.map(_migrate, [url] * PARALLEL_DATABASES))
+
+        assert sorted(applied, key=len) == [
+            *([[]] * (PARALLEL_DATABASES - 1)),
+            expected,
+        ]
+        assert _applied_versions(url) == expected
 
 
 def test_discover_reads_files_in_version_order(tmp_path: Path) -> None:

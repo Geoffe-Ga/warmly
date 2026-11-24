@@ -28,12 +28,15 @@ $$;
 
 -- The role every API transaction runs as. It cannot log in, cannot bypass
 -- row-level security and owns nothing. Roles are shared by the whole cluster,
--- so creation tolerates the role already existing.
+-- so creation tolerates the role already existing. Two cases are possible:
+-- the role was created earlier (duplicate_object), or another database in the
+-- same cluster is creating it at this very moment (unique_violation on the
+-- role catalogue). Either way the role exists afterwards.
 DO $$
 BEGIN
     CREATE ROLE warmly_api NOLOGIN NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE;
 EXCEPTION
-    WHEN duplicate_object THEN NULL;
+    WHEN duplicate_object OR unique_violation THEN NULL;
 END
 $$;
 

@@ -14,10 +14,17 @@ from typing import Any
 LOGGER_NAME = "warmly"
 REQUEST_EVENT = "http.request"
 
-# The complete set of fields a request log line may carry.
+# The complete set of fields a request log line may carry. Adding a field
+# means updating the canary tests in tests/api/test_request_log.py first.
 REQUEST_LOG_FIELDS = frozenset(
     {"event", "event_id", "method", "route", "status", "duration_ms"}
 )
+
+
+# Loggers whose messages are free text that can include connection details
+# such as a database host name. They are detached from every handler; the
+# readiness check reports database trouble without that detail.
+_THIRD_PARTY_LOGGERS_TO_SILENCE = ("psycopg.pool",)
 
 
 class JsonFormatter(logging.Formatter):
@@ -65,6 +72,11 @@ def configure_logging(level: int = logging.INFO) -> None:
     Args:
         level: Minimum level to emit.
     """
+    for name in _THIRD_PARTY_LOGGERS_TO_SILENCE:
+        third_party = logging.getLogger(name)
+        third_party.propagate = False
+        if not third_party.handlers:
+            third_party.addHandler(logging.NullHandler())
     logger = get_logger()
     logger.setLevel(level)
     if not any(isinstance(h.formatter, JsonFormatter) for h in logger.handlers):

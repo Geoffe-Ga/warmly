@@ -50,6 +50,9 @@ def test_production_requires_a_database_url() -> None:
         "postgresql://warmly_api@localhost:5432/warmly",
         "postgresql://warmly_api@[::1]:5432/warmly",
         "postgresql:///warmly",
+        "postgresql://warmly_api@127.0.0.2:5432/warmly",
+        "postgresql://warmly_api@0.0.0.0:5432/warmly",
+        "postgresql://warmly_api@db.internal.example/warmly?host=/var/run/postgresql",
     ],
 )
 def test_production_refuses_a_local_database(url: str) -> None:

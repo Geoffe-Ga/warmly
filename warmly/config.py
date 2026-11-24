@@ -8,8 +8,9 @@ process at startup instead of running with the wrong database (PRD §8).
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from ipaddress import ip_address
 from typing import Literal
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 Environment = Literal["development", "test", "production"]
 
@@ -19,8 +20,8 @@ ENVIRONMENTS: tuple[Environment, ...] = ("development", "test", "production")
 # without a password, so no credential appears in the code or the repository.
 DEV_DATABASE_URL = "postgresql://warmly_admin@127.0.0.1:5432/warmly_dev"
 
-# Hosts that can only mean "this machine", which production must never use.
-_LOCAL_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", ""})
+# Names that can only mean "this machine", which production must never use.
+_LOCAL_NAMES = frozenset({"localhost", ""})
 
 ENV_VAR = "WARMLY_ENV"
 DATABASE_URL_VAR = "WARMLY_DATABASE_URL"
@@ -53,6 +54,26 @@ def _environment(env: Mapping[str, str]) -> Environment:
     raise SettingsError(_UNKNOWN_ENVIRONMENT)
 
 
+def _is_local(database_url: str) -> bool:
+    """Report whether a connection URL targets this machine.
+
+    A guard-rail against misconfiguration, not a security boundary. It covers
+    a missing host, ``localhost``, any loopback or unspecified IP address, and
+    a ``host`` query parameter, which libpq lets override the URL's host.
+    """
+    parts = urlsplit(database_url)
+    if "host" in parse_qs(parts.query):
+        return True
+    host = parts.hostname or ""
+    if host in _LOCAL_NAMES:
+        return True
+    try:
+        address = ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_unspecified
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     """Build settings from environment variables.
 
@@ -72,7 +93,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     if environment == "production":
         if not database_url:
             raise SettingsError(_MISSING_DATABASE_URL)
-        if urlsplit(database_url).hostname in _LOCAL_HOSTS | {None}:
+        if _is_local(database_url):
             raise SettingsError(_LOCAL_DATABASE_IN_PRODUCTION)
     return Settings(
         environment=environment, database_url=database_url or DEV_DATABASE_URL

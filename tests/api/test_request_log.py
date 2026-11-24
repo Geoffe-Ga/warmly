@@ -205,6 +205,26 @@ def test_json_formatter_drops_exception_text_and_ignores_bad_fields() -> None:
     }
 
 
+def test_configure_logging_detaches_the_connection_pool_logger(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Pool messages can name the database host, so they reach no handler."""
+    pool_logger = logging.getLogger("psycopg.pool")
+    original = (pool_logger.propagate, pool_logger.handlers.copy())
+    app_handlers = get_logger().handlers.copy()
+    try:
+        configure_logging()
+        pool_logger.warning("error connecting in 'pool-1': host=%s", CANARY)
+
+        assert not pool_logger.propagate
+        assert CANARY not in caplog.text
+    finally:
+        pool_logger.propagate = original[0]
+        pool_logger.handlers = original[1]
+        get_logger().handlers = app_handlers
+        get_logger().setLevel(logging.NOTSET)
+
+
 def test_configure_logging_installs_one_json_handler() -> None:
     """Calling it twice does not duplicate output."""
     logger = get_logger()

@@ -11,6 +11,7 @@ test that silently does not run proves nothing.
 
 import os
 from collections.abc import Iterator
+from contextlib import contextmanager
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
@@ -57,9 +58,9 @@ def admin_url() -> str:
     return url
 
 
-@pytest.fixture(scope="session")
-def empty_database_url(admin_url: str) -> Iterator[str]:
-    """Create a throwaway database with no migrations applied."""
+@contextmanager
+def throwaway_database(admin_url: str) -> Iterator[str]:
+    """Create an empty database, yield its URL, and drop it afterwards."""
     name = f"warmly_t_{uuid4().hex[:12]}"
     with psycopg.connect(admin_url, autocommit=True) as conn:
         _ensure_browser_roles(conn)
@@ -73,6 +74,13 @@ def empty_database_url(admin_url: str) -> Iterator[str]:
                     sql.Identifier(name)
                 )
             )
+
+
+@pytest.fixture(scope="session")
+def empty_database_url(admin_url: str) -> Iterator[str]:
+    """Create a throwaway database with no migrations applied."""
+    with throwaway_database(admin_url) as url:
+        yield url
 
 
 @pytest.fixture(scope="session")

@@ -86,8 +86,23 @@ Use **option 3**.
   Production migration is wired by the deploy pipeline (#61).
 - Schema changes follow expand, migrate, contract. A destructive step needs a
   verified backup first (#65).
-- The production login role should be a member of `warmly_api` with no other
-  privileges. `SET LOCAL ROLE` is defence in depth, not a substitute.
+- **Production must connect as a least-privilege login role** that is a member
+  of `warmly_api` and nothing more: not a superuser, not the schema owner, no
+  `BYPASSRLS`. `SET LOCAL ROLE` is defence in depth, not a substitute. If the
+  pool connected as an administrator, that one statement would be the only
+  barrier.
+- **`as_owner` yields a raw connection, so the SQL run inside it is trusted.**
+  A statement such as `RESET ROLE` or a second `set_config` could leave the
+  owner scope. All SQL is reviewed repository code with bound parameters;
+  nothing a client sends is ever executed as SQL. Data access is written as
+  narrow functions in `warmly.db`, never as ad-hoc queries in route handlers.
+- `policy_probe` is permanent. It holds no user data and gives the isolation
+  tests a stable table that exists in every environment, including after a
+  restore.
+- Migrations take a per-database advisory lock, so concurrent runners apply
+  each file once. The role-creation step also tolerates another database in
+  the same cluster creating the role at the same moment, which is what
+  parallel test workers do.
 - The file naming matches the Supabase CLI, so its tooling can read the same
   directory, but the project's own runner is the source of truth for what has
   been applied.
