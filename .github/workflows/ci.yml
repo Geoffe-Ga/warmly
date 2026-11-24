@@ -58,8 +58,8 @@ jobs:
 
       - name: Lint with Pylint
         run: |
-          pylint --rcfile=.pylintrc --recursive=y --output-format=colorized . || true
-          pylint --rcfile=.pylintrc --recursive=y --fail-under=8.0 .
+          pylint --recursive=y --output-format=colorized . || true
+          pylint --recursive=y --fail-under=8.0 .
         continue-on-error: false
 
       - name: Type check with mypy
