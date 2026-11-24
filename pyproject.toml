@@ -118,6 +118,9 @@ disallow_untyped_defs = false
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+# Agent context (.claude/) and docs contain illustrative code blocks in Markdown,
+# and the frontend toolchain directories are not Python.
+extend-exclude = [".claude", "docs", "plans", "node_modules", "dist", "coverage", "playwright-report", "test-results", "reports"]
 
 [tool.ruff.lint]
 select = [
@@ -147,3 +150,17 @@ paths_to_mutate = "warmly/"
 backup = false
 runner = "python -m pytest --exitfirst --quiet --tb=no"
 tests_dir = "tests/"
+
+[tool.interrogate]
+# Python sources only; node_modules may contain vendored .py files.
+exclude = [".venv", "node_modules", "dist", "build", ".claude", "docs", "plans"]
+
+[tool.pylint.main]
+# Lint Python sources only (frontend tooling may vendor .py files).
+ignore-paths = ["^\\.venv/.*$", "^node_modules/.*$", "^dist/.*$", "^build/.*$", "^\\.claude/.*$"]
+# `ignore` (basenames) prunes the recursive directory walk; ignore-paths alone does not.
+ignore = [".venv", "node_modules", "dist", "build", ".claude", "htmlcov", "reports", ".git"]
+py-version = "3.11"
+
+[tool.pylint.format]
+max-line-length = 88
