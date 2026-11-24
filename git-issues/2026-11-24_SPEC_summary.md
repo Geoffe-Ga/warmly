@@ -3,7 +3,7 @@
 - **Date:** 2026-11-24
 - **Source SPEC:** `docs/plans/relationship_communication_agent_prd.md` (v1.0, 2026-11-23)
 - **Output:** 8 epics and 58 child issues in this directory
-- **Status:** drafted for review. Nothing has been filed on GitHub yet.
+- **Status:** filed on 2026-11-24 as issues #3 to #68; see `FILED.md` for the key-to-number map.
 
 ## 1. The SPEC in one page
 
