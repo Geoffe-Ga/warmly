@@ -42,7 +42,55 @@ body {
   color: var(--color-coral-text);
 }
 
-.shell ul {
+/* The heading takes focus after navigation; show that without a harsh box. */
+.shell h1:focus-visible {
+  outline: 3px solid var(--color-coral-text);
+  outline-offset: 4px;
+  border-radius: var(--radius);
+}
+
+.shell a {
+  color: var(--color-coral-text);
+}
+
+.shell a:focus-visible {
+  outline: 3px solid var(--color-coral-text);
+  outline-offset: 2px;
+  border-radius: 0.25rem;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space);
+  margin-bottom: var(--space);
+}
+
+.home-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target);
+  font-weight: 700;
+}
+
+.secondary-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(var(--space) / 2) var(--space);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.secondary-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch-target);
+}
+
+.action-list {
   display: grid;
   gap: var(--space);
   margin: 0;
@@ -50,22 +98,26 @@ body {
   list-style: none;
 }
 
-.shell button {
-  width: 100%;
+.action {
+  display: flex;
+  align-items: center;
   min-height: var(--touch-target);
   padding: var(--space);
   border: 2px solid var(--color-soft-pink);
   border-radius: var(--radius);
   background: var(--color-blush);
   color: var(--color-ink);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
+  font-weight: 600;
+  text-decoration: none;
 }
 
-.shell button:focus-visible {
-  outline: 3px solid var(--color-coral-text);
-  outline-offset: 2px;
+.shell .action {
+  color: var(--color-ink);
+}
+
+.note {
+  color: var(--color-ink);
+  font-style: italic;
 }
 
 @media (prefers-reduced-motion: reduce) {

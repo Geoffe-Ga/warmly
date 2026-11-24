@@ -16,7 +16,14 @@
     "resolveJsonModule": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "noEmit": true
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
   },
-  "include": ["src/**/*.ts", "tests/frontend/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "tests/frontend/**/*.ts",
+    "tests/frontend/**/*.tsx"
+  ]
 }

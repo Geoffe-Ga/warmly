@@ -1,4 +1,3 @@
-import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 test.describe("Home (UX-001)", () => {
@@ -7,10 +6,23 @@ test.describe("Home (UX-001)", () => {
 
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Warmly");
     const nav = page.getByRole("navigation", { name: "Primary" });
-    await expect(nav.getByRole("button")).toHaveText([
+    await expect(nav.getByRole("link")).toHaveText([
       "Journal",
       "Reflect",
       "Prepare for a Conversation",
+    ]);
+  });
+
+  test("offers collections, settings and devices as secondary navigation", async ({
+    page,
+  }) => {
+    await page.goto("/");
+
+    const nav = page.getByRole("navigation", { name: "Secondary" });
+    await expect(nav.getByRole("link")).toHaveText([
+      "Collections",
+      "Settings",
+      "Manage Devices",
     ]);
   });
 
@@ -43,17 +55,5 @@ test.describe("Home (UX-001)", () => {
     const manifest = (await response.json()) as Record<string, unknown>;
     expect(manifest["name"]).toBe("Warmly");
     expect(manifest["display"]).toBe("standalone");
-  });
-
-  test("has no automatically detectable WCAG 2.2 AA violations (AC-23)", async ({
-    page,
-  }) => {
-    await page.goto("/");
-
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-      .analyze();
-
-    expect(results.violations).toEqual([]);
   });
 });

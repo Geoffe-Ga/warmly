@@ -9,7 +9,8 @@ Read the relevant PRD section (IDs such as `JR-`, `RF-`, `CC-`, `SEC-`, `SYNC-`,
 `AI-`, `AC-`) before implementing anything, and cite those IDs in issues, PRs and tests.
 Human-facing overview: [README.md](README.md).
 
-**Status:** scaffold only. `warmly/` (Python) is a stub; `src/` is a framework-free Home shell.
+**Status:** walking skeleton in progress. `warmly/` (Python) is a stub; `src/` is a Preact
+shell in which every MVP route renders an accessible placeholder.
 
 ---
 
@@ -17,7 +18,7 @@ Human-facing overview: [README.md](README.md).
 
 | Layer | Tech | Rule |
 | --- | --- | --- |
-| Frontend | TypeScript PWA (`src/`), Vite + vite-plugin-pwa | Owns UI, client-side crypto (AEAD, key wrapping), IndexedDB, local search, `AIProvider` adapters (OpenAI, Anthropic) |
+| Frontend | TypeScript PWA (`src/`), Preact, Vite + vite-plugin-pwa | Owns UI, client-side crypto (AEAD, key wrapping), IndexedDB, local search, `AIProvider` adapters (OpenAI, Anthropic) |
 | Backend | Python FastAPI (`warmly/`) | Owner-scoped ciphertext sync (`GET /v1/sync/changes`, `POST /v1/sync/operations`), devices, health. **Never receives plaintext.** |
 | Auth/DB | Supabase Auth + PostgreSQL | Deny-by-default row-level ownership; service credentials never ship to the browser |
 | Tests | pytest; Vitest + jsdom + fake-indexeddb (`tests/frontend/`); Playwright + axe-core (`e2e/`, desktop Chromium + mobile Safari) | Unit coverage ≥90%; E2E runs against the production build |
@@ -61,7 +62,9 @@ git-issues/              Source files for the filed MVP backlog; start at the
                          *_SPEC_summary.md decision register and FILED.md
 plans/architecture/      import-linter rules for Python layering
 warmly/                  FastAPI backend package
-src/                     TypeScript PWA (app.ts shell, main.ts bootstrap + SW registration)
+src/                     TypeScript PWA: app/ (route table, router, shell), ui/ (screens,
+                         components), main.tsx (bootstrap + SW registration)
+docs/adr/                Architecture Decision Records
 public/, index.html      PWA static assets and entry; vite.config.ts = build, manifest, SW, Vitest
 tests/                   pytest (test_*.py); tests/frontend/ Vitest unit tests
 e2e/                     Playwright E2E + axe accessibility tests
@@ -120,7 +123,8 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 
 ## Open decisions and notes
 
-- **UI framework** is undecided (the shell is framework-free). Record it in an ADR
-  before feature work.
+- **UI framework** is Preact with TSX
+  ([ADR-0001](docs/adr/0001-ui-framework.md)). Add no UI or routing library without
+  a new ADR. Decisions are recorded in [`docs/adr/`](docs/adr/README.md).
 - `.claude/docs/*` and `.claude/skills/*` examples are generic (Python, Jest). This
   project uses Vitest; follow the PRD and this file where they conflict.
