@@ -12,15 +12,23 @@ import { AuthError, type AuthClient } from "../auth/auth-client";
 const STORAGE_KEY = "warmly.fake.auth";
 
 interface FakeAuthState {
-  /** Registered accounts: email to password. Synthetic values only. */
-  accounts: Record<string, string>;
+  /**
+   * Registered accounts as [email, password] pairs. A list, not an object
+   * keyed by email, so an address such as `__proto__` is just another string.
+   * Synthetic values only.
+   */
+  accounts: [email: string, password: string][];
   /** The address awaiting verification, if any. */
   pending: string | null;
   /** The signed-in address, if any. */
   signedIn: string | null;
 }
 
-const EMPTY: FakeAuthState = { accounts: {}, pending: null, signedIn: null };
+const EMPTY: FakeAuthState = { accounts: [], pending: null, signedIn: null };
+
+function passwordFor(state: FakeAuthState, email: string): string | undefined {
+  return state.accounts.find(([registered]) => registered === email)?.[1];
+}
 
 /** See the module comment. */
 export class FakeAuthClient implements AuthClient {
@@ -48,7 +56,9 @@ export class FakeAuthClient implements AuthClient {
   register(email: string, password: string): Promise<void> {
     const state = this.#read();
     // An existing account is left untouched, and the caller cannot tell.
-    state.accounts[email] ??= password;
+    if (passwordFor(state, email) === undefined) {
+      state.accounts.push([email, password]);
+    }
     state.pending = email;
     this.#write(state);
     return Promise.resolve();
@@ -67,7 +77,7 @@ export class FakeAuthClient implements AuthClient {
 
   signIn(email: string, password: string): Promise<void> {
     const state = this.#read();
-    if (state.accounts[email] !== password) {
+    if (passwordFor(state, email) !== password) {
       return Promise.reject(new AuthError("invalid_credentials"));
     }
     if (state.pending === email) {

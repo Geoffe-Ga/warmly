@@ -136,11 +136,15 @@ function SessionControls(props: {
     return null;
   }
   const signOut = (): void => {
-    void auth.signOut().finally(() => {
+    const finishLocally = (): void => {
       vault.lock();
       session.signOut();
       props.navigate(SIGN_IN_PATH);
-    });
+    };
+    // Signing out on this device must always succeed. If the server cannot be
+    // told, for example while offline, the keys are still dropped and the
+    // private screens still close.
+    auth.signOut().then(finishLocally, finishLocally);
   };
   const lock = (): void => {
     vault.lock();
@@ -168,7 +172,7 @@ function Header(props: {
           {APP_NAME}
         </Link>
       )}
-      {!unlocked && <span class="home-link">{APP_NAME}</span>}
+      {!unlocked && <span class="app-name">{APP_NAME}</span>}
       {unlocked && (
         <nav aria-label="Secondary">
           <ul class="secondary-nav">

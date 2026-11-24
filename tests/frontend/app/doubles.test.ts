@@ -45,6 +45,23 @@ describe("FakeAuthClient", () => {
     ).resolves.toBeUndefined();
   });
 
+  it.each(["__proto__", "constructor", "toString"])(
+    "treats the address %j as an ordinary account name",
+    async (email) => {
+      const auth = new FakeAuthClient();
+
+      await expect(auth.signIn(email, "anything")).rejects.toMatchObject({
+        code: "invalid_credentials",
+      });
+      await auth.register(email, "a long password");
+      await auth.completeVerification();
+      await auth.signOut();
+      await expect(
+        auth.signIn(email, "a long password"),
+      ).resolves.toBeUndefined();
+    },
+  );
+
   it("reports nothing to verify when no registration is pending", async () => {
     expect(await new FakeAuthClient().completeVerification()).toBe(false);
   });

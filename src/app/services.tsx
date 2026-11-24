@@ -35,17 +35,10 @@ export interface Services {
  * @returns Fresh services with a signed-out session.
  */
 export function createServices(): Services {
-  if (import.meta.env.MODE !== "production") {
-    return {
-      auth: new FakeAuthClient(),
-      vault: new FakeKeyVault(),
-      session: createSession(),
-      onboarding: { recoveryKey: undefined },
-    };
-  }
+  const useDoubles = import.meta.env.MODE !== "production";
   return {
-    auth: new UnavailableAuthClient(),
-    vault: new UnavailableKeyVault(),
+    auth: useDoubles ? new FakeAuthClient() : new UnavailableAuthClient(),
+    vault: useDoubles ? new FakeKeyVault() : new UnavailableKeyVault(),
     session: createSession(),
     onboarding: { recoveryKey: undefined },
   };

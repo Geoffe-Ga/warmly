@@ -291,6 +291,20 @@ describe("Lock and Sign out (DEV-005)", () => {
     expect(window.location.pathname).toBe("/sign-in");
   });
 
+  it("signs out on this device even when the server cannot be reached", async () => {
+    const services = testServices("unlocked");
+    await services.vault.createAccountKeys();
+    services.auth.signOut = () => Promise.reject(new Error("offline"));
+    await renderApp("/settings", services);
+
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    await screen.findByRole("heading", { level: 1, name: "Sign in" });
+
+    expect(services.session.state).toBe("signed_out");
+    expect(services.vault.isUnlocked).toBe(false);
+    expect(window.location.pathname).toBe("/sign-in");
+  });
+
   it("a locked user can sign out but has no Lock button", async () => {
     await renderApp("/locked", testServices("signed_in_locked"));
 
