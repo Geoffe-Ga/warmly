@@ -3,47 +3,73 @@
  * wraps it in the shared header, secondary navigation and `<main>` landmark.
  */
 import type { JSX } from "preact";
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "preact/hooks";
+import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
 
 import { PAGE_HEADING_ATTRIBUTE } from "../ui/components/PageHeading";
+import { GALLERY_PATH, Gallery } from "../ui/dev/Gallery";
 import { Home } from "../ui/screens/Home";
 import { NotFound } from "../ui/screens/NotFound";
 import { Placeholder } from "../ui/screens/Placeholder";
 import { Link, NavigationContext, type Navigation } from "./navigation";
-import { matchRoute, normalisePath, type RouteMatch } from "./router";
+import { matchRoute, normalisePath } from "./router";
 import { SECONDARY_NAV } from "./routes";
 
 const APP_NAME = "Warmly";
+
+/** What to show for a path: its title and the screen to render. */
+interface View {
+  readonly title: string;
+  readonly isHome: boolean;
+  readonly render: () => JSX.Element;
+}
 
 function currentPath(): string {
   return normalisePath(window.location.pathname);
 }
 
-function documentTitle(match: RouteMatch | undefined): string {
-  if (!match) {
-    return `Page not found · ${APP_NAME}`;
+/**
+ * Development-only screens. `import.meta.env.DEV` is replaced with `false` in
+ * a production build, so the bundler drops this branch and the gallery with it.
+ *
+ * @param path - A normalised pathname.
+ * @returns The development view for that path, if there is one.
+ */
+function resolveDevView(path: string): View | undefined {
+  if (import.meta.env.DEV && path === GALLERY_PATH) {
+    return {
+      title: "Component gallery",
+      isHome: false,
+      render: () => <Gallery />,
+    };
   }
-  return match.route.id === "home"
-    ? APP_NAME
-    : `${match.route.title} · ${APP_NAME}`;
+  return undefined;
 }
 
-function Screen(props: {
-  readonly match: RouteMatch | undefined;
-}): JSX.Element {
-  if (!props.match) {
-    return <NotFound />;
+/**
+ * Decide what a path shows.
+ *
+ * @param path - A normalised pathname.
+ * @returns The view for that path.
+ */
+export function resolveView(path: string): View {
+  const match = matchRoute(path);
+  if (match?.route.id === "home") {
+    return { title: APP_NAME, isHome: true, render: () => <Home /> };
   }
-  if (props.match.route.id === "home") {
-    return <Home />;
+  if (match) {
+    return {
+      title: match.route.title,
+      isHome: false,
+      render: () => <Placeholder route={match.route} />,
+    };
   }
-  return <Placeholder route={props.match.route} />;
+  return (
+    resolveDevView(path) ?? {
+      title: "Page not found",
+      isHome: false,
+      render: () => <NotFound />,
+    }
+  );
 }
 
 function Header(props: { readonly showHomeLink: boolean }): JSX.Element {
@@ -70,27 +96,28 @@ function Header(props: { readonly showHomeLink: boolean }): JSX.Element {
 /**
  * Root component. Owns the current path, keeps it in step with the browser
  * history, sets the document title, and moves focus to the page heading after
- * each in-app navigation.
+ * each in-app navigation, including a click on the link to the current screen.
  *
  * @returns The whole application.
  */
 export function App(): JSX.Element {
   const [path, setPath] = useState(currentPath);
-  const hasNavigated = useRef(false);
+  // Counts in-app navigations. Zero means first render: focus is left alone.
+  const [navigations, setNavigations] = useState(0);
 
   const navigate = useCallback((target: string): void => {
     const next = normalisePath(target);
     if (next !== currentPath()) {
       window.history.pushState(null, "", next);
     }
-    hasNavigated.current = true;
     setPath(next);
+    setNavigations((count) => count + 1);
   }, []);
 
   useEffect(() => {
     const onPopState = (): void => {
-      hasNavigated.current = true;
       setPath(currentPath());
+      setNavigations((count) => count + 1);
     };
     window.addEventListener("popstate", onPopState);
     return () => {
@@ -98,16 +125,19 @@ export function App(): JSX.Element {
     };
   }, []);
 
-  const match = useMemo(() => matchRoute(path), [path]);
+  const view = useMemo(() => resolveView(path), [path]);
 
   useEffect(() => {
-    document.title = documentTitle(match);
-    if (hasNavigated.current) {
+    document.title = view.isHome ? APP_NAME : `${view.title} · ${APP_NAME}`;
+  }, [view]);
+
+  useEffect(() => {
+    if (navigations > 0) {
       document
         .querySelector<HTMLElement>(`[${PAGE_HEADING_ATTRIBUTE}]`)
         ?.focus();
     }
-  }, [match]);
+  }, [navigations]);
 
   const navigation = useMemo<Navigation>(
     () => ({ path, navigate }),
@@ -117,10 +147,8 @@ export function App(): JSX.Element {
   return (
     <NavigationContext.Provider value={navigation}>
       <div class="shell">
-        <Header showHomeLink={match?.route.id !== "home"} />
-        <main>
-          <Screen match={match} />
-        </main>
+        <Header showHomeLink={!view.isHome} />
+        <main>{view.render()}</main>
       </div>
     </NavigationContext.Provider>
   );

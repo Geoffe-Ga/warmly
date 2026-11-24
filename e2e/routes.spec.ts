@@ -65,6 +65,27 @@ test.describe("every MVP route (UX-001, AC-23)", () => {
     );
   });
 
+  test("the development-only component gallery is absent from the production build", async ({
+    page,
+  }) => {
+    await page.goto("/dev/components");
+
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Page not found",
+    );
+
+    const sources = await page
+      .locator("script[src]")
+      .evaluateAll((scripts) =>
+        scripts.map((script) => (script as HTMLScriptElement).src),
+      );
+    expect(sources.length).toBeGreaterThan(0);
+    for (const source of sources) {
+      const body = await (await page.request.get(source)).text();
+      expect(body).not.toContain("Component gallery");
+    }
+  });
+
   test("an unknown path shows the not-found screen without echoing the path", async ({
     page,
   }) => {

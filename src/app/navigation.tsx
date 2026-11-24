@@ -5,6 +5,8 @@
 import { createContext, type ComponentChildren, type JSX } from "preact";
 import { useContext } from "preact/hooks";
 
+import { isInAppPath, normalisePath } from "./router";
+
 /** What screens can read and do about navigation. */
 export interface Navigation {
   /** The current, normalised pathname. */
@@ -43,13 +45,21 @@ function isPlainLeftClick(event: MouseEvent): boolean {
 /**
  * An in-app link. It is a real `<a href>`, so it works with the keyboard,
  * screen readers, "open in new tab" and with JavaScript unavailable; a plain
- * left click is handled in place instead of reloading the page.
+ * left click is handled in place instead of reloading the page. The link to
+ * the current screen is marked `aria-current="page"`.
  *
  * @param props - See {@link LinkProps}.
  * @returns An anchor element.
+ * @throws Error if `href` is not an in-app path. Links to other sites are not
+ *   supported; this fails at once rather than navigating somewhere unexpected.
  */
 export function Link(props: LinkProps): JSX.Element {
-  const { navigate } = useContext(NavigationContext);
+  if (!isInAppPath(props.href)) {
+    throw new Error(
+      "Link only accepts in-app paths that start with a single /",
+    );
+  }
+  const { path, navigate } = useContext(NavigationContext);
   const onClick = (event: MouseEvent): void => {
     if (isPlainLeftClick(event)) {
       event.preventDefault();
@@ -61,6 +71,7 @@ export function Link(props: LinkProps): JSX.Element {
       href={props.href}
       class={props.class}
       aria-label={props.label}
+      aria-current={normalisePath(props.href) === path ? "page" : undefined}
       onClick={onClick}
     >
       {props.children}

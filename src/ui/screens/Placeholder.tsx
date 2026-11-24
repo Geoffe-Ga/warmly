@@ -1,7 +1,8 @@
 import type { JSX } from "preact";
 
 import type { RouteDef } from "../../app/routes";
-import { PageHeading } from "../components/PageHeading";
+import { PageLayout } from "../components/PageLayout";
+import { StatusBanner } from "../components/StatusBanner";
 
 /**
  * Stand-in for a screen that a later issue will build. It carries the real
@@ -13,10 +14,10 @@ import { PageHeading } from "../components/PageHeading";
  */
 export function Placeholder(props: { readonly route: RouteDef }): JSX.Element {
   return (
-    <>
-      <PageHeading>{props.route.title}</PageHeading>
-      <p>{props.route.summary}</p>
-      <p class="note">This screen is not built yet.</p>
-    </>
+    <PageLayout title={props.route.title} lead={props.route.summary}>
+      <StatusBanner tone="info" label="Coming soon">
+        This screen is not built yet.
+      </StatusBanner>
+    </PageLayout>
   );
 }

@@ -49,6 +49,18 @@ function matchSegments(
 }
 
 /**
+ * Whether a link target stays inside the app: an absolute path on this
+ * origin. Rejects protocol-relative (`//host`), backslash and scheme URLs, so
+ * in-app navigation can never be pointed at another site.
+ *
+ * @param href - The link target to check.
+ * @returns `true` if the target is an in-app path.
+ */
+export function isInAppPath(href: string): boolean {
+  return /^\/(?![/\\])/.test(href) && !href.includes("\\");
+}
+
+/**
  * Find the route for a pathname.
  *
  * Static segments win over parameters because the table is checked in order of
@@ -59,10 +71,7 @@ function matchSegments(
  */
 export function matchRoute(pathname: string): RouteMatch | undefined {
   const actual = segmentsOf(pathname);
-  const bySpecificity = [...ROUTES].sort(
-    (a, b) => parameterCount(a) - parameterCount(b),
-  );
-  for (const route of bySpecificity) {
+  for (const route of ROUTES_BY_SPECIFICITY) {
     const params = matchSegments(segmentsOf(route.path), actual);
     if (params) {
       return { route, params };
@@ -75,3 +84,8 @@ function parameterCount(route: RouteDef): number {
   return segmentsOf(route.path).filter((segment) => segment.startsWith(":"))
     .length;
 }
+
+/** The route table ordered once, fewest parameters first. */
+const ROUTES_BY_SPECIFICITY: readonly RouteDef[] = [...ROUTES].sort(
+  (a, b) => parameterCount(a) - parameterCount(b),
+);
