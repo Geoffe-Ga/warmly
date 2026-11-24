@@ -66,8 +66,10 @@ sync → BYOK compatibility gate → Reflect → cards → polish and release ha
 warmly/
 ├── docs/plans/            # PRD and implementation plans (source of truth)
 ├── plans/architecture/    # import-linter layer rules for the Python backend
-├── warmly/                # Python package: FastAPI backend (currently a stub)
-├── src/                   # TypeScript PWA (app shell: Home with three primary actions)
+├── warmly/                # FastAPI backend: api/ (routers), schemas/ (wire models); routes are stubs
+├── openapi/               # Committed API contract, exported from the code
+├── src/                   # TypeScript PWA: app/ (routes, shell), ui/, api/ (generated types)
+├── tools/contract/        # Isolated toolchain that generates src/api/schema.d.ts
 ├── public/                # Static PWA assets (icon)
 ├── index.html             # PWA entry; vite.config.ts holds build, manifest, SW and Vitest config
 ├── tests/                 # pytest (test_*.py); tests/frontend/ for Vitest unit tests
@@ -101,6 +103,7 @@ variant. Call `scripts/python/<gate>.sh` or `scripts/typescript/<gate>.sh` to ru
 | `./scripts/test.sh` / `coverage.sh` | Unit tests with ≥90% coverage (pytest, Vitest) |
 | `./scripts/e2e.sh` | Playwright E2E + axe accessibility on desktop Chromium and mobile Safari |
 | `./scripts/lint.sh` / `typecheck.sh` / `format.sh` | Static checks and formatting |
+| `./scripts/contract.sh` | Regenerate the OpenAPI contract and its TypeScript types (`--check` fails if either is stale) |
 | `./scripts/security.sh` / `complexity.sh` | Bandit, pip-audit, radon/xenon |
 | `./scripts/mutation.sh` | **Optional**, release-time only (see below) |
 
@@ -112,6 +115,22 @@ Release is published, or on manual dispatch with `run_mutation` checked. A score
 the 80% target produces a warning and never blocks the release.
 
 Frontend dev server: `npm run dev`. Production build: `npm run build`, then `npm run preview`.
+
+### Running the API locally
+
+```bash
+python -m warmly.main          # serves http://127.0.0.1:8000
+curl http://127.0.0.1:8000/v1/health
+```
+
+Every route except health and readiness is still a stub: it returns fixed data, stores
+nothing, and says so with a `Warmly-Stub: true` response header. The contract lives in
+`openapi/warmly.v1.json` and is served at `/v1/openapi.json`.
+
+After changing a route or model, run `./scripts/contract.sh` and commit the regenerated
+`openapi/warmly.v1.json` and `src/api/schema.d.ts`. Never edit either by hand. Runtime
+dependencies are pinned with hashes: edit `requirements.in`, then run
+`pip-compile --generate-hashes --strip-extras --output-file requirements.txt requirements.in`.
 
 ## Open decisions
 

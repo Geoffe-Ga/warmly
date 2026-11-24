@@ -39,20 +39,13 @@ repos:
     - --branch
     - main
 - repo: https://github.com/astral-sh/ruff-pre-commit
-  rev: v0.2.0
+  # Keep in step with the ruff pin in requirements-dev.txt.
+  rev: v0.17.6
   hooks:
   - id: ruff
     args:
     - --fix
   - id: ruff-format
-- repo: https://github.com/psf/black
-  rev: 26.10.1
-  hooks:
-  - id: black
-- repo: https://github.com/PyCQA/isort
-  rev: 5.13.0
-  hooks:
-  - id: isort
 - repo: https://github.com/pre-commit/mirrors-mypy
   rev: v1.8.0
   hooks:
@@ -63,6 +56,10 @@ repos:
     # imports must be listed here as well as in the requirements files.
     additional_dependencies:
     - pytest>=7.4.0
+    - fastapi==0.165.0
+    - pydantic==2.14.4
+    - uvicorn==0.54.0
+    - httpx2>=2.16.0
 - repo: https://github.com/PyCQA/bandit
   rev: 1.7.7
   hooks:

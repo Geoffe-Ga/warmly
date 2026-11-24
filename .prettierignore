@@ -15,3 +15,5 @@ reports
 package-lock.json
 htmlcov
 .venv
+# Generated from the FastAPI app; its formatting is owned by warmly/contract.py.
+openapi/

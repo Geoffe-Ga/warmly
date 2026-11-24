@@ -66,6 +66,12 @@ jobs:
         run: mypy . --install-types --non-interactive --show-error-codes --pretty
         continue-on-error: false
 
+      - name: Check layering with import-linter
+        run: lint-imports --config plans/architecture/.importlinter
+
+      - name: Check the OpenAPI contract is up to date
+        run: ./scripts/python/contract.sh --check
+
       - name: Check docstring coverage
         run: |
           interrogate -vv --fail-under=95 --ignore-init-method --ignore-init-module .
@@ -163,6 +169,9 @@ jobs:
 
       - name: Type check
         run: npm run type-check
+
+      - name: Check generated API types are up to date
+        run: ./scripts/typescript/contract.sh --check
 
       - name: Unit tests with coverage (Vitest)
         run: npx vitest run --coverage

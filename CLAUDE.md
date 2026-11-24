@@ -9,7 +9,8 @@ Read the relevant PRD section (IDs such as `JR-`, `RF-`, `CC-`, `SEC-`, `SYNC-`,
 `AI-`, `AC-`) before implementing anything, and cite those IDs in issues, PRs and tests.
 Human-facing overview: [README.md](README.md).
 
-**Status:** walking skeleton in progress. `warmly/` (Python) is a stub; `src/` is a Preact
+**Status:** walking skeleton in progress. `warmly/` (Python) serves every
+`/v1` route as a typed stub; `src/` is a Preact
 shell in which every MVP route renders an accessible placeholder.
 
 ---
@@ -61,7 +62,9 @@ docs/plans/              PRD and plans (source of truth)
 git-issues/              Source files for the filed MVP backlog; start at the
                          *_SPEC_summary.md decision register and FILED.md
 plans/architecture/      import-linter rules for Python layering
-warmly/                  FastAPI backend package
+warmly/                  FastAPI backend: api/ (routers), schemas/ (wire models)
+openapi/                 Committed API contract; src/api/schema.d.ts is generated from it
+                         (regenerate both with ./scripts/contract.sh, never by hand)
 src/                     TypeScript PWA: app/ (route table, router, shell), ui/ (screens,
                          components), main.tsx (bootstrap + SW registration)
 docs/adr/                Architecture Decision Records
@@ -84,6 +87,7 @@ Always use the scripts rather than invoking the tools directly.
 ./scripts/test.sh                 # unit tests + coverage (≥90%)
 ./scripts/e2e.sh                  # Playwright + axe (first run: scripts/typescript/e2e.sh --install)
 ./scripts/lint.sh | typecheck.sh | format.sh | security.sh | complexity.sh
+./scripts/contract.sh             # regenerate the API contract and TS types (--check to verify)
 ./scripts/python/<gate>.sh        # one language only
 ./scripts/typescript/<gate>.sh
 ./scripts/mutation.sh             # optional, release-time only

@@ -1,0 +1,1202 @@
+{
+  "components": {
+    "schemas": {
+      "ApproveEnrollmentRequest": {
+        "additionalProperties": false,
+        "description": "An unlocked device delivers the root key, encrypted to the new device.",
+        "properties": {
+          "wrapped_key": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Wrapped Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "wrapped_key"
+        ],
+        "title": "ApproveEnrollmentRequest",
+        "type": "object"
+      },
+      "Change": {
+        "additionalProperties": false,
+        "description": "The current state of one record that changed after the cursor.",
+        "properties": {
+          "etag": {
+            "description": "Hash of the stored ciphertext.",
+            "title": "Etag",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "maxLength": 1400000,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "record_id": {
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1.0,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "schema_version": {
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sequence": {
+            "description": "Position in the owner's change feed.",
+            "minimum": 1.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "tombstone": {
+            "title": "Tombstone",
+            "type": "boolean"
+          },
+          "type": {
+            "maximum": 255.0,
+            "minimum": 0.0,
+            "title": "Type",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "record_id",
+          "type",
+          "revision",
+          "sequence",
+          "schema_version",
+          "tombstone",
+          "etag"
+        ],
+        "title": "Change",
+        "type": "object"
+      },
+      "ChangesResponse": {
+        "additionalProperties": false,
+        "description": "One page of the owner's change feed.",
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/Change"
+            },
+            "title": "Changes",
+            "type": "array"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "next_cursor": {
+            "description": "Cursor to send on the next request.",
+            "title": "Next Cursor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "changes",
+          "next_cursor",
+          "has_more"
+        ],
+        "title": "ChangesResponse",
+        "type": "object"
+      },
+      "Device": {
+        "additionalProperties": false,
+        "description": "One of the signed-in user's own devices.",
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_current": {
+            "description": "True for the device making the request.",
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "last_sync_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Sync At"
+          },
+          "name_ciphertext": {
+            "description": "Device name, encrypted on the client.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Name Ciphertext",
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Public Key",
+            "type": "string"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          }
+        },
+        "required": [
+          "id",
+          "name_ciphertext",
+          "public_key",
+          "created_at",
+          "is_current"
+        ],
+        "title": "Device",
+        "type": "object"
+      },
+      "DeviceList": {
+        "additionalProperties": false,
+        "description": "The signed-in user's devices.",
+        "properties": {
+          "devices": {
+            "items": {
+              "$ref": "#/components/schemas/Device"
+            },
+            "title": "Devices",
+            "type": "array"
+          }
+        },
+        "required": [
+          "devices"
+        ],
+        "title": "DeviceList",
+        "type": "object"
+      },
+      "Enrollment": {
+        "additionalProperties": false,
+        "description": "A short-lived, single-use enrollment challenge.\n\nThe server relays ``wrapped_key`` and can never read it.",
+        "properties": {
+          "challenge": {
+            "description": "Server nonce both devices bind into the pairing code.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Challenge",
+            "type": "string"
+          },
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Public Key",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "expired"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "wrapped_key": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wrapped Key"
+          }
+        },
+        "required": [
+          "id",
+          "device_id",
+          "public_key",
+          "challenge",
+          "status",
+          "expires_at"
+        ],
+        "title": "Enrollment",
+        "type": "object"
+      },
+      "FieldError": {
+        "additionalProperties": false,
+        "description": "One invalid request field.\n\nThe offending value is deliberately absent: request bodies can carry\nciphertext or credentials, so they are never echoed back or logged.",
+        "properties": {
+          "location": {
+            "description": "Dotted path of the invalid field.",
+            "title": "Location",
+            "type": "string"
+          },
+          "message": {
+            "description": "What is wrong with it.",
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "location",
+          "message"
+        ],
+        "title": "FieldError",
+        "type": "object"
+      },
+      "Health": {
+        "additionalProperties": false,
+        "description": "Liveness: the process is running and can answer requests.",
+        "properties": {
+          "status": {
+            "const": "ok",
+            "default": "ok",
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "description": "Version of the running API.",
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "OperationResult": {
+        "additionalProperties": false,
+        "description": "Outcome of one operation, in request order.",
+        "properties": {
+          "current_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Server revision when the operation was not applied.",
+            "title": "Current Revision"
+          },
+          "op_id": {
+            "format": "uuid",
+            "title": "Op Id",
+            "type": "string"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "New revision when the operation was applied.",
+            "title": "Revision"
+          },
+          "status": {
+            "enum": [
+              "applied",
+              "duplicate",
+              "conflict",
+              "deleted",
+              "rejected"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op_id",
+          "status"
+        ],
+        "title": "OperationResult",
+        "type": "object"
+      },
+      "OperationsRequest": {
+        "additionalProperties": false,
+        "description": "An idempotent batch of operations.",
+        "properties": {
+          "operations": {
+            "items": {
+              "$ref": "#/components/schemas/SyncOperation"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": [
+          "operations"
+        ],
+        "title": "OperationsRequest",
+        "type": "object"
+      },
+      "OperationsResponse": {
+        "additionalProperties": false,
+        "description": "Results for a batch, one per operation and in the same order.",
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/OperationResult"
+            },
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "results"
+        ],
+        "title": "OperationsResponse",
+        "type": "object"
+      },
+      "Problem": {
+        "additionalProperties": false,
+        "description": "Error body returned with media type ``application/problem+json``.",
+        "properties": {
+          "code": {
+            "description": "Stable machine-readable code, for example auth.missing_token.",
+            "title": "Code",
+            "type": "string"
+          },
+          "errors": {
+            "description": "Per-field detail for invalid requests.",
+            "items": {
+              "$ref": "#/components/schemas/FieldError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "status": {
+            "description": "HTTP status code.",
+            "title": "Status",
+            "type": "integer"
+          },
+          "title": {
+            "description": "Short, stable summary of the problem.",
+            "title": "Title",
+            "type": "string"
+          },
+          "type": {
+            "default": "about:blank",
+            "description": "URI identifying the problem type.",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "status",
+          "code"
+        ],
+        "title": "Problem",
+        "type": "object"
+      },
+      "PutRecoveryEnvelopeRequest": {
+        "additionalProperties": false,
+        "description": "Create or rotate the recovery envelope with compare-and-swap.",
+        "properties": {
+          "expected_version": {
+            "description": "Version being replaced; 0 when none exists yet.",
+            "minimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "format_version": {
+            "minimum": 1.0,
+            "title": "Format Version",
+            "type": "integer"
+          },
+          "wrapped_key": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Wrapped Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "expected_version",
+          "format_version",
+          "wrapped_key"
+        ],
+        "title": "PutRecoveryEnvelopeRequest",
+        "type": "object"
+      },
+      "Readiness": {
+        "additionalProperties": false,
+        "description": "Readiness: every dependency the API needs is reachable.",
+        "properties": {
+          "checks": {
+            "additionalProperties": {
+              "const": "ok",
+              "type": "string"
+            },
+            "description": "Result of each dependency check.",
+            "title": "Checks",
+            "type": "object"
+          },
+          "status": {
+            "const": "ready",
+            "default": "ready",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "title": "Readiness",
+        "type": "object"
+      },
+      "RecoveryEnvelope": {
+        "additionalProperties": false,
+        "description": "The account root key, wrapped by the user's recovery key.\n\nThe server stores this opaque value only. It never receives the recovery\nsecret or the unwrapped root key.",
+        "properties": {
+          "format_version": {
+            "description": "Wrapping format version.",
+            "minimum": 1.0,
+            "title": "Format Version",
+            "type": "integer"
+          },
+          "version": {
+            "description": "Increases on every rotation.",
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "wrapped_key": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Wrapped Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "version",
+          "format_version",
+          "wrapped_key"
+        ],
+        "title": "RecoveryEnvelope",
+        "type": "object"
+      },
+      "RegisterDeviceRequest": {
+        "additionalProperties": false,
+        "description": "Register the calling device's identity.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "name_ciphertext": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Name Ciphertext",
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Public Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "public_key",
+          "name_ciphertext"
+        ],
+        "title": "RegisterDeviceRequest",
+        "type": "object"
+      },
+      "RenameDeviceRequest": {
+        "additionalProperties": false,
+        "description": "Replace a device's encrypted display name.",
+        "properties": {
+          "name_ciphertext": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Name Ciphertext",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name_ciphertext"
+        ],
+        "title": "RenameDeviceRequest",
+        "type": "object"
+      },
+      "StartEnrollmentRequest": {
+        "additionalProperties": false,
+        "description": "A new device asks to be approved by an existing one.",
+        "properties": {
+          "device_id": {
+            "format": "uuid",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "public_key": {
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Public Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "public_key"
+        ],
+        "title": "StartEnrollmentRequest",
+        "type": "object"
+      },
+      "SyncOperation": {
+        "additionalProperties": false,
+        "description": "One create, update or delete of an encrypted record.",
+        "properties": {
+          "base_revision": {
+            "description": "Revision this change was made from; 0 for a new record.",
+            "minimum": 0.0,
+            "title": "Base Revision",
+            "type": "integer"
+          },
+          "op_id": {
+            "description": "Client-chosen idempotency key.",
+            "format": "uuid",
+            "title": "Op Id",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "maxLength": 1400000,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Encrypted record; absent for a tombstone.",
+            "title": "Payload"
+          },
+          "record_id": {
+            "description": "Opaque record identifier.",
+            "format": "uuid",
+            "title": "Record Id",
+            "type": "string"
+          },
+          "schema_version": {
+            "description": "Envelope format version.",
+            "minimum": 1.0,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "tombstone": {
+            "description": "True when this operation deletes the record.",
+            "title": "Tombstone",
+            "type": "boolean"
+          },
+          "type": {
+            "maximum": 255.0,
+            "minimum": 0.0,
+            "title": "Type",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "op_id",
+          "record_id",
+          "type",
+          "base_revision",
+          "schema_version",
+          "tombstone"
+        ],
+        "title": "SyncOperation",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Owner-scoped ciphertext sync for the Warmly PWA. Every content field is encrypted on the client; this service never receives plaintext.",
+    "title": "Warmly API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/v1/devices": {
+      "get": {
+        "description": "List the signed-in user's devices.\n\nStub: always an empty list.\n\nReturns:\n    An empty device list.",
+        "operationId": "list_devices_v1_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "List the caller's devices",
+        "tags": [
+          "devices"
+        ]
+      },
+      "post": {
+        "description": "Register the calling device's identity.\n\nStub: echoes the submitted identity without storing it.\n\nArgs:\n    request: The device's ID, public key and encrypted name.\n\nReturns:\n    The device as it would have been registered.",
+        "operationId": "register_device_v1_devices_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDeviceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Register the calling device",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/v1/devices/{device_id}": {
+      "patch": {
+        "description": "Replace a device's encrypted display name.\n\nStub: echoes the new name without storing it.\n\nArgs:\n    device_id: The device to rename.\n    request: The new encrypted name.\n\nReturns:\n    The device as it would look after the rename.",
+        "operationId": "rename_device_v1_devices__device_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenameDeviceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Rename a device",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/v1/devices/{device_id}/revoke": {
+      "post": {
+        "description": "Revoke a device so it can no longer sync.\n\nStub: returns a revoked device without changing anything.\n\nArgs:\n    device_id: The device to revoke.\n\nReturns:\n    The device with ``revoked_at`` set.",
+        "operationId": "revoke_device_v1_devices__device_id__revoke_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Device"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Revoke a device",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/v1/enrollments": {
+      "post": {
+        "description": "Create an enrollment challenge for a new device.\n\nStub: returns a fixed pending challenge.\n\nArgs:\n    request: The new device's ID and public key.\n\nReturns:\n    A pending enrollment.",
+        "operationId": "start_enrollment_v1_enrollments_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrollment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Start enrolling a new device",
+        "tags": [
+          "enrollment"
+        ]
+      }
+    },
+    "/v1/enrollments/{enrollment_id}": {
+      "get": {
+        "description": "Read the state of an enrollment.\n\nStub: always pending.\n\nArgs:\n    enrollment_id: The enrollment to read.\n\nReturns:\n    A pending enrollment with the requested ID.",
+        "operationId": "get_enrollment_v1_enrollments__enrollment_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "enrollment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Enrollment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrollment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Read an enrollment",
+        "tags": [
+          "enrollment"
+        ]
+      }
+    },
+    "/v1/enrollments/{enrollment_id}/approve": {
+      "post": {
+        "description": "Deliver the wrapped root key to a new device.\n\nStub: echoes the wrapped key back as an approved enrollment. The server\nonly ever relays this value; it cannot read it.\n\nArgs:\n    enrollment_id: The enrollment being approved.\n    request: The root key, encrypted to the new device.\n\nReturns:\n    An approved enrollment carrying the wrapped key.",
+        "operationId": "approve_enrollment_v1_enrollments__enrollment_id__approve_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "enrollment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Enrollment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrollment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Approve an enrollment",
+        "tags": [
+          "enrollment"
+        ]
+      }
+    },
+    "/v1/health": {
+      "get": {
+        "description": "Report that the process is running.\n\nReturns:\n    The API version and an ``ok`` status.",
+        "operationId": "get_health_v1_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness check",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/ready": {
+      "get": {
+        "description": "Report that the API can serve requests.\n\nThere are no dependencies to check yet; the database check arrives with\nthe persistence layer.\n\nReturns:\n    A ``ready`` status with an empty set of dependency checks.",
+        "operationId": "get_ready_v1_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Readiness"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readiness check",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/v1/recovery-envelope": {
+      "get": {
+        "description": "Read the caller's wrapped root key.\n\nStub: returns a fixed synthetic envelope.\n\nReturns:\n    A version 1 envelope holding an obviously synthetic value.",
+        "operationId": "get_recovery_envelope_v1_recovery_envelope_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Read the recovery envelope",
+        "tags": [
+          "recovery"
+        ]
+      },
+      "put": {
+        "description": "Create or rotate the wrapped root key with compare-and-swap.\n\nStub: echoes the envelope with the next version number, storing nothing.\n\nArgs:\n    request: The new envelope and the version it replaces.\n\nReturns:\n    The envelope as it would have been stored.",
+        "operationId": "put_recovery_envelope_v1_recovery_envelope_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutRecoveryEnvelopeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryEnvelope"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Create or rotate the recovery envelope",
+        "tags": [
+          "recovery"
+        ]
+      }
+    },
+    "/v1/sync/changes": {
+      "get": {
+        "description": "Return the records that changed after ``cursor``.\n\nStub: always an empty page that echoes the cursor back.\n\nArgs:\n    cursor: The caller's position in its change feed.\n\nReturns:\n    An empty page of changes.",
+        "operationId": "get_changes_v1_sync_changes_get",
+        "parameters": [
+          {
+            "description": "Last change sequence this device has applied; 0 to start.",
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "default": "0",
+              "description": "Last change sequence this device has applied; 0 to start.",
+              "maxLength": 64,
+              "pattern": "^[0-9]+$",
+              "title": "Cursor",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangesResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "List changes after a cursor",
+        "tags": [
+          "sync"
+        ]
+      }
+    },
+    "/v1/sync/operations": {
+      "post": {
+        "description": "Apply an idempotent batch of record operations.\n\nStub: reports every operation as rejected, because nothing is persisted.\nThe payloads are validated for shape only and are otherwise untouched.\n\nArgs:\n    request: The batch to apply.\n\nReturns:\n    One ``rejected`` result per operation, in request order.",
+        "operationId": "post_operations_v1_sync_operations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OperationsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperationsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Unprocessable Content"
+          }
+        },
+        "summary": "Apply a batch of operations",
+        "tags": [
+          "sync"
+        ]
+      }
+    }
+  }
+}

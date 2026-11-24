@@ -6,11 +6,11 @@ pytest-mock>=3.12.0
 pytest-asyncio>=0.21.0
 pytest-timeout>=2.1.0
 pytest-xdist>=3.3.0
+httpx2>=2.16.0
 
 # Code quality
-ruff>=0.1.0
-black>=23.0.0
-isort>=5.12.0
+# Pinned so the local gate, the pre-commit hook and CI format identically.
+ruff==0.17.6
 mypy>=1.5.0
 
 # Security
@@ -18,6 +18,7 @@ bandit>=1.7.5
 pip-audit>=2.7.0
 
 # Complexity analysis
+import-linter>=2.0
 radon>=6.0.0
 xenon>=0.9.0
 

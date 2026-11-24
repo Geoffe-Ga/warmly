@@ -63,7 +63,7 @@ if $VERBOSE; then
     set -x
 fi
 
-echo "=== Linting (Ruff) ==="
+echo "=== Linting (Ruff + import-linter) ==="
 
 if $FIX; then
     if $VERBOSE; then
@@ -76,6 +76,13 @@ else
         echo "Checking for linting issues..."
     fi
     ruff check .
+    EXIT_CODE=$?
+fi
+
+# Layering rules (plans/architecture/.importlinter): a lower layer must never
+# import a higher one.
+if [ $EXIT_CODE -eq 0 ]; then
+    lint-imports --config plans/architecture/.importlinter
     EXIT_CODE=$?
 fi
 
