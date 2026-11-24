@@ -8,8 +8,15 @@ repos:
 - repo: https://github.com/pre-commit/pre-commit-hooks
   rev: v4.5.0
   hooks:
+  # The two Claude workflow files are installed and validated by the Claude
+  # GitHub app, which refuses to run on a pull request that edits them, so
+  # whitespace fixes to them must be committed to main directly.
   - id: trailing-whitespace
+    # Two trailing spaces are a hard line break in Markdown; keep them.
+    args: [--markdown-linebreak-ext=md]
+    exclude: ^\.github/workflows/(claude|code-review)\.yml$
   - id: end-of-file-fixer
+    exclude: ^\.github/workflows/(claude|code-review)\.yml$
   - id: check-yaml
   - id: check-toml
   - id: check-json
@@ -39,10 +46,9 @@ repos:
     - --fix
   - id: ruff-format
 - repo: https://github.com/psf/black
-  rev: 24.1.0
+  rev: 26.10.1
   hooks:
   - id: black
-    language_version: python3.11
 - repo: https://github.com/PyCQA/isort
   rev: 5.13.0
   hooks:
@@ -53,6 +59,10 @@ repos:
   - id: mypy
     args:
     - --strict
+    # The hook runs in its own environment, so every package the checked code
+    # imports must be listed here as well as in the requirements files.
+    additional_dependencies:
+    - pytest>=7.4.0
 - repo: https://github.com/PyCQA/bandit
   rev: 1.7.7
   hooks:
@@ -120,7 +130,7 @@ repos:
   hooks:
   - id: prettier
     types_or:
-    - typescript
+    - ts
     - tsx
     - javascript
     - json

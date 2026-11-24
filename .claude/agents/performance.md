@@ -68,9 +68,9 @@ See [python-guidelines.md](../shared/python-guidelines.md) for Python performanc
 
 **Component**: Data validation pipeline (required: process >10,000 records/second)
 
-**Plan**: Design benchmarks for various dataset sizes, profile naive implementation, identify 
-I/O bottlenecks and algorithmic inefficiencies. Delegate optimization (batch processing, 
-parallel validation, caching) to Performance Engineer. Validate final version meets throughput 
+**Plan**: Design benchmarks for various dataset sizes, profile naive implementation, identify
+I/O bottlenecks and algorithmic inefficiencies. Delegate optimization (batch processing,
+parallel validation, caching) to Performance Engineer. Validate final version meets throughput
 requirement without compromising validation accuracy.
 
 ---

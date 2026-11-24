@@ -38,42 +38,40 @@ def analyze_cache(
     conn = sqlite3.connect(cache_path)
     cursor = conn.cursor()
 
-    # Build file filter condition
-    file_filter_sql = ""
-    file_filter_params: tuple[str, ...] = ()
+    # The optional file filter is a bound parameter, never spliced into the SQL:
+    # a NULL pattern matches every file, otherwise any path ending with the name.
+    params: dict[str, str | int | None] = {
+        "pattern": f"%{filter_file}" if filter_file else None,
+        "top_files": top_files,
+    }
     if filter_file:
-        # Match any path ending with the specified file
-        file_filter_sql = """
-            AND sf.filename LIKE ?
-        """
-        file_filter_params = (f"%{filter_file}",)
         print(f"=== Mutmut Cache Analysis (filtered: {filter_file}) ===\n")
     else:
         print("=== Mutmut Cache Analysis ===\n")
 
     # Get total mutants (with optional filter)
-    query = f"""
+    query = """
         SELECT COUNT(*)
         FROM Mutant m, Line l, SourceFile sf
         WHERE m.line = l.id
           AND l.sourcefile = sf.id
-          {file_filter_sql}
+          AND (:pattern IS NULL OR sf.filename LIKE :pattern)
     """
-    cursor.execute(query, file_filter_params)
+    cursor.execute(query, params)
     total = cursor.fetchone()[0]
     print(f"Total mutants: {total}")
     print()
 
     # Get status counts (with optional filter)
-    query = f"""
+    query = """
         SELECT m.status, COUNT(*)
         FROM Mutant m, Line l, SourceFile sf
         WHERE m.line = l.id
           AND l.sourcefile = sf.id
-          {file_filter_sql}
+          AND (:pattern IS NULL OR sf.filename LIKE :pattern)
         GROUP BY m.status
     """
-    cursor.execute(query, file_filter_params)
+    cursor.execute(query, params)
     status_counts = dict(cursor.fetchall())
     killed = status_counts.get("ok_killed", 0)
     survived = status_counts.get("bad_survived", 0)
@@ -116,18 +114,18 @@ def analyze_cache(
     # Show files with most survived mutants (with optional filter)
     if survived > 0:
         print(f"=== Files with Most Survived Mutants (Top {top_files}) ===")
-        query = f"""
+        query = """
             SELECT sf.filename, COUNT(*) as count
             FROM Mutant m, Line l, SourceFile sf
             WHERE m.line = l.id
               AND l.sourcefile = sf.id
-              AND m.status = "bad_survived"
-              {file_filter_sql}
+              AND m.status = 'bad_survived'
+              AND (:pattern IS NULL OR sf.filename LIKE :pattern)
             GROUP BY sf.filename
             ORDER BY count DESC
-            LIMIT ?
+            LIMIT :top_files
         """
-        cursor.execute(query, (*file_filter_params, top_files))
+        cursor.execute(query, params)
         for filename, count in cursor.fetchall():
             percentage = (count / survived) * 100
             print(f"  {count:3d} ({percentage:5.1f}%): {filename}")
@@ -135,17 +133,17 @@ def analyze_cache(
 
         # Show sample of survived mutants (with optional filter)
         print("Sample of survived mutants (first 10):")
-        query = f"""
+        query = """
             SELECT m.id, sf.filename, l.line_number
             FROM Mutant m, Line l, SourceFile sf
             WHERE m.line = l.id
               AND l.sourcefile = sf.id
-              AND m.status = "bad_survived"
-              {file_filter_sql}
+              AND m.status = 'bad_survived'
+              AND (:pattern IS NULL OR sf.filename LIKE :pattern)
             ORDER BY sf.filename, l.line_number
             LIMIT 10
         """
-        cursor.execute(query, file_filter_params)
+        cursor.execute(query, params)
         for mutant_id, filename, line_number in cursor.fetchall():
             print(f"  Mutant {mutant_id}: {filename}:{line_number}")
         print()

@@ -57,6 +57,8 @@ revocation and invalidation infrastructure exist.
 
 ```
 docs/plans/              PRD and plans (source of truth)
+git-issues/              Source files for the filed MVP backlog; start at the
+                         *_SPEC_summary.md decision register and FILED.md
 plans/architecture/      import-linter rules for Python layering
 warmly/                  FastAPI backend package
 src/                     TypeScript PWA (app.ts shell, main.ts bootstrap + SW registration)

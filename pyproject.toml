@@ -71,6 +71,11 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+markers = [
+    "integration: tests that need a real external service such as PostgreSQL",
+    "e2e: end-to-end tests that exercise the whole backend",
+]
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
 source = ["warmly"]
@@ -118,9 +123,10 @@ disallow_untyped_defs = false
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-# Agent context (.claude/) and docs contain illustrative code blocks in Markdown,
-# and the frontend toolchain directories are not Python.
-extend-exclude = [".claude", "docs", "plans", "node_modules", "dist", "coverage", "playwright-report", "test-results", "reports"]
+# Agent context (.claude/), docs and the filed backlog (git-issues/) contain
+# illustrative code blocks in Markdown, and the frontend toolchain directories are
+# not Python.
+extend-exclude = [".claude", "docs", "git-issues", "plans", "node_modules", "dist", "coverage", "playwright-report", "test-results", "reports"]
 
 [tool.ruff.lint]
 select = [

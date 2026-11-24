@@ -7,7 +7,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
-FIX=false
 CHECK=false
 VERBOSE=false
 
@@ -15,7 +14,7 @@ VERBOSE=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --fix)
-            FIX=true
+            # Formatting in place is the default; the flag is accepted for symmetry.
             shift
             ;;
         --check)
@@ -64,7 +63,7 @@ if $VERBOSE; then
     set -x
 fi
 
-echo "=== Formatting (Black + isort) ==="
+echo "=== Formatting (isort + Black + Ruff) ==="
 
 # Determine mode
 if $CHECK; then
@@ -84,6 +83,13 @@ if $VERBOSE; then
     echo "Running Black..."
 fi
 black $MODE . || { echo "✗ Black failed" >&2; exit 1; }
+
+# Run the Ruff formatter last. CI runs `ruff format --check .`, which also
+# formats Python code blocks inside Markdown, so the local gate must match it.
+if $VERBOSE; then
+    echo "Running Ruff format..."
+fi
+ruff format $MODE . || { echo "✗ Ruff format failed" >&2; exit 1; }
 
 if [ -n "$MODE" ]; then
     echo "✓ Code formatting check passed"
