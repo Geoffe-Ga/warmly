@@ -29,6 +29,7 @@ export type RouteId =
   | "recovery-key"
   | "sign-in"
   | "reset-password"
+  | "new-password"
   | "recover"
   | "locked";
 
@@ -193,6 +194,13 @@ export const ROUTES: readonly RouteDef[] = [
     path: "/sign-in/reset",
     title: "Reset your password",
     summary: "Get a link to choose a new password.",
+    access: "public",
+  },
+  {
+    id: "new-password",
+    path: "/sign-in/new-password",
+    title: "Choose a new password",
+    summary: "Set a new password from the link we emailed you.",
     access: "public",
   },
   {

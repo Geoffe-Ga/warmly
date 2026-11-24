@@ -188,6 +188,68 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
     await expectNoViolations(page);
   });
 
+  test("a reset link sets a new password that signs in but does not unlock", async ({
+    page,
+  }) => {
+    const newPassword = ["staple", "window", "orange"].join(" ");
+    await onboard(page);
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("link", { name: "Forgot your password?" }).click();
+    await page.getByLabel("Email").fill(ACCOUNT.email);
+    await page.getByRole("button", { name: "Send reset link" }).click();
+    await expect(
+      page.getByText("If that address has an account"),
+    ).toBeVisible();
+
+    // The doubles send no email: opening the page stands in for the link.
+    await page.goto("/sign-in/new-password");
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Choose a new password" }),
+    ).toBeVisible();
+    await expectNoViolations(page);
+
+    await page.getByLabel("New password").fill("short");
+    await page.getByRole("button", { name: "Save new password" }).click();
+    await expect(page.getByText("Use at least 12 characters")).toBeVisible();
+    await expectNoViolations(page);
+
+    await page.getByLabel("New password").fill(newPassword);
+    await page.getByRole("button", { name: "Save new password" }).click();
+    await expect(
+      page.getByText("Sign in with your new password"),
+    ).toBeVisible();
+    await expectNoViolations(page);
+
+    await page.getByRole("link", { name: "Sign in" }).click();
+    await page.getByLabel("Email").fill(ACCOUNT.email);
+    await page.getByLabel("Password").fill(newPassword);
+    await page.getByRole("button", { name: "Sign in" }).click();
+    // Signed in, but the journal is still locked: a password never unlocks.
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Warmly is locked" }),
+    ).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Primary" })).toHaveCount(
+      0,
+    );
+  });
+
+  test("a used reset link is refused with a way forward", async ({ page }) => {
+    await page.goto("/sign-in/new-password");
+    await page
+      .getByLabel("New password")
+      .fill(["staple", "window", "orange"].join(" "));
+    await page.getByRole("button", { name: "Save new password" }).click();
+
+    await expect(page.getByRole("alert")).toContainText(
+      "expired or was already used",
+    );
+    await expectNoViolations(page);
+    await page.getByRole("link", { name: "Send a new one" }).click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Reset your password" }),
+    ).toBeVisible();
+  });
+
   test("the recovery-key screen unlocks and is accessible", async ({
     page,
   }) => {

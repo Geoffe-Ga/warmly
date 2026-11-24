@@ -22,9 +22,16 @@ interface FakeAuthState {
   pending: string | null;
   /** The signed-in address, if any. */
   signedIn: string | null;
+  /** The address a reset link was last "sent" to, if it is still unused. */
+  resetFor: string | null;
 }
 
-const EMPTY: FakeAuthState = { accounts: [], pending: null, signedIn: null };
+const EMPTY: FakeAuthState = {
+  accounts: [],
+  pending: null,
+  signedIn: null,
+  resetFor: null,
+};
 
 function passwordFor(state: FakeAuthState, email: string): string | undefined {
   return state.accounts.find(([registered]) => registered === email)?.[1];
@@ -97,7 +104,28 @@ export class FakeAuthClient implements AuthClient {
     return Promise.resolve();
   }
 
-  requestPasswordReset(): Promise<void> {
+  requestPasswordReset(email: string): Promise<void> {
+    const state = this.#read();
+    state.resetFor = email;
+    this.#write(state);
+    return Promise.resolve();
+  }
+
+  /**
+   * There is no email here, so asking for a reset stands in for opening the
+   * link. Like a real link it works once, and only for an existing account.
+   */
+  completePasswordReset(newPassword: string): Promise<void> {
+    const state = this.#read();
+    const account = state.accounts.find(([email]) => email === state.resetFor);
+    state.resetFor = null;
+    if (account === undefined) {
+      this.#write(state);
+      return Promise.reject(new AuthError("reset_link_invalid"));
+    }
+    account[1] = newPassword;
+    state.signedIn = null;
+    this.#write(state);
     return Promise.resolve();
   }
 }

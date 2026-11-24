@@ -30,7 +30,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 | --- | --- | --- |
 | Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003); storage planned: #25 |
 | Backend or operator curiosity | Same, plus logs that cannot contain request content | Logging: **in place** (this issue) |
-| Cross-account access | Owner-only API checks and database policies | Planned: #15, #18, #38 |
+| Cross-account access | Owner taken only from a verified token ([authentication](authentication.md)); owner-only database policies (ADR-0002) | **In place**; per-route ownership checks arrive with each route, rate limits: #38 |
 | Stolen session token | Every request also signed by a device key | Planned: #21 |
 | Stolen locked device | Root key wrapped at rest; inactivity lock | Planned: #20 |
 | Offline edit conflicts | Compare-and-swap; both versions kept | Planned: #33, #36 |
@@ -57,7 +57,7 @@ the AI gateway adds them.
 The policy is delivered twice on purpose. The header is authoritative and is
 the only place `frame-ancestors` works. The `<meta>` tag travels inside
 `index.html`, so the page keeps a policy even on a host that sends no headers
-at all. A build with a `VITE_API_ORIGIN` or `VITE_AUTH_ORIGIN` that is not an
+at all. A build with a `VITE_API_ORIGIN` or `VITE_SUPABASE_URL` that is not an
 exact `https` origin fails, so a typo cannot quietly widen the policy.
 
 The production host must send the same headers. Until the deploy pipeline

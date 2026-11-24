@@ -19,6 +19,14 @@ const MESSAGES: Readonly<Record<AuthErrorCode | VaultErrorCode, string>> = {
     "That recovery key didn't work. Check each group of characters and try again.",
   no_keys_on_device:
     "This device can't unlock on its own. Use your recovery key instead.",
+  weak_password:
+    "That password is too easy to guess. Choose a longer or less common one.",
+  rate_limited:
+    "Too many attempts in a short time. Wait a few minutes, then try again.",
+  offline:
+    "We couldn't reach the sign-in service. Check your connection and try again. Nothing was changed.",
+  reset_link_invalid:
+    "This reset link has expired or was already used. Ask for a new one and open it on this device.",
   unavailable:
     "Accounts aren't available in this version of Warmly yet. Nothing was sent or saved.",
 };

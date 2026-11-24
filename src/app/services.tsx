@@ -5,6 +5,10 @@ import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 
 import { UnavailableAuthClient, type AuthClient } from "../auth/auth-client";
+import {
+  createSupabaseAuthClient,
+  readSupabaseAuthConfig,
+} from "../auth/supabase-auth-client";
 import { UnavailableKeyVault, type KeyVault } from "../crypto/key-vault";
 import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeKeyVault } from "../testing/fake-key-vault";
@@ -21,21 +25,44 @@ export interface Services {
 }
 
 /**
+ * Choose the auth client for this build.
+ *
+ * A build configured with a Supabase project gets the real client. Without
+ * one, a production build gets the "unavailable" stand-in, and every other
+ * build (development, unit tests, the `e2e` build) gets the in-memory double.
+ * The build mode is a compile-time constant, so the double is removed from
+ * production bundles.
+ *
+ * @param env - The build-time variables.
+ * @returns The auth client.
+ */
+export function createAuthClient(
+  env: Readonly<Record<string, unknown>>,
+): AuthClient {
+  const config = readSupabaseAuthConfig(env);
+  if (config !== undefined) {
+    return createSupabaseAuthClient(config);
+  }
+  return import.meta.env.MODE !== "production"
+    ? new FakeAuthClient()
+    : new UnavailableAuthClient();
+}
+
+/**
  * Build the services for this build.
  *
- * The build mode is a compile-time constant. In a production build the
- * condition is `false`, so the in-memory doubles are removed from the bundle
- * and the app uses the "unavailable" stand-ins until the real clients land
- * (issues #18 and #20). Development, unit tests and the `e2e` build get the
- * doubles.
+ * The key vault is still a double outside production and "unavailable" in
+ * production, until the real one lands (issues #19 and #20).
  *
  * @returns Fresh services with a signed-out session.
  */
 export function createServices(): Services {
-  const useDoubles = import.meta.env.MODE !== "production";
   return {
-    auth: useDoubles ? new FakeAuthClient() : new UnavailableAuthClient(),
-    vault: useDoubles ? new FakeKeyVault() : new UnavailableKeyVault(),
+    auth: createAuthClient(import.meta.env),
+    vault:
+      import.meta.env.MODE !== "production"
+        ? new FakeKeyVault()
+        : new UnavailableKeyVault(),
     session: createSession(),
     onboarding: createOnboarding(),
   };

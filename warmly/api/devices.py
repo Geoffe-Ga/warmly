@@ -4,9 +4,10 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
-from warmly.api.errors import INVALID_REQUEST_RESPONSES
+from warmly.api.errors import SIGNED_IN_RESPONSES
 from warmly.api.fixtures import STUB_CIPHERTEXT, STUB_PUBLIC_KEY, STUB_TIME
 from warmly.api.stub import mark_stub
+from warmly.auth.dependency import require_owner
 from warmly.schemas.devices import (
     Device,
     DeviceList,
@@ -17,8 +18,8 @@ from warmly.schemas.devices import (
 router = APIRouter(
     prefix="/devices",
     tags=["devices"],
-    dependencies=[Depends(mark_stub)],
-    responses=INVALID_REQUEST_RESPONSES,
+    dependencies=[Depends(require_owner), Depends(mark_stub)],
+    responses=SIGNED_IN_RESPONSES,
 )
 
 

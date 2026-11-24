@@ -370,6 +370,81 @@ describe("password reset (DEV-006)", () => {
   });
 });
 
+describe("choosing a new password from the emailed link (DEV-006)", () => {
+  const NEW_PASSWORD = ["staple", "window", "orange"].join(" ");
+
+  async function accountWithResetRequested() {
+    const services = testServices();
+    await services.auth.register(ACCOUNT.email, ACCOUNT.password);
+    await services.auth.completeVerification();
+    await services.auth.signOut();
+    await services.auth.requestPasswordReset(ACCOUNT.email);
+    return services;
+  }
+
+  it("sets the password, leaves the user signed out and points to sign in", async () => {
+    const services = await accountWithResetRequested();
+    await renderApp("/sign-in/new-password", services);
+
+    await fill("New password", NEW_PASSWORD);
+    await press("Save new password");
+
+    expect(
+      await screen.findByText(/Sign in with your new password/),
+    ).toBeDefined();
+    expect(
+      screen.getByText(/you still need\s+a device you already use/),
+    ).toBeDefined();
+    expect(screen.queryByLabelText("New password")).toBeNull();
+    expect(services.session.state).toBe("signed_out");
+    await expect(services.auth.isSignedIn()).resolves.toBe(false);
+
+    await userEvent.click(screen.getByRole("link", { name: "Sign in" }));
+    await onHeading("Sign in");
+    await fill("Email", ACCOUNT.email);
+    await fill("Password", NEW_PASSWORD);
+    await press("Sign in");
+    await onHeading("Unlock with your recovery key");
+  });
+
+  it("says the password does not unlock the journal", async () => {
+    await renderApp("/sign-in/new-password");
+
+    expect(screen.getByText(/it does not unlock your journal/)).toBeDefined();
+  });
+
+  it("checks the length before sending anything", async () => {
+    const services = await accountWithResetRequested();
+    await renderApp("/sign-in/new-password", services);
+
+    await fill("New password", "short");
+    await press("Save new password");
+
+    expect(screen.getByText(/Use at least 12 characters/)).toBeDefined();
+    expect(document.activeElement).toBe(screen.getByLabelText("New password"));
+    // The link was not spent on the invalid attempt.
+    await fill("New password", NEW_PASSWORD);
+    await press("Save new password");
+    expect(
+      await screen.findByText(/Sign in with your new password/),
+    ).toBeDefined();
+  });
+
+  it("explains an expired or used link and offers a new one", async () => {
+    await renderApp("/sign-in/new-password");
+
+    await fill("New password", NEW_PASSWORD);
+    await press("Save new password");
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "expired or was already used",
+    );
+    expect(
+      screen.getByRole("link", { name: "Send a new one" }).getAttribute("href"),
+    ).toBe("/sign-in/reset");
+  });
+});
+
 describe("the locked screen shows nothing private (UI-008)", () => {
   it("has no navigation into private screens and no entry details", async () => {
     await renderApp("/locked", testServices("signed_in_locked"));

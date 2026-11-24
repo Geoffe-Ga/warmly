@@ -23,8 +23,16 @@ DEV_DATABASE_URL = "postgresql://warmly_admin@127.0.0.1:5432/warmly_dev"
 # Names that can only mean "this machine", which production must never use.
 _LOCAL_NAMES = frozenset({"localhost", ""})
 
+# The auth service of the Supabase local stack (`supabase start`).
+DEV_AUTH_ISSUER = "http://127.0.0.1:54321/auth/v1"
+# The audience the auth provider puts in every signed-in user's token.
+DEFAULT_AUTH_AUDIENCE = "authenticated"
+_JWKS_PATH = "/.well-known/jwks.json"
+
 ENV_VAR = "WARMLY_ENV"
 DATABASE_URL_VAR = "WARMLY_DATABASE_URL"
+AUTH_ISSUER_VAR = "WARMLY_AUTH_ISSUER"
+AUTH_AUDIENCE_VAR = "WARMLY_AUTH_AUDIENCE"
 
 _UNKNOWN_ENVIRONMENT = "WARMLY_ENV must be one of: development, test, production"
 _MISSING_DATABASE_URL = "WARMLY_DATABASE_URL is required in production"
@@ -40,6 +48,15 @@ _LOCAL_DATABASE_IN_PRODUCTION = (
 )
 
 
+_MISSING_AUTH_ISSUER = "WARMLY_AUTH_ISSUER is required in production"
+_INSECURE_AUTH_ISSUER = (
+    "WARMLY_AUTH_ISSUER must be an https URL that is not on this machine in production"
+)
+_MALFORMED_AUTH_ISSUER = (
+    "WARMLY_AUTH_ISSUER must be an http(s) URL with a host and no query or fragment"
+)
+
+
 class SettingsError(ValueError):
     """Raised when the environment does not describe a safe configuration."""
 
@@ -51,6 +68,15 @@ class Settings:
     environment: Environment
     # Kept out of repr(): a connection URL can contain a password.
     database_url: str = field(repr=False)
+    # The exact `iss` an access token must carry, with no trailing slash.
+    auth_issuer: str = DEV_AUTH_ISSUER
+    # The `aud` an access token must include.
+    auth_audience: str = DEFAULT_AUTH_AUDIENCE
+
+    @property
+    def auth_jwks_url(self) -> str:
+        """Where the auth provider publishes its token-signing public keys."""
+        return self.auth_issuer + _JWKS_PATH
 
 
 def _environment(env: Mapping[str, str]) -> Environment:
@@ -88,6 +114,32 @@ def _requires_tls(database_url: str) -> bool:
     return len(modes) == 1 and modes[0] in _ENCRYPTED_SSL_MODES
 
 
+def _auth_issuer(source: Mapping[str, str], environment: Environment) -> str:
+    """Read and validate the token issuer.
+
+    Raises:
+        SettingsError: If it is malformed, or production has none or one that
+            is not HTTPS on another machine.
+    """
+    issuer = source.get(AUTH_ISSUER_VAR, "").rstrip("/")
+    production = environment == "production"
+    if not issuer:
+        if production:
+            raise SettingsError(_MISSING_AUTH_ISSUER)
+        return DEV_AUTH_ISSUER
+    parts = urlsplit(issuer)
+    if (
+        parts.scheme not in {"http", "https"}
+        or not parts.hostname
+        or parts.query
+        or parts.fragment
+    ):
+        raise SettingsError(_MALFORMED_AUTH_ISSUER)
+    if production and (parts.scheme != "https" or _is_local(issuer)):
+        raise SettingsError(_INSECURE_AUTH_ISSUER)
+    return issuer
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     """Build settings from environment variables.
 
@@ -99,8 +151,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     Raises:
         SettingsError: If the environment name is unknown, or production is
-            missing a database URL, points at a local database, or does not
-            require an encrypted connection.
+            missing a database URL, points at a local database, does not
+            require an encrypted connection, or has no safe token issuer.
     """
     source = os.environ if env is None else env
     environment = _environment(source)
@@ -113,5 +165,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         if not _requires_tls(database_url):
             raise SettingsError(_UNENCRYPTED_DATABASE_IN_PRODUCTION)
     return Settings(
-        environment=environment, database_url=database_url or DEV_DATABASE_URL
+        environment=environment,
+        database_url=database_url or DEV_DATABASE_URL,
+        auth_issuer=_auth_issuer(source, environment),
+        auth_audience=source.get(AUTH_AUDIENCE_VAR) or DEFAULT_AUTH_AUDIENCE,
     )

@@ -135,14 +135,53 @@ python -m warmly.main          # serves http://127.0.0.1:8000
 curl http://127.0.0.1:8000/v1/health
 ```
 
-Every route except health and readiness is still a stub: it returns fixed data, stores
-nothing, and says so with a `Warmly-Stub: true` response header. The contract lives in
+Every route except health and readiness needs `Authorization: Bearer <access token>`
+and is still a stub: it returns fixed data, stores nothing, and says so with a
+`Warmly-Stub: true` response header. The contract lives in
 `openapi/warmly.v1.json` and is served at `/v1/openapi.json`.
 
 After changing a route or model, run `./scripts/contract.sh` and commit the regenerated
 `openapi/warmly.v1.json` and `src/api/schema.d.ts`. Never edit either by hand. Runtime
 dependencies are pinned with hashes: edit `requirements.in`, then run
 `pip-compile --generate-hashes --strip-extras --output-file requirements.txt requirements.in`.
+
+### Accounts and sign-in
+
+By default `npm run dev` uses in-memory account doubles: nothing is sent anywhere and
+nothing you type is real. To use real accounts, point the app at a Supabase project.
+How the pieces fit is described in [docs/security/authentication.md](docs/security/authentication.md).
+
+**Against the Supabase local stack** (needs Docker and the
+[Supabase CLI](https://supabase.com/docs/guides/local-development)):
+
+```bash
+supabase start          # prints the API URL and the publishable key
+supabase status         # shows them again later
+```
+
+Put the two values in `.env.local` (see `.env.example`), then:
+
+```bash
+npm run dev                                   # the frontend now uses the local stack
+python -m warmly.main                         # the API trusts http://127.0.0.1:54321/auth/v1 by default
+```
+
+The API only accepts tokens signed with an asymmetric key (ES256 or RS256). If the
+local stack signs with a shared secret, requests are refused with
+`auth.invalid_token`; give the stack a signing key as the CLI's documentation for
+JWT signing keys describes. Emails sent by the local stack appear in its mail viewer,
+whose address `supabase status` prints.
+
+**Against a hosted project**, set the same two `VITE_` variables for the build and
+`WARMLY_AUTH_ISSUER=<project URL>/auth/v1` for the API. In the project's dashboard:
+
+- Keep **Confirm email** on. It is what stops an unverified address from getting a
+  token at all.
+- Use an asymmetric JWT signing key.
+- Add `<app origin>/welcome/verify` and `<app origin>/sign-in/new-password` to the
+  allowed redirect URLs.
+- Use only the **publishable** key in the frontend. The secret key never goes in a
+  `VITE_` variable or in this repository.
 
 ## Open decisions
 

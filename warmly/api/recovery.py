@@ -2,16 +2,17 @@
 
 from fastapi import APIRouter, Depends
 
-from warmly.api.errors import INVALID_REQUEST_RESPONSES
+from warmly.api.errors import SIGNED_IN_RESPONSES
 from warmly.api.fixtures import STUB_CIPHERTEXT
 from warmly.api.stub import mark_stub
+from warmly.auth.dependency import require_owner
 from warmly.schemas.recovery import PutRecoveryEnvelopeRequest, RecoveryEnvelope
 
 router = APIRouter(
     prefix="/recovery-envelope",
     tags=["recovery"],
-    dependencies=[Depends(mark_stub)],
-    responses=INVALID_REQUEST_RESPONSES,
+    dependencies=[Depends(require_owner), Depends(mark_stub)],
+    responses=SIGNED_IN_RESPONSES,
 )
 
 

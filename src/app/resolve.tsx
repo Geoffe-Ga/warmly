@@ -9,6 +9,7 @@ import { Home } from "../ui/screens/Home";
 import { NotFound } from "../ui/screens/NotFound";
 import { Placeholder } from "../ui/screens/Placeholder";
 import { Locked } from "../ui/screens/account/Locked";
+import { NewPassword } from "../ui/screens/account/NewPassword";
 import { Recover } from "../ui/screens/account/Recover";
 import { RecoveryKey } from "../ui/screens/account/RecoveryKey";
 import { Register } from "../ui/screens/account/Register";
@@ -38,6 +39,7 @@ const SCREENS: Readonly<Partial<Record<RouteId, () => JSX.Element>>> = {
   "recovery-key": RecoveryKey,
   "sign-in": SignIn,
   "reset-password": ResetPassword,
+  "new-password": NewPassword,
   recover: Recover,
   locked: Locked,
 };

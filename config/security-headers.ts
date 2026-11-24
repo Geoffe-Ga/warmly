@@ -14,6 +14,28 @@ export interface ConnectSources {
   readonly authOrigin?: string;
 }
 
+/**
+ * Work out the extra origins from the build's environment variables.
+ *
+ * The auth origin is taken from `VITE_SUPABASE_URL`, the same variable the app
+ * reads, so the policy can never allow a different host from the one the app
+ * actually calls.
+ *
+ * @param env - Build-time variables.
+ * @returns The origins to allow. Unset variables allow nothing extra.
+ * @throws TypeError if `VITE_SUPABASE_URL` is set but is not a URL.
+ */
+export function connectSourcesFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+): ConnectSources {
+  const apiOrigin = env["VITE_API_ORIGIN"];
+  const supabaseUrl = env["VITE_SUPABASE_URL"];
+  return {
+    ...(apiOrigin ? { apiOrigin } : {}),
+    ...(supabaseUrl ? { authOrigin: new URL(supabaseUrl).origin } : {}),
+  };
+}
+
 const SELF = "'self'";
 const NONE = "'none'";
 

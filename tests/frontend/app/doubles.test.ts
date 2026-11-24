@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { createServices } from "../../../src/app/services";
+import { createAuthClient, createServices } from "../../../src/app/services";
 import {
   AuthError,
   UnavailableAuthClient,
 } from "../../../src/auth/auth-client";
+import { SupabaseAuthClient } from "../../../src/auth/supabase-auth-client";
 import { UnavailableKeyVault, VaultError } from "../../../src/crypto/key-vault";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import {
@@ -69,8 +70,50 @@ describe("FakeAuthClient", () => {
 
   it("accepts a reset request for any address", async () => {
     await expect(
-      new FakeAuthClient().requestPasswordReset(),
+      new FakeAuthClient().requestPasswordReset("anyone@example.com"),
     ).resolves.toBeUndefined();
+  });
+
+  it("changes the password through a reset, once, and signs the user out", async () => {
+    const auth = new FakeAuthClient();
+    await auth.register("a@example.com", "the first password");
+    await auth.completeVerification();
+
+    await auth.requestPasswordReset("a@example.com");
+    await auth.completePasswordReset("the second password");
+
+    await expect(auth.isSignedIn()).resolves.toBe(false);
+    await expect(
+      auth.signIn("a@example.com", "the first password"),
+    ).rejects.toMatchObject({ code: "invalid_credentials" });
+    await expect(
+      auth.signIn("a@example.com", "the second password"),
+    ).resolves.toBeUndefined();
+    await expect(
+      auth.completePasswordReset("a third password"),
+    ).rejects.toMatchObject({ code: "reset_link_invalid" });
+  });
+
+  it("refuses to set a password without a reset link", async () => {
+    const auth = new FakeAuthClient();
+    await auth.register("a@example.com", "the first password");
+
+    await expect(
+      auth.completePasswordReset("an attacker password"),
+    ).rejects.toMatchObject({ code: "reset_link_invalid" });
+  });
+
+  it("does not create an account through a reset for an unknown address", async () => {
+    const auth = new FakeAuthClient();
+
+    await auth.requestPasswordReset("nobody@example.com");
+
+    await expect(
+      auth.completePasswordReset("a new password"),
+    ).rejects.toMatchObject({ code: "reset_link_invalid" });
+    await expect(
+      auth.signIn("nobody@example.com", "a new password"),
+    ).rejects.toMatchObject({ code: "invalid_credentials" });
   });
 
   it("uses the storage it is given", async () => {
@@ -144,6 +187,7 @@ describe("stand-ins for builds without real services", () => {
       auth.completeVerification(),
       auth.signIn(),
       auth.requestPasswordReset(),
+      auth.completePasswordReset(),
     ]) {
       await expect(attempt).rejects.toMatchObject({ code: "unavailable" });
     }
@@ -166,6 +210,26 @@ describe("stand-ins for builds without real services", () => {
   });
 });
 
+describe("createAuthClient", () => {
+  it("uses the real client when a Supabase project is configured", () => {
+    const auth = createAuthClient({
+      VITE_SUPABASE_URL: "https://project.example",
+      VITE_SUPABASE_PUBLISHABLE_KEY: ["sb", "publishable", "synthetic"].join(
+        "_",
+      ),
+    });
+
+    expect(auth).toBeInstanceOf(SupabaseAuthClient);
+  });
+
+  it("uses the in-memory double when nothing is configured", () => {
+    expect(createAuthClient({})).toBeInstanceOf(FakeAuthClient);
+    expect(
+      createAuthClient({ VITE_SUPABASE_URL: "https://project.example" }),
+    ).toBeInstanceOf(FakeAuthClient);
+  });
+});
+
 describe("createServices", () => {
   it("uses the in-memory doubles outside production builds", () => {
     const services = createServices();
@@ -182,6 +246,10 @@ describe("describeError", () => {
     [new AuthError("invalid_credentials"), "don't match"],
     [new AuthError("email_not_verified"), "isn't verified yet"],
     [new AuthError("unavailable"), "aren't available in this version"],
+    [new AuthError("weak_password"), "too easy to guess"],
+    [new AuthError("rate_limited"), "Wait a few minutes"],
+    [new AuthError("offline"), "Check your connection"],
+    [new AuthError("reset_link_invalid"), "Ask for a new one"],
     [new VaultError("wrong_recovery_key"), "recovery key didn't work"],
     [new VaultError("no_keys_on_device"), "Use your recovery key instead"],
   ])("explains %s", (error, expected) => {
