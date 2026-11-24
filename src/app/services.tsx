@@ -4,14 +4,21 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 
+import {
+  ApiRecoveryEnvelopeStore,
+  type RecoveryEnvelopeStore,
+} from "../api/recovery-envelope-store";
 import { UnavailableAuthClient, type AuthClient } from "../auth/auth-client";
 import {
   createSupabaseAuthClient,
   readSupabaseAuthConfig,
 } from "../auth/supabase-auth-client";
+import { AccountVault } from "../crypto/account-vault";
+import type { DeviceKeyStore } from "../crypto/device-key-store";
 import { UnavailableKeyVault, type KeyVault } from "../crypto/key-vault";
 import { FakeAuthClient } from "../testing/fake-auth-client";
-import { FakeKeyVault } from "../testing/fake-key-vault";
+import { FakeDeviceKeyStore } from "../testing/fake-device-key-store";
+import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
 import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
 
@@ -53,28 +60,72 @@ export function createAuthClient(
 }
 
 /**
+ * Choose the key vault for a build.
+ *
+ * With doubles available (every build but production), the real vault runs
+ * on an in-memory "server" and device store, so the real cryptography is
+ * exercised in development and in the browser tests. A production build
+ * configured with a Supabase project gets the real vault on the Warmly API,
+ * with no device store until trusted-device unlock lands (issue #20). An
+ * unconfigured production build gets the "unavailable" stand-in.
+ *
+ * @param env - The build-time variables.
+ * @param auth - The auth client the vault asks who is signed in.
+ * @param doubles - The in-memory stores. Production builds pass nothing.
+ * @returns The key vault.
+ */
+export function createKeyVault(
+  env: Readonly<Record<string, unknown>>,
+  auth: AuthClient,
+  doubles?: {
+    readonly envelopes: RecoveryEnvelopeStore;
+    readonly device: DeviceKeyStore;
+  },
+): KeyVault {
+  if (doubles !== undefined) {
+    return new AccountVault(auth, doubles.envelopes, doubles.device);
+  }
+  if (readSupabaseAuthConfig(env) === undefined) {
+    return new UnavailableKeyVault();
+  }
+  const apiOrigin = env["VITE_API_ORIGIN"];
+  return new AccountVault(
+    auth,
+    new ApiRecoveryEnvelopeStore(
+      typeof apiOrigin === "string" ? apiOrigin : "",
+      (input, init) => fetch(input, init),
+    ),
+  );
+}
+
+/**
  * Build the services for this build.
  *
  * `import.meta.env.MODE` is a compile-time constant. In a production build
  * the conditions below are `false`, so the bundler drops the in-memory
- * doubles from the bundle; a browser test checks the built files. The key
- * vault is "unavailable" in production until the real one lands (issues #19
- * and #20).
+ * doubles from the bundle; a browser test checks the built files.
  *
  * @returns Fresh services with a signed-out session.
  */
 export function createServices(): Services {
+  const auth = createAuthClient(
+    import.meta.env,
+    import.meta.env.MODE !== "production"
+      ? () => new FakeAuthClient()
+      : undefined,
+  );
   return {
-    auth: createAuthClient(
+    auth,
+    vault: createKeyVault(
       import.meta.env,
+      auth,
       import.meta.env.MODE !== "production"
-        ? () => new FakeAuthClient()
+        ? {
+            envelopes: new FakeRecoveryEnvelopeStore(),
+            device: new FakeDeviceKeyStore(),
+          }
         : undefined,
     ),
-    vault:
-      import.meta.env.MODE !== "production"
-        ? new FakeKeyVault()
-        : new UnavailableKeyVault(),
     session: createSession(),
     onboarding: createOnboarding(),
   };

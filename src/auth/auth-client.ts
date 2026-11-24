@@ -28,10 +28,20 @@ export class AuthError extends Error {
   }
 }
 
+/** Who is signed in, and the credential the Warmly API accepts for them. */
+export interface AuthSession {
+  /** The account's ID. It is the owner every record is bound to. */
+  readonly userId: string;
+  /** A short-lived access token. Never store or log it. */
+  readonly accessToken: string;
+}
+
 /** Email and password accounts with verification and reset. */
 export interface AuthClient {
   /** Whether a signed-in session already exists, for example after a reload. */
   isSignedIn(): Promise<boolean>;
+  /** The signed-in session, or `undefined` when signed out. */
+  currentSession(): Promise<AuthSession | undefined>;
   /**
    * Create an account and send a verification email.
    *
@@ -75,6 +85,10 @@ export interface AuthClient {
 export class UnavailableAuthClient implements AuthClient {
   isSignedIn(): Promise<boolean> {
     return Promise.resolve(false);
+  }
+
+  currentSession(): Promise<AuthSession | undefined> {
+    return Promise.resolve(undefined);
   }
 
   register(): Promise<void> {

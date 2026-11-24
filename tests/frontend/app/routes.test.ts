@@ -24,6 +24,7 @@ describe("route table", () => {
       "print",
       "settings",
       "devices",
+      "rotate-recovery-key",
       "onboarding",
       "verify-email",
       "recovery-key",

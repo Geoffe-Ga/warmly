@@ -242,23 +242,35 @@ export interface paths {
      * Read the recovery envelope
      * @description Read the caller's wrapped root key.
      *
-     *     Stub: returns a fixed synthetic envelope.
+     *     Args:
+     *         owner: The verified caller.
+     *         store: Where envelopes are kept.
      *
      *     Returns:
-     *         A version 1 envelope holding an obviously synthetic value.
+     *         The caller's envelope.
+     *
+     *     Raises:
+     *         ProblemError: 404 if the account has not created its keys yet.
      */
     get: operations["get_recovery_envelope_v1_recovery_envelope_get"];
     /**
      * Create or rotate the recovery envelope
      * @description Create or rotate the wrapped root key with compare-and-swap.
      *
-     *     Stub: echoes the envelope with the next version number, storing nothing.
+     *     ``expected_version`` 0 creates the envelope and fails if one exists. Any
+     *     other value replaces exactly that version. A failed attempt changes
+     *     nothing, so an interrupted rotation leaves the old recovery key valid.
      *
      *     Args:
      *         request: The new envelope and the version it replaces.
+     *         owner: The verified caller.
+     *         store: Where envelopes are kept.
      *
      *     Returns:
-     *         The envelope as it would have been stored.
+     *         The envelope as stored, with its new version.
+     *
+     *     Raises:
+     *         ProblemError: 409 if the stored version is not the expected one.
      */
     put: operations["put_recovery_envelope_v1_recovery_envelope_put"];
     post?: never;
@@ -1139,6 +1151,15 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description The account has no recovery envelope */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
         headers: {
@@ -1183,6 +1204,15 @@ export interface operations {
       };
       /** @description Missing or unacceptable access token */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The envelope is not at the expected version */
+      409: {
         headers: {
           [name: string]: unknown;
         };

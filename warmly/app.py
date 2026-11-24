@@ -9,10 +9,12 @@ from fastapi import FastAPI
 from warmly import __version__
 from warmly.api import API_PREFIX, build_api_router
 from warmly.api.errors import install_error_handlers
+from warmly.api.ports import RecoveryStore
 from warmly.auth.keys import remote_key_source
 from warmly.auth.verifier import TokenVerifier
 from warmly.config import Settings, load_settings
 from warmly.db.database import Database
+from warmly.db.recovery_store import OwnerTransactions, PostgresRecoveryStore
 from warmly.middleware.body_limit import BodyLimitMiddleware
 from warmly.middleware.request_log import RequestLogMiddleware
 from warmly.middleware.security_headers import SecurityHeadersMiddleware
@@ -24,7 +26,7 @@ API_DESCRIPTION = (
 )
 
 
-class DatabaseLike(Protocol):
+class DatabaseLike(OwnerTransactions, Protocol):
     """What the application needs from its database handle."""
 
     async def open(self) -> None:
@@ -54,6 +56,7 @@ def create_app(
     *,
     database: DatabaseLike | None = None,
     token_verifier: TokenVerifier | None = None,
+    recovery_store: RecoveryStore | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -67,6 +70,8 @@ def create_app(
             settings. Tests pass a double here.
         token_verifier: Verifier to use instead of one built from the
             settings. Tests pass one that trusts a locally generated key.
+        recovery_store: Where recovery envelopes are kept, instead of the
+            database table. Tests that run without a database pass a double.
 
     Returns:
         The configured application.
@@ -97,6 +102,7 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.token_verifier = token_verifier
+    app.state.recovery_store = recovery_store or PostgresRecoveryStore(database)
     install_error_handlers(app)
     app.include_router(build_api_router({"database": database.ping}))
     # Starlette runs the middleware added last first. Order, outermost first:

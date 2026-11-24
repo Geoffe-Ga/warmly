@@ -3,61 +3,112 @@
  * build. It must never be part of a production build; `services.ts` selects it
  * behind a compile-time condition and a browser test checks the real bundle.
  *
- * It keeps its small state in `sessionStorage` so a page reload behaves like a
- * real signed-in session. Everything in it is synthetic: there is no server,
+ * It keeps the signed-in state in `sessionStorage`, so a page reload behaves
+ * like a real signed-in session, and the accounts in `localStorage`, which
+ * plays the part of the server: a second tab is then a second device signing
+ * in to the same account. Everything in it is synthetic: there is no server,
  * no email is sent, and "verification" succeeds as soon as it is asked for.
  */
-import { AuthError, type AuthClient } from "../auth/auth-client";
+import {
+  AuthError,
+  type AuthClient,
+  type AuthSession,
+} from "../auth/auth-client";
 
 const STORAGE_KEY = "warmly.fake.auth";
+const SERVER_STORAGE_KEY = "warmly.fake.server.accounts";
 
-interface FakeAuthState {
+/** What the "server" knows. Kept in `localStorage`, shared by every tab. */
+interface FakeServerState {
   /**
    * Registered accounts as [email, password] pairs. A list, not an object
    * keyed by email, so an address such as `__proto__` is just another string.
    * Synthetic values only.
    */
   accounts: [email: string, password: string][];
-  /** The address awaiting verification, if any. */
-  pending: string | null;
-  /** The signed-in address, if any. */
-  signedIn: string | null;
   /** The address a reset link was last "sent" to, if it is still unused. */
   resetFor: string | null;
 }
 
-const EMPTY: FakeAuthState = {
-  accounts: [],
-  pending: null,
-  signedIn: null,
-  resetFor: null,
-};
+/** What this tab knows. Kept in `sessionStorage`, like a device's session. */
+interface FakeSessionState {
+  /** The address awaiting verification, if any. */
+  pending: string | null;
+  /** The signed-in address, if any. */
+  signedIn: string | null;
+}
+
+type FakeAuthState = FakeServerState & FakeSessionState;
 
 function passwordFor(state: FakeAuthState, email: string): string | undefined {
   return state.accounts.find(([registered]) => registered === email)?.[1];
 }
 
+function parse<T>(raw: string | null, empty: T): T {
+  return raw === null ? empty : (JSON.parse(raw) as T);
+}
+
 /** See the module comment. */
 export class FakeAuthClient implements AuthClient {
-  readonly #storage: Storage;
+  readonly #session: Storage;
+  readonly #server: Storage;
 
-  constructor(storage: Storage = sessionStorage) {
-    this.#storage = storage;
+  /**
+   * @param session - Holds this tab's signed-in state.
+   * @param server - Holds the accounts, standing in for the auth server. A
+   *   second tab sharing it behaves like a second device.
+   */
+  constructor(
+    session: Storage = sessionStorage,
+    server: Storage = localStorage,
+  ) {
+    this.#session = session;
+    this.#server = server;
   }
 
   #read(): FakeAuthState {
-    const raw = this.#storage.getItem(STORAGE_KEY);
-    return raw === null
-      ? structuredClone(EMPTY)
-      : (JSON.parse(raw) as FakeAuthState);
+    return {
+      ...parse<FakeServerState>(this.#server.getItem(SERVER_STORAGE_KEY), {
+        accounts: [],
+        resetFor: null,
+      }),
+      ...parse<FakeSessionState>(this.#session.getItem(STORAGE_KEY), {
+        pending: null,
+        signedIn: null,
+      }),
+    };
   }
 
   #write(state: FakeAuthState): void {
-    this.#storage.setItem(STORAGE_KEY, JSON.stringify(state));
+    const { accounts, resetFor, pending, signedIn } = state;
+    this.#server.setItem(
+      SERVER_STORAGE_KEY,
+      JSON.stringify({ accounts, resetFor }),
+    );
+    this.#session.setItem(STORAGE_KEY, JSON.stringify({ pending, signedIn }));
   }
 
   isSignedIn(): Promise<boolean> {
     return Promise.resolve(this.#read().signedIn !== null);
+  }
+
+  /**
+   * The fake's account IDs are the account's position in the list, written
+   * as a UUID, so they are stable across reloads and obviously synthetic.
+   */
+  currentSession(): Promise<AuthSession | undefined> {
+    const state = this.#read();
+    const index = state.accounts.findIndex(
+      ([email]) => email === state.signedIn,
+    );
+    return Promise.resolve(
+      index < 0
+        ? undefined
+        : {
+            userId: `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+            accessToken: "fake-access-token",
+          },
+    );
   }
 
   register(email: string, password: string): Promise<void> {

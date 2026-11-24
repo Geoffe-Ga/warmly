@@ -20,6 +20,8 @@ const EMAIL = "sam@example.com";
 const PHRASE = ["correct", "horse", "battery"].join(" ");
 const NEW_PHRASE = ["staple", "window", "orange"].join(" ");
 const ORIGIN = "https://warmly.example";
+const USER_ID = "0a1b2c3d-0000-4000-8000-00000000000a";
+const SESSION = { access_token: "opaque", user: { id: USER_ID } };
 
 function apiError(code: string, status = 400): AuthApiError {
   return new AuthApiError(`provider detail for ${EMAIL}`, status, code);
@@ -30,7 +32,7 @@ const OFFLINE = new AuthRetryableFetchError("Failed to fetch", 0);
 /** A scripted stand-in for the provider. Records every call it receives. */
 class StubApi implements AuthApi {
   readonly calls: [method: string, ...args: unknown[]][] = [];
-  session: object | null = null;
+  session: { access_token: string; user: { id: string } } | null = null;
   errors: Partial<Record<keyof AuthApi, unknown>> = {};
 
   #answer(method: keyof AuthApi, args: unknown[]): { error: unknown } {
@@ -119,9 +121,20 @@ describe("session", () => {
   it("is signed in when the provider holds a session", async () => {
     expect(await client.isSignedIn()).toBe(false);
 
-    api.session = { access_token: "opaque" };
+    api.session = SESSION;
 
     expect(await client.isSignedIn()).toBe(true);
+  });
+
+  it("gives the account ID and access token of the signed-in session", async () => {
+    expect(await client.currentSession()).toBeUndefined();
+
+    api.session = SESSION;
+
+    expect(await client.currentSession()).toEqual({
+      userId: USER_ID,
+      accessToken: "opaque",
+    });
   });
 
   it("reports a failure to read the session instead of guessing", async () => {
@@ -239,7 +252,7 @@ describe("email verification", () => {
   it("falls back to the stored session after a reload", async () => {
     expect(await client.completeVerification()).toBe(false);
 
-    api.session = { access_token: "opaque" };
+    api.session = SESSION;
 
     expect(await client.completeVerification()).toBe(true);
     expect(api.called("signInWithPassword")).toEqual([]);
@@ -379,7 +392,7 @@ describe("password reset (DEV-006)", () => {
   });
 
   it("refuses when the page was not opened from a link", async () => {
-    api.session = { access_token: "an ordinary session" };
+    api.session = SESSION;
 
     expect(
       await failure(client.completePasswordReset(NEW_PHRASE)),

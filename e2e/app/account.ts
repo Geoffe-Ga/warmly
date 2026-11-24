@@ -17,20 +17,62 @@ export const ACCOUNT = {
  * Create an account and finish onboarding, ending unlocked on Home.
  *
  * @param page - The page to drive.
+ * @returns The recovery key that was shown.
  */
-export async function onboard(page: Page): Promise<void> {
+export async function onboard(page: Page): Promise<string> {
   await page.goto("/welcome");
   await page.getByLabel("Email").fill(ACCOUNT.email);
   await page.getByLabel("Password").fill(ACCOUNT.password);
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByRole("button", { name: "I've opened the link" }).click();
 
-  const recoveryKey = await page.getByTestId("recovery-key").innerText();
-  const lastGroup = recoveryKey.trim().split("-").at(-1) ?? "";
-  await page.getByLabel("Type the last group of your key").fill(lastGroup);
+  const recoveryKey = (
+    await page.getByTestId("recovery-key").innerText()
+  ).trim();
+  await page
+    .getByLabel("Type the last group of your key")
+    .fill(lastGroup(recoveryKey));
   await page.getByRole("button", { name: "I've saved my key" }).click();
 
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+  return recoveryKey;
+}
+
+/**
+ * The last dash-separated group of a recovery key.
+ *
+ * @param recoveryKey - The key as shown.
+ * @returns Its final group.
+ */
+export function lastGroup(recoveryKey: string): string {
+  return recoveryKey.split("-").at(-1) ?? "";
+}
+
+/**
+ * Sign in on the sign-in screen with the given password.
+ *
+ * @param page - The page to drive.
+ * @param password - The password to type.
+ */
+export async function signIn(
+  page: Page,
+  password: string = ACCOUNT.password,
+): Promise<void> {
+  await page.goto("/sign-in");
+  await page.getByLabel("Email").fill(ACCOUNT.email);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+}
+
+/**
+ * Read the account key fingerprint from Settings, without reloading.
+ *
+ * @param page - An unlocked page.
+ * @returns The fingerprint shown.
+ */
+export async function keyFingerprint(page: Page): Promise<string> {
+  await openInApp(page, "/settings");
+  return (await page.getByTestId("key-fingerprint").innerText()).trim();
 }
 
 /**

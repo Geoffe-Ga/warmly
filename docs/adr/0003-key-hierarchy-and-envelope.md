@@ -53,7 +53,7 @@ binds owner, record ID, type and format version, and versioned formats.
 Use **option 2**, on WebCrypto only.
 
 ```
-recovery key ─┐                     (wraps, ADR-0003 addendum in #19)
+recovery key ─┐                     (wraps: see "Recovery key" below)
 device key ───┼─▶ account root key ─┬─▶ record key (per record ID) ─▶ AES-256-GCM
 pairing ──────┘   256 random bits   └─▶ fingerprint (public, one-way)
 ```
@@ -100,8 +100,53 @@ pairing ──────┘   256 random bits   └─▶ fingerprint (public,
   change. Sync already treats IDs as permanent.
 - Padding is not applied: ciphertext length reveals plaintext length. This is
   listed as residual metadata in the threat model.
-- Wrapping the root key (recovery key, trusted device, device pairing) is
-  decided in the issues that implement it: #19, #20 and #22.
+- Wrapping the root key with the recovery key is decided below. Wrapping for
+  a trusted device and for device pairing is decided in the issues that
+  implement them: #20 and #22.
+- The record type is in the associated data but not in the record key's
+  derivation. That is deliberate: a record ID belongs to one record of one
+  type, and the associated data already stops a record being read as another
+  type.
+- The two-byte length prefix and the one-byte record type are part of format
+  version 1. Widening either needs a new format version.
+
+## Recovery key (addendum, issue #19)
+
+**Decision D-04.** The recovery key is 256 bits from
+`crypto.getRandomValues`. Because it is uniformly random, the key that wraps
+the root key is derived from it with HKDF-SHA-256; a slow password KDF would
+add nothing (PRD §4.2 allows this for a high-entropy secret).
+
+- **Text form.** 35 bytes (the 32-byte secret, then the first 3 bytes of
+  `SHA-256("warmly/recovery-check/v1" | secret)`) in Crockford base32: 56
+  characters, shown as 14 groups of 4. The alphabet has no I, L, O or U.
+  When typed, case, spaces and dashes are ignored, O is read as 0, and I or L
+  as 1. The checksum tells a typo ("mistyped") from a key that belongs to
+  something else ("wrong key") without contacting the server.
+- **Wrapping key.** `HKDF-SHA-256(secret, salt = "warmly/hkdf-salt/v1",
+  info = "warmly/recovery-wrap/" | version | len(owner) | owner)`, used for
+  AES-256-GCM.
+- **Associated data.** `"warmly/recovery-envelope/" | version | len(owner) |
+  owner`.
+- **Recovery envelope, format version 1.** `version (1 byte) | nonce (12
+  random bytes) | AES-256-GCM of the 32-byte root key and its 16-byte tag`:
+  61 bytes. The server stores this and a rotation counter, nothing else.
+- **Confirm before save.** New keys, and a replacement recovery key, are
+  stored only after the user types back the last group of the key they were
+  shown. An abandoned attempt leaves the account exactly as it was, so nobody
+  can end up with keys whose recovery key they never saw.
+- **Rotation.** Replacing the recovery key re-wraps the *same* root key under
+  a new secret and swaps the envelope with one compare-and-swap on the
+  rotation counter. Records are untouched. If the swap does not happen, the
+  old key still works; if two devices race, exactly one wins and the other is
+  told. Rotation asks for the current recovery key, because the root key
+  cannot be exported from memory to be wrapped again.
+- **The password is not involved.** Resetting it changes no key material and
+  opens nothing (AC-18).
+- **What the server could do.** It can withhold or roll back the envelope,
+  which denies recovery but reveals nothing. It cannot open an envelope, and
+  it cannot make one account's envelope open as another's, because the owner
+  is bound into both the wrapping key and the associated data.
 
 ## What the tests do and do not show
 

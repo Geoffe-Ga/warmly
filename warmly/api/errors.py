@@ -41,6 +41,26 @@ _CODES_BY_STATUS = {
 }
 
 
+class ProblemError(Exception):
+    """An expected failure a route reports with its own stable code.
+
+    Carries a status and a code only. There is nowhere to put request data,
+    so nothing private can leak through it.
+    """
+
+    def __init__(self, status: HTTPStatus, code: str) -> None:
+        """Create the error.
+
+        Args:
+            status: The HTTP status to answer with.
+            code: Stable machine-readable code, for example
+                ``recovery.not_found``.
+        """
+        super().__init__(code)
+        self.status = status
+        self.code = code
+
+
 def problem_response(
     problem: Problem, headers: dict[str, str] | None = None
 ) -> JSONResponse:
@@ -170,6 +190,10 @@ async def handle_error(_request: object, exc: Exception) -> JSONResponse:
     Returns:
         The problem response.
     """
+    if isinstance(exc, ProblemError):
+        return problem_response(
+            Problem(title=exc.status.phrase, status=exc.status, code=exc.code)
+        )
     if isinstance(exc, AuthenticationError):
         return problem_response(auth_problem(exc), _CHALLENGE)
     if isinstance(exc, KeysUnavailableError):
@@ -187,6 +211,7 @@ def install_error_handlers(app: FastAPI) -> None:
     Args:
         app: The FastAPI application to configure.
     """
+    app.add_exception_handler(ProblemError, handle_error)
     app.add_exception_handler(AuthenticationError, handle_error)
     app.add_exception_handler(KeysUnavailableError, handle_error)
     app.add_exception_handler(RequestValidationError, handle_error)

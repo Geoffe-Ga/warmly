@@ -1231,7 +1231,7 @@
     },
     "/v1/recovery-envelope": {
       "get": {
-        "description": "Read the caller's wrapped root key.\n\nStub: returns a fixed synthetic envelope.\n\nReturns:\n    A version 1 envelope holding an obviously synthetic value.",
+        "description": "Read the caller's wrapped root key.\n\nArgs:\n    owner: The verified caller.\n    store: Where envelopes are kept.\n\nReturns:\n    The caller's envelope.\n\nRaises:\n    ProblemError: 404 if the account has not created its keys yet.",
         "operationId": "get_recovery_envelope_v1_recovery_envelope_get",
         "responses": {
           "200": {
@@ -1253,6 +1253,16 @@
               }
             },
             "description": "Missing or unacceptable access token"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The account has no recovery envelope"
           },
           "422": {
             "content": {
@@ -1286,7 +1296,7 @@
         ]
       },
       "put": {
-        "description": "Create or rotate the wrapped root key with compare-and-swap.\n\nStub: echoes the envelope with the next version number, storing nothing.\n\nArgs:\n    request: The new envelope and the version it replaces.\n\nReturns:\n    The envelope as it would have been stored.",
+        "description": "Create or rotate the wrapped root key with compare-and-swap.\n\n``expected_version`` 0 creates the envelope and fails if one exists. Any\nother value replaces exactly that version. A failed attempt changes\nnothing, so an interrupted rotation leaves the old recovery key valid.\n\nArgs:\n    request: The new envelope and the version it replaces.\n    owner: The verified caller.\n    store: Where envelopes are kept.\n\nReturns:\n    The envelope as stored, with its new version.\n\nRaises:\n    ProblemError: 409 if the stored version is not the expected one.",
         "operationId": "put_recovery_envelope_v1_recovery_envelope_put",
         "requestBody": {
           "content": {
@@ -1318,6 +1328,16 @@
               }
             },
             "description": "Missing or unacceptable access token"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The envelope is not at the expected version"
           },
           "422": {
             "content": {
