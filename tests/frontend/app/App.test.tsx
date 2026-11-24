@@ -305,32 +305,37 @@ describe("Lock and Sign out (DEV-005)", () => {
     expect(window.location.pathname).toBe("/sign-in");
   });
 
-  it("a second press of Sign out while the first is in flight is harmless", async () => {
+  it("Sign out closes private screens before the server answers", async () => {
     const services = testServices("unlocked");
     await services.vault.createAccountKeys();
-    let release: () => void = () => undefined;
-    services.auth.signOut = () =>
-      new Promise<void>((resolve) => {
-        release = resolve;
-      });
+    services.auth.signOut = () => new Promise<void>(() => undefined);
+    await renderApp("/settings", services);
+
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
+
+    await screen.findByRole("heading", { level: 1, name: "Sign in" });
+    expect(services.session.state).toBe("signed_out");
+    expect(services.vault.isUnlocked).toBe(false);
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+  });
+
+  it("Sign out still works, quietly, when the server cannot be told", async () => {
+    const services = testServices("unlocked");
+    services.auth.signOut = () => Promise.reject(new Error("offline"));
     const failures: unknown[] = [];
     const onFailure = (event: PromiseRejectionEvent): void => {
       failures.push(event.reason);
     };
     window.addEventListener("unhandledrejection", onFailure);
     await renderApp("/settings", services);
-    const signOut = screen.getByRole("button", { name: "Sign out" });
 
-    await userEvent.click(signOut);
-    await userEvent.click(signOut);
-    release();
+    await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { level: 1, name: "Sign in" });
     await new Promise((resolve) => setTimeout(resolve, 0));
     window.removeEventListener("unhandledrejection", onFailure);
 
     expect(failures).toEqual([]);
     expect(services.session.state).toBe("signed_out");
-    expect(window.location.pathname).toBe("/sign-in");
   });
 
   it("starts signed out when the session cannot be restored", async () => {

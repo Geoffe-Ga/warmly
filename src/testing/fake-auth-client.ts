@@ -55,12 +55,14 @@ export class FakeAuthClient implements AuthClient {
 
   register(email: string, password: string): Promise<void> {
     const state = this.#read();
-    // An existing account is left untouched, and the caller cannot tell.
+    // An existing account is left completely untouched, and the caller cannot
+    // tell. In particular it does not become "pending": otherwise anyone could
+    // register someone else's address and then verify their way into it.
     if (passwordFor(state, email) === undefined) {
       state.accounts.push([email, password]);
+      state.pending = email;
+      this.#write(state);
     }
-    state.pending = email;
-    this.#write(state);
     return Promise.resolve();
   }
 

@@ -34,8 +34,9 @@ describe("FakeAuthClient", () => {
     await auth.signOut();
 
     await auth.register("a@example.com", "an attacker password");
-    await auth.completeVerification();
-    await auth.signOut();
+    // Registering someone else's address must not let you verify into it.
+    await expect(auth.completeVerification()).resolves.toBe(false);
+    await expect(auth.isSignedIn()).resolves.toBe(false);
 
     await expect(
       auth.signIn("a@example.com", "an attacker password"),

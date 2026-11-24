@@ -149,20 +149,16 @@ function SessionControls(props: {
   if (session.state === "signed_out") {
     return null;
   }
-  const finishSignOut = (): void => {
-    dropSecrets(services);
-    // A second press while the first is still in flight lands here again;
-    // by then the session has already ended, and that is fine.
-    if (session.state !== "signed_out") {
-      session.signOut();
-    }
-    props.navigate(SIGN_IN_PATH);
-  };
   const signOut = (): void => {
-    // Signing out on this device must always succeed. If the server cannot be
-    // told, for example while offline, the keys are still dropped and the
-    // private screens still close.
-    auth.signOut().then(finishSignOut, finishSignOut);
+    // Signing out on this device must always succeed, and at once. The keys
+    // are dropped and the private screens close before the server is told,
+    // so a slow or failed request never leaves them open.
+    dropSecrets(services);
+    session.signOut();
+    props.navigate(SIGN_IN_PATH);
+    // Telling the server is best effort: if it fails, for example while
+    // offline, there is nothing more this device can do.
+    auth.signOut().catch(() => undefined);
   };
   const lock = (): void => {
     dropSecrets(services);
