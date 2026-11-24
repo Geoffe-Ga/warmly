@@ -12,11 +12,13 @@ layers =
     warmly.main
     warmly.contract
     warmly.app
+    warmly.middleware
     warmly.api
     (warmly.services)
     (warmly.auth)
     (warmly.db)
     warmly.schemas
+    warmly.logs
     (warmly.config)
 
 # The wire contract must stay free of framework and storage concerns.

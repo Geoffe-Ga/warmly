@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures/test";
 
 const WCAG_22_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 const GALLERY = "/dev/components";
@@ -91,5 +91,28 @@ test.describe("component kit (UI-001..008, AC-23)", () => {
       .evaluate((element) => getComputedStyle(element).transitionDuration);
 
     expect(duration).toBe("0s");
+  });
+});
+
+test.describe("egress guard self-test without a policy in the way (AC-03)", () => {
+  test.use({ expectedBlockedHosts: ["rogue.example"] });
+
+  test("a fetch to a host outside the allowlist never leaves the browser", async ({
+    page,
+  }) => {
+    // The dev server sends no Content Security Policy, so only the guard
+    // stands between this request and the network.
+    await page.goto(GALLERY);
+
+    const failed = await page.evaluate(async () => {
+      try {
+        await fetch("https://rogue.example/collect");
+        return false;
+      } catch {
+        return true;
+      }
+    });
+
+    expect(failed).toBe(true);
   });
 });

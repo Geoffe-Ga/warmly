@@ -5,6 +5,9 @@ from fastapi import FastAPI
 from warmly import __version__
 from warmly.api import API_PREFIX, build_api_router
 from warmly.api.errors import install_error_handlers
+from warmly.middleware.body_limit import BodyLimitMiddleware
+from warmly.middleware.request_log import RequestLogMiddleware
+from warmly.middleware.security_headers import SecurityHeadersMiddleware
 
 API_TITLE = "Warmly API"
 API_DESCRIPTION = (
@@ -33,4 +36,10 @@ def create_app() -> FastAPI:
     )
     install_error_handlers(app)
     app.include_router(build_api_router())
+    # Starlette runs the middleware added last first. Order, outermost first:
+    # log every request, add security headers to every response, then refuse
+    # oversized bodies before the application parses them.
+    app.add_middleware(BodyLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestLogMiddleware)
     return app

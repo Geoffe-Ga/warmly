@@ -65,6 +65,8 @@ sync → BYOK compatibility gate → Reflect → cards → polish and release ha
 ```
 warmly/
 ├── docs/plans/            # PRD and implementation plans (source of truth)
+├── docs/security/         # Threat model
+├── build/                 # Build-time config shared with tests (security headers)
 ├── plans/architecture/    # import-linter layer rules for the Python backend
 ├── warmly/                # FastAPI backend: api/ (routers), schemas/ (wire models); routes are stubs
 ├── openapi/               # Committed API contract, exported from the code
