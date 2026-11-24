@@ -103,6 +103,13 @@ def test_wrong_method_is_a_405_problem(client: TestClient) -> None:
     assert response.json()["code"] == "request.method_not_allowed"
 
 
+def test_non_standard_status_does_not_break_the_error_handler() -> None:
+    """An unknown status code still yields a problem instead of raising."""
+    problem = http_problem(799)
+
+    assert (problem.status, problem.code, problem.title) == (799, "http.799", "Error")
+
+
 def test_other_http_errors_get_a_generic_code() -> None:
     """Statuses without a named code fall back to ``http.<status>``."""
     assert http_problem(418).code == "http.418"
@@ -131,6 +138,7 @@ def test_a_crashing_route_returns_the_500_problem() -> None:
 
     @app.get("/v1/boom")
     def boom() -> None:
+        """Fail with a message that must never reach the client."""
         raise RuntimeError(CANARY)
 
     response = TestClient(app, raise_server_exceptions=False).get("/v1/boom")

@@ -63,7 +63,7 @@ if $VERBOSE; then
     set -x
 fi
 
-echo "=== Linting (Ruff + import-linter) ==="
+echo "=== Linting (Ruff, import-linter, interrogate, pylint) ==="
 
 if $FIX; then
     if $VERBOSE; then
@@ -83,6 +83,17 @@ fi
 # import a higher one.
 if [ $EXIT_CODE -eq 0 ]; then
     lint-imports --config plans/architecture/.importlinter
+    EXIT_CODE=$?
+fi
+
+# Docstring coverage and the pylint score, with the same thresholds as CI, so
+# a locally green tree is not surprised there.
+if [ $EXIT_CODE -eq 0 ]; then
+    interrogate --quiet --fail-under=95 --ignore-init-method --ignore-init-module .
+    EXIT_CODE=$?
+fi
+if [ $EXIT_CODE -eq 0 ]; then
+    pylint --recursive=y --fail-under=8.0 --score=n .
     EXIT_CODE=$?
 fi
 

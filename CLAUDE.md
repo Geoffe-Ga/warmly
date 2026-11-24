@@ -68,6 +68,8 @@ openapi/                 Committed API contract; src/api/schema.d.ts is generate
 src/                     TypeScript PWA: app/ (route table, router, shell), ui/ (screens,
                          components), main.tsx (bootstrap + SW registration)
 docs/adr/                Architecture Decision Records
+docs/security/           Threat model and security notes
+config/                  Build-time config shared with tests (security headers, CSP)
 public/, index.html      PWA static assets and entry; vite.config.ts = build, manifest, SW, Vitest
 tests/                   pytest (test_*.py); tests/frontend/ Vitest unit tests
 e2e/                     Playwright E2E + axe accessibility tests
@@ -122,6 +124,14 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   a draft may be unsaved. Precache only the public app shell; never add runtime caching
   of API responses or anything containing plaintext.
 - `no-console` is an ESLint error, because logs must never contain journal content.
+- The Content Security Policy lives in `config/security-headers.ts`. Never add
+  `unsafe-inline`, `unsafe-eval` or a wildcard; a new `connect-src` origin needs a
+  reason in the PR.
+- E2E specs import `test` and `expect` from `e2e/fixtures/test.ts`, never from
+  `@playwright/test`: the fixture fails any test that contacts another host or
+  violates the CSP. Unit tests cannot use the network at all.
+- Backend logs use the closed field set in `warmly/logs.py`. Never log a body,
+  header, query string, concrete path or exception text.
 - Strict TypeScript (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`). Use
   `tsconfig.node.json` for config and E2E files.
 

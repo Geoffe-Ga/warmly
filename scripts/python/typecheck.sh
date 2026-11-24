@@ -54,7 +54,8 @@ fi
 echo "=== Type Checking (MyPy) ==="
 
 if command -v mypy &> /dev/null; then
-    mypy warmly/ || {
+    # The whole tree, tests included, exactly as CI runs it.
+    mypy . || {
         echo "✗ Type checking failed" >&2
         exit 1
     }

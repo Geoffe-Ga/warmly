@@ -82,7 +82,12 @@ def http_problem(status_code: int) -> Problem:
     Returns:
         A problem with a stable code for that status.
     """
-    status = HTTPStatus(status_code)
+    try:
+        status = HTTPStatus(status_code)
+    except ValueError:
+        # A non-standard code has no phrase; describe it generically rather
+        # than fail inside the error handler.
+        return Problem(title="Error", status=status_code, code=f"http.{status_code}")
     code = _CODES_BY_STATUS.get(status, f"http.{status.value}")
     return Problem(title=status.phrase, status=status, code=code)
 

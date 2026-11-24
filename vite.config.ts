@@ -1,14 +1,60 @@
 /// <reference types="vitest/config" />
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
+
+import {
+  cspMeta,
+  securityHeaders,
+  type ConnectSources,
+} from "./config/security-headers.ts";
 
 // Design references from the PRD (UI-001). These are brand colours, not
 // guaranteed-accessible text colours; text contrast is handled in CSS tokens.
 const CORAL = "#E35D7A";
 const PAPER = "#FFF7F8";
 
+// Origins the built app may connect to besides its own, set at build time.
+// Unset means same-origin only.
+const connectSources: ConnectSources = {
+  ...(process.env["VITE_API_ORIGIN"] && {
+    apiOrigin: process.env["VITE_API_ORIGIN"],
+  }),
+  ...(process.env["VITE_AUTH_ORIGIN"] && {
+    authOrigin: process.env["VITE_AUTH_ORIGIN"],
+  }),
+};
+
+/**
+ * Embed the Content Security Policy in the built index.html. Build only: the
+ * dev server injects inline styles for hot reload, which the policy forbids.
+ */
+function cspMetaPlugin(): Plugin {
+  return {
+    name: "warmly-csp-meta",
+    apply: "build",
+    transformIndexHtml() {
+      return [
+        {
+          tag: "meta",
+          attrs: {
+            "http-equiv": "Content-Security-Policy",
+            content: cspMeta(connectSources),
+          },
+          injectTo: "head-prepend",
+        },
+      ];
+    },
+  };
+}
+
 export default defineConfig({
+  // `vite preview` stands in for the production host, so it sends the same
+  // security headers the real host must send. The E2E suite asserts them.
+  preview: {
+    headers: securityHeaders(connectSources),
+  },
   plugins: [
+    cspMetaPlugin(),
     VitePWA({
       // "prompt" rather than "autoUpdate": the PRD requires a non-destructive
       // upgrade path for mixed frontend versions and offline clients, so the
@@ -56,7 +102,7 @@ export default defineConfig({
     css: true,
     coverage: {
       provider: "v8",
-      include: ["src/**/*.{ts,tsx}"],
+      include: ["src/**/*.{ts,tsx}", "config/**/*.ts"],
       // main.tsx is the browser bootstrap (DOM lookup + SW registration) and is
       // exercised by the Playwright E2E suite instead of unit tests.
       exclude: ["src/**/*.d.ts", "src/main.tsx"],

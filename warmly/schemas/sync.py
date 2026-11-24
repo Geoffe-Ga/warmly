@@ -12,6 +12,8 @@ MAX_OPERATIONS_PER_BATCH = 100
 # Opaque record category. The server stores it and never interprets it.
 RecordType = Annotated[int, Field(ge=0, le=255)]
 
+_TOMBSTONE_WITH_PAYLOAD = "a tombstone carries no payload"
+_WRITE_WITHOUT_PAYLOAD = "a create or update needs a payload"
 _REVISION_WITHOUT_EFFECT = "revision is only set when the operation took effect"
 _CURRENT_REVISION_WITH_EFFECT = "current_revision is only set when it did not"
 
@@ -32,6 +34,15 @@ class SyncOperation(ApiModel):
     payload: Ciphertext | None = Field(
         default=None, description="Encrypted record; absent for a tombstone."
     )
+
+    @model_validator(mode="after")
+    def _payload_matches_tombstone(self) -> "SyncOperation":
+        """Require a payload exactly when the operation is not a delete."""
+        if self.tombstone and self.payload is not None:
+            raise ValueError(_TOMBSTONE_WITH_PAYLOAD)
+        if not self.tombstone and self.payload is None:
+            raise ValueError(_WRITE_WITHOUT_PAYLOAD)
+        return self
 
 
 class OperationsRequest(ApiModel):

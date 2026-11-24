@@ -24,6 +24,7 @@
     "src/**/*.ts",
     "src/**/*.tsx",
     "tests/frontend/**/*.ts",
-    "tests/frontend/**/*.tsx"
+    "tests/frontend/**/*.tsx",
+    "config/**/*.ts"
   ]
 }
