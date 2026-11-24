@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
+from warmly.api.errors import INVALID_REQUEST_RESPONSES
 from warmly.api.fixtures import STUB_CIPHERTEXT, STUB_PUBLIC_KEY, STUB_TIME
 from warmly.api.stub import mark_stub
 from warmly.schemas.devices import (
@@ -12,13 +13,12 @@ from warmly.schemas.devices import (
     RegisterDeviceRequest,
     RenameDeviceRequest,
 )
-from warmly.schemas.problem import Problem
 
 router = APIRouter(
     prefix="/devices",
     tags=["devices"],
     dependencies=[Depends(mark_stub)],
-    responses={422: {"model": Problem}},
+    responses=INVALID_REQUEST_RESPONSES,
 )
 
 

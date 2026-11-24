@@ -4,8 +4,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 
+from warmly.api.errors import INVALID_REQUEST_RESPONSES
 from warmly.api.stub import mark_stub
-from warmly.schemas.problem import Problem
 from warmly.schemas.sync import (
     ChangesResponse,
     OperationResult,
@@ -17,7 +17,7 @@ router = APIRouter(
     prefix="/sync",
     tags=["sync"],
     dependencies=[Depends(mark_stub)],
-    responses={422: {"model": Problem}},
+    responses=INVALID_REQUEST_RESPONSES,
 )
 
 Cursor = Annotated[

@@ -15,29 +15,22 @@ MAX_PAYLOAD_CHARS = 1_400_000
 # Upper bound for small encrypted values such as a device name or wrapped key.
 MAX_SMALL_CIPHERTEXT_CHARS = 4_096
 
+
+def _base64_text(max_length: int) -> StringConstraints:
+    """Constrain a string to non-empty base64 of at most ``max_length`` chars."""
+    return StringConstraints(
+        min_length=1, max_length=max_length, pattern=_BASE64_PATTERN
+    )
+
+
 # An opaque client-encrypted record payload, base64 encoded.
-Ciphertext = Annotated[
-    str,
-    StringConstraints(
-        min_length=1, max_length=MAX_PAYLOAD_CHARS, pattern=_BASE64_PATTERN
-    ),
-]
+Ciphertext = Annotated[str, _base64_text(MAX_PAYLOAD_CHARS)]
 
 # A short opaque encrypted value, base64 encoded.
-SmallCiphertext = Annotated[
-    str,
-    StringConstraints(
-        min_length=1, max_length=MAX_SMALL_CIPHERTEXT_CHARS, pattern=_BASE64_PATTERN
-    ),
-]
+SmallCiphertext = Annotated[str, _base64_text(MAX_SMALL_CIPHERTEXT_CHARS)]
 
 # A device public key, base64 encoded.
-PublicKey = Annotated[
-    str,
-    StringConstraints(
-        min_length=1, max_length=MAX_SMALL_CIPHERTEXT_CHARS, pattern=_BASE64_PATTERN
-    ),
-]
+PublicKey = Annotated[str, _base64_text(MAX_SMALL_CIPHERTEXT_CHARS)]
 
 
 class ApiModel(BaseModel):

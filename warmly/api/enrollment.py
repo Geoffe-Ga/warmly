@@ -4,6 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
+from warmly.api.errors import INVALID_REQUEST_RESPONSES
 from warmly.api.fixtures import (
     STUB_CIPHERTEXT,
     STUB_DEVICE_ID,
@@ -17,13 +18,12 @@ from warmly.schemas.enrollment import (
     Enrollment,
     StartEnrollmentRequest,
 )
-from warmly.schemas.problem import Problem
 
 router = APIRouter(
     prefix="/enrollments",
     tags=["enrollment"],
     dependencies=[Depends(mark_stub)],
-    responses={422: {"model": Problem}},
+    responses=INVALID_REQUEST_RESPONSES,
 )
 
 

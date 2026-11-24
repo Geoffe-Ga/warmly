@@ -1,11 +1,14 @@
 """Error responses are RFC 9457 problems and never echo request input."""
 
 import asyncio
+import json
 
 import pytest
 from fastapi.testclient import TestClient
 
 from warmly.api.errors import PROBLEM_MEDIA_TYPE, handle_error, http_problem
+from warmly.app import create_app
+from warmly.schemas.common import MAX_PAYLOAD_CHARS, MAX_SMALL_CIPHERTEXT_CHARS
 from warmly.schemas.problem import Problem
 
 CANARY = "CANARY-7f3a-journal-plaintext"
@@ -105,10 +108,83 @@ def test_other_http_errors_get_a_generic_code() -> None:
     assert http_problem(418).code == "http.418"
 
 
-def test_unexpected_exceptions_are_not_swallowed() -> None:
-    """Only known error types become problems; anything else propagates."""
-    with pytest.raises(RuntimeError, match="boom"):
-        asyncio.run(handle_error(object(), RuntimeError("boom")))
+def test_unexpected_exception_is_a_500_problem_without_detail() -> None:
+    """A crash never leaks its message, which may contain request data."""
+    response = asyncio.run(handle_error(object(), RuntimeError(CANARY)))
+
+    assert response.status_code == 500
+    assert response.media_type == PROBLEM_MEDIA_TYPE
+    body = bytes(response.body)
+    assert CANARY.encode() not in body
+    assert json.loads(body) == {
+        "type": "about:blank",
+        "title": "Internal server error",
+        "status": 500,
+        "code": "server.internal_error",
+        "errors": [],
+    }
+
+
+def test_a_crashing_route_returns_the_500_problem() -> None:
+    """The catch-all handler is installed on the application."""
+    app = create_app()
+
+    @app.get("/v1/boom")
+    def boom() -> None:
+        raise RuntimeError(CANARY)
+
+    response = TestClient(app, raise_server_exceptions=False).get("/v1/boom")
+
+    assert response.status_code == 500
+    assert response.json()["code"] == "server.internal_error"
+    assert CANARY not in response.text
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ["has space", "bad*char", "===", "abc=def", "tooMuchPadding===", ""],
+    ids=[
+        "space",
+        "non-alphabet",
+        "padding-only",
+        "inner-padding",
+        "three-pads",
+        "empty",
+    ],
+)
+def test_malformed_base64_payload_is_rejected(client: TestClient, payload: str) -> None:
+    """Payloads are checked for base64 shape and nothing more (SEC-005)."""
+    operation = VALID_OPERATION | {"payload": payload}
+
+    response = client.post("/v1/sync/operations", json={"operations": [operation]})
+
+    assert response.status_code == 422
+
+
+def test_payload_size_limit_is_inclusive(client: TestClient) -> None:
+    """A payload at the limit is accepted; one character more is refused."""
+    at_limit = VALID_OPERATION | {"payload": "A" * MAX_PAYLOAD_CHARS}
+    over_limit = VALID_OPERATION | {"payload": "A" * (MAX_PAYLOAD_CHARS + 1)}
+
+    accepted = client.post("/v1/sync/operations", json={"operations": [at_limit]})
+    refused = client.post("/v1/sync/operations", json={"operations": [over_limit]})
+
+    assert accepted.status_code == 200
+    assert refused.status_code == 422
+    assert len(refused.text) < 1_000
+
+
+def test_small_ciphertext_limit_is_inclusive(client: TestClient) -> None:
+    """Device names and wrapped keys have their own, smaller limit."""
+    path = "/v1/enrollments/44444444-4444-4444-8444-444444444444/approve"
+
+    accepted = client.post(path, json={"wrapped_key": "A" * MAX_SMALL_CIPHERTEXT_CHARS})
+    refused = client.post(
+        path, json={"wrapped_key": "A" * (MAX_SMALL_CIPHERTEXT_CHARS + 1)}
+    )
+
+    assert accepted.status_code == 200
+    assert refused.status_code == 422
 
 
 def test_interactive_docs_are_disabled(client: TestClient) -> None:

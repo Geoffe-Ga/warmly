@@ -705,7 +705,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "List the caller's devices",
@@ -745,7 +745,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "Register the calling device",
@@ -799,7 +799,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "Rename a device",
@@ -843,7 +843,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "Revoke a device",
@@ -885,7 +885,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "Start enrolling a new device",
@@ -929,7 +929,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "Read an enrollment",
@@ -983,7 +983,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "Approve an enrollment",
@@ -1059,7 +1059,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "Read the recovery envelope",
@@ -1099,7 +1099,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "Create or rotate the recovery envelope",
@@ -1147,7 +1147,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "List changes after a cursor",
@@ -1189,7 +1189,7 @@
                 }
               }
             },
-            "description": "Unprocessable Content"
+            "description": "Invalid request"
           }
         },
         "summary": "Apply a batch of operations",

@@ -3,7 +3,7 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from warmly.schemas.common import ApiModel, Ciphertext
 
@@ -11,6 +11,9 @@ MAX_OPERATIONS_PER_BATCH = 100
 
 # Opaque record category. The server stores it and never interprets it.
 RecordType = Annotated[int, Field(ge=0, le=255)]
+
+_REVISION_WITHOUT_EFFECT = "revision is only set when the operation took effect"
+_CURRENT_REVISION_WITH_EFFECT = "current_revision is only set when it did not"
 
 OperationStatus = Literal["applied", "duplicate", "conflict", "deleted", "rejected"]
 
@@ -50,6 +53,20 @@ class OperationResult(ApiModel):
     current_revision: int | None = Field(
         default=None, description="Server revision when the operation was not applied."
     )
+
+    @model_validator(mode="after")
+    def _revisions_match_status(self) -> "OperationResult":
+        """Reject results whose revision fields contradict their status.
+
+        ``revision`` is the new revision of an applied (or already applied)
+        operation; ``current_revision`` tells a client what it lost to.
+        """
+        took_effect = self.status in {"applied", "duplicate"}
+        if self.revision is not None and not took_effect:
+            raise ValueError(_REVISION_WITHOUT_EFFECT)
+        if self.current_revision is not None and took_effect:
+            raise ValueError(_CURRENT_REVISION_WITH_EFFECT)
+        return self
 
 
 class OperationsResponse(ApiModel):

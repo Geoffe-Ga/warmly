@@ -730,7 +730,7 @@ export interface operations {
           "application/json": components["schemas"]["DeviceList"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -763,7 +763,7 @@ export interface operations {
           "application/json": components["schemas"]["Device"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -798,7 +798,7 @@ export interface operations {
           "application/json": components["schemas"]["Device"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -829,7 +829,7 @@ export interface operations {
           "application/json": components["schemas"]["Device"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -862,7 +862,7 @@ export interface operations {
           "application/json": components["schemas"]["Enrollment"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -893,7 +893,7 @@ export interface operations {
           "application/json": components["schemas"]["Enrollment"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -928,7 +928,7 @@ export interface operations {
           "application/json": components["schemas"]["Enrollment"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -997,7 +997,7 @@ export interface operations {
           "application/json": components["schemas"]["RecoveryEnvelope"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1030,7 +1030,7 @@ export interface operations {
           "application/json": components["schemas"]["RecoveryEnvelope"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1062,7 +1062,7 @@ export interface operations {
           "application/json": components["schemas"]["ChangesResponse"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
@@ -1095,7 +1095,7 @@ export interface operations {
           "application/json": components["schemas"]["OperationsResponse"];
         };
       };
-      /** @description Unprocessable Content */
+      /** @description Invalid request */
       422: {
         headers: {
           [name: string]: unknown;
