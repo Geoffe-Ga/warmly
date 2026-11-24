@@ -19,6 +19,7 @@ import { UnavailableKeyVault, type KeyVault } from "../crypto/key-vault";
 import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeDeviceKeyStore } from "../testing/fake-device-key-store";
 import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
+import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
 
@@ -29,6 +30,8 @@ export interface Services {
   readonly session: Session;
   /** In-memory state of an account being set up; see {@link Onboarding}. */
   readonly onboarding: Onboarding;
+  /** Work to finish before the app locks; see {@link LockHooks}. */
+  readonly lockHooks: LockHooks;
 }
 
 /**
@@ -134,6 +137,7 @@ export function createServices(): Services {
     ),
     session: createSession(),
     onboarding: createOnboarding(),
+    lockHooks: createLockHooks(),
   };
 }
 

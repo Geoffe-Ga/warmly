@@ -2,6 +2,7 @@ import { expect } from "vitest";
 import { render, screen, waitFor } from "@testing-library/preact";
 
 import { App } from "../../../src/app/App";
+import { createLockHooks } from "../../../src/app/lock-hooks";
 import { createOnboarding } from "../../../src/app/onboarding";
 import type { Services } from "../../../src/app/services";
 import { createSession, type SessionState } from "../../../src/app/session";
@@ -38,6 +39,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     vault: new FakeKeyVault(),
     session: createSession(state),
     onboarding: createOnboarding(),
+    lockHooks: createLockHooks(),
   };
 }
 
