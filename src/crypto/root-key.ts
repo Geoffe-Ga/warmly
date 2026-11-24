@@ -70,7 +70,9 @@ export function hkdfParams(info: Uint8Array<ArrayBuffer>): HkdfParams {
 /**
  * A short public identifier for a root key, for checking that two devices
  * hold the same one. It is derived one-way, so it reveals nothing about the
- * key and cannot be used to decrypt anything.
+ * key and cannot be used to decrypt anything. At 64 bits it is a label for
+ * people to compare, not proof of anything: never use it to authenticate a
+ * device or to authorise an action.
  *
  * @param root - The root key.
  * @returns 16 lower-case hex characters.

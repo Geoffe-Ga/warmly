@@ -61,6 +61,7 @@ function join(...parts: readonly Uint8Array[]): Uint8Array<ArrayBuffer> {
 async function openFromSpecification(
   rootKey: Uint8Array<ArrayBuffer>,
   record: FixtureRecord,
+  keyOwner: string = record.owner,
 ): Promise<Uint8Array> {
   const envelope = fromBase64(record.envelope);
   const version = new Uint8Array([1]);
@@ -72,7 +73,12 @@ async function openFromSpecification(
       name: "HKDF",
       hash: "SHA-256",
       salt: utf8("warmly/hkdf-salt/v1"),
-      info: join(utf8("warmly/record-key/"), version, field(record.recordId)),
+      info: join(
+        utf8("warmly/record-key/"),
+        version,
+        field(keyOwner),
+        field(record.recordId),
+      ),
     },
     hkdfKey,
     { name: "AES-GCM", length: 256 },
@@ -132,6 +138,20 @@ describe("committed encrypted fixtures (REL-004)", () => {
 
       expect(toBase64(plaintext)).toBe(record.plaintext);
       expect(fromBase64(record.envelope)[0]).toBe(file.formatVersion);
+    },
+  );
+
+  it.each(FIXTURES.filter(({ file }) => file.formatVersion === 1))(
+    "$record.name has a key that depends on the owner, not only the record",
+    async ({ file, record }) => {
+      // The associated data is left correct here, so only the key differs.
+      await expect(
+        openFromSpecification(
+          fromBase64(file.rootKey),
+          record,
+          "ffffffff-ffff-4fff-8fff-ffffffffffff",
+        ),
+      ).rejects.toThrow();
     },
   );
 

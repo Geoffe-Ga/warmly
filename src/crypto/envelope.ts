@@ -10,7 +10,9 @@
  * ```
  *
  * **Key.** Each record has its own AES-256-GCM key, derived from the root key
- * with HKDF-SHA-256 using the record ID and format version as context.
+ * with HKDF-SHA-256 using the owner, the record ID and the format version as
+ * context. Including the owner means two accounts could never derive the
+ * same record key, even if a root key were ever shared between them.
  *
  * **Nonce policy.** Every encryption uses a fresh random 96-bit nonce. Because
  * a key is used for one record only, the number of encryptions under any key
@@ -34,6 +36,9 @@ const TAG_BYTES = 16;
 const HEADER_BYTES = 1 + NONCE_BYTES;
 const MAX_RECORD_TYPE = 255;
 const MAX_IDENTIFIER_BYTES = 0xffff;
+// With the `u` flag a valid surrogate pair is one code point, so this matches
+// only a surrogate that has no partner.
+const UNPAIRED_SURROGATE = /\p{Cs}/u;
 
 /** The identity a record is bound to. All of it is authenticated. */
 export interface RecordContext {
@@ -69,6 +74,11 @@ export class UnsupportedFormatError extends Error {
 }
 
 function lengthPrefixed(label: string, value: string): Uint8Array<ArrayBuffer> {
+  // An unpaired surrogate has no UTF-8 form and would be silently replaced,
+  // which could make two different identifiers encode to the same bytes.
+  if (UNPAIRED_SURROGATE.test(value)) {
+    throw new Error(`The ${label} identifier is not well-formed text`);
+  }
   const bytes = utf8(value);
   if (bytes.length === 0 || bytes.length > MAX_IDENTIFIER_BYTES) {
     throw new Error(`The ${label} identifier must be 1 to 65535 bytes long`);
@@ -96,11 +106,15 @@ function associatedData(context: RecordContext): Uint8Array<ArrayBuffer> {
   );
 }
 
-async function recordKey(root: RootKey, recordId: string): Promise<CryptoKey> {
+async function recordKey(
+  root: RootKey,
+  context: RecordContext,
+): Promise<CryptoKey> {
   const info = concat(
     utf8("warmly/record-key/"),
     new Uint8Array([FORMAT_VERSION]),
-    lengthPrefixed("record", recordId),
+    lengthPrefixed("owner", context.owner),
+    lengthPrefixed("record", context.recordId),
   );
   return crypto.subtle.deriveKey(
     hkdfParams(info),
@@ -126,7 +140,7 @@ export async function seal(
   plaintext: Uint8Array<ArrayBuffer>,
 ): Promise<Uint8Array<ArrayBuffer>> {
   const additionalData = associatedData(context);
-  const key = await recordKey(root, context.recordId);
+  const key = await recordKey(root, context);
   const nonce = crypto.getRandomValues(new Uint8Array(NONCE_BYTES));
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce, additionalData },
@@ -150,6 +164,8 @@ export async function seal(
  * @throws UnsupportedFormatError if the format version is unknown.
  * @throws DecryptError if the envelope is malformed, was tampered with, was
  *   made under another key, or does not belong to this context.
+ * @throws Error if the context itself is malformed. That is a bug in the
+ *   caller, not something an envelope can cause.
  */
 export async function open(
   root: RootKey,
@@ -167,7 +183,7 @@ export async function open(
     throw new DecryptError();
   }
   const additionalData = associatedData(context);
-  const key = await recordKey(root, context.recordId);
+  const key = await recordKey(root, context);
   try {
     const plaintext = await crypto.subtle.decrypt(
       {
@@ -202,7 +218,7 @@ export async function sealJson(
 
 /**
  * Decrypt a JSON record. The result is untyped: the caller must validate its
- * shape before use.
+ * shape before use, as the encrypted store does for each record type.
  *
  * @param root - The account root key.
  * @param context - The owner, record ID and type the caller expects.

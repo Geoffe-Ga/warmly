@@ -65,8 +65,14 @@ pairing ──────┘   256 random bits   └─▶ fingerprint (public,
 - **Derivation.** HKDF-SHA-256 with a fixed public salt and an `info` that
   names the purpose. Different purposes and different records get independent
   keys.
-- **Record key.** `info = "warmly/record-key/" | version | len(recordId) |
-  recordId`. AES-256-GCM, non-extractable.
+- **Record key.** `info = "warmly/record-key/" | version | len(owner) | owner |
+  len(recordId) | recordId`, with the same two-byte lengths as the associated
+  data. AES-256-GCM, non-extractable. The owner is part of the derivation, not
+  only of the associated data, so two accounts can never derive the same
+  record key even if a root key were ever shared or imported between them.
+- **Identifiers** must be well-formed text of 1 to 65535 UTF-8 bytes. Text
+  with an unpaired surrogate is refused, because it has no UTF-8 form and two
+  different identifiers could otherwise encode to the same bytes.
 - **Nonce policy.** A fresh random 96-bit nonce for every encryption. A nonce
   is never chosen by a counter and never reused deliberately. Because a key
   serves one record, the number of encryptions under it is the number of times

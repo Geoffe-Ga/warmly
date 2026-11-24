@@ -258,6 +258,40 @@ describe("record envelope (SEC-002, AC-04)", () => {
       ).rejects.toThrow(/identifier/i);
     },
   );
+
+  it.each([
+    ["a lone high surrogate", "record-\ud83d"],
+    ["a lone low surrogate", "\udc9b-record"],
+  ])(
+    "refuses an identifier with %s, which has no UTF-8 form",
+    async (_name, value) => {
+      const root = await newRoot();
+      const envelope = await seal(root, CONTEXT, PLAINTEXT);
+
+      for (const context of [
+        { ...CONTEXT, recordId: value },
+        { ...CONTEXT, owner: value },
+      ]) {
+        await expect(seal(root, context, PLAINTEXT)).rejects.toThrow(
+          /well-formed/,
+        );
+        await expect(open(root, context, envelope)).rejects.toThrow(
+          /well-formed/,
+        );
+      }
+    },
+  );
+
+  it("accepts an identifier with a properly paired surrogate", async () => {
+    const root = await newRoot();
+    const context = { ...CONTEXT, recordId: "record-\ud83d\udc9b" };
+
+    const envelope = await seal(root, context, PLAINTEXT);
+
+    expect(toBase64(await open(root, context, envelope))).toBe(
+      toBase64(PLAINTEXT),
+    );
+  });
 });
 
 describe("JSON records", () => {
