@@ -1,7 +1,7 @@
 /**
- * Application shell (ADR-0001): resolves the current path to a screen, applies
- * the access rules for the session state, and wraps the screen in the shared
- * header and `<main>` landmark.
+ * Application shell (ADR-0001): owns the current path, applies the access
+ * rules for the session state, and wraps the screen in the shared header and
+ * `<main>` landmark.
  */
 import type { JSX } from "preact";
 import {
@@ -12,165 +12,19 @@ import {
   useState,
 } from "preact/hooks";
 
-import { Button } from "../ui/components/Button";
 import { PAGE_HEADING_ATTRIBUTE } from "../ui/components/PageHeading";
 import { PageLayout } from "../ui/components/PageLayout";
-import { GALLERY_PATH, Gallery } from "../ui/dev/Gallery";
-import { Home } from "../ui/screens/Home";
-import { NotFound } from "../ui/screens/NotFound";
-import { Placeholder } from "../ui/screens/Placeholder";
-import { Locked } from "../ui/screens/account/Locked";
-import { Recover } from "../ui/screens/account/Recover";
-import { RecoveryKey } from "../ui/screens/account/RecoveryKey";
-import { Register } from "../ui/screens/account/Register";
-import { ResetPassword } from "../ui/screens/account/ResetPassword";
-import { SignIn } from "../ui/screens/account/SignIn";
-import { VerifyEmail } from "../ui/screens/account/VerifyEmail";
-import { LOCKED_PATH, SIGN_IN_PATH, redirectFor } from "./access";
+import { SessionControls } from "./SessionControls";
 import { Link, NavigationContext, type Navigation } from "./navigation";
-import { matchRoute, normalisePath } from "./router";
-import { SECONDARY_NAV, type RouteDef, type RouteId } from "./routes";
-import {
-  ServicesProvider,
-  createServices,
-  useServices,
-  type Services,
-} from "./services";
+import { APP_NAME, resolve } from "./resolve";
+import { normalisePath } from "./router";
+import { SECONDARY_NAV } from "./routes";
+import { ServicesProvider, createServices, type Services } from "./services";
 import type { SessionState } from "./session";
-
-const APP_NAME = "Warmly";
-
-/** What to show for a path: its title and the screen to render. */
-interface View {
-  readonly title: string;
-  readonly isHome: boolean;
-  readonly render: () => JSX.Element;
-}
-
-/** Screens that have been built. Every other route shows a placeholder. */
-const SCREENS: Readonly<Partial<Record<RouteId, () => JSX.Element>>> = {
-  home: Home,
-  onboarding: Register,
-  "verify-email": VerifyEmail,
-  "recovery-key": RecoveryKey,
-  "sign-in": SignIn,
-  "reset-password": ResetPassword,
-  recover: Recover,
-  locked: Locked,
-};
+import { useSessionState } from "./use-session-state";
 
 function currentPath(): string {
   return normalisePath(window.location.pathname);
-}
-
-function viewForRoute(route: RouteDef): View {
-  const Screen = SCREENS[route.id];
-  return {
-    title: route.id === "home" ? APP_NAME : route.title,
-    isHome: route.id === "home",
-    render: () =>
-      Screen === undefined ? <Placeholder route={route} /> : <Screen />,
-  };
-}
-
-/**
- * Screens that exist for development and testing only. The build mode is a
- * compile-time constant, so in a production build this condition is `false`
- * and the bundler drops the branch and the gallery with it. They are present
- * in development, in unit tests and in the `e2e` build.
- *
- * @param path - A normalised pathname.
- * @returns The development view for that path, if there is one.
- */
-function resolveDevView(path: string): View | undefined {
-  if (import.meta.env.MODE !== "production" && path === GALLERY_PATH) {
-    return {
-      title: "Component gallery",
-      isHome: false,
-      render: () => <Gallery />,
-    };
-  }
-  return undefined;
-}
-
-/** The outcome of resolving a path: a screen to show, or somewhere else to go. */
-export type Resolution =
-  | { readonly kind: "view"; readonly view: View }
-  | { readonly kind: "redirect"; readonly to: string };
-
-/**
- * Decide what a path shows for the current session state.
- *
- * A route the session may not see resolves to a redirect, never to a view, so
- * a private screen cannot be rendered while signed out or locked (PRD
- * DEV-005). Paths that match no route carry no private content and resolve to
- * a view in every state.
- *
- * @param path - A normalised pathname.
- * @param state - The current session state.
- * @returns A view, or the path to go to instead.
- */
-export function resolve(path: string, state: SessionState): Resolution {
-  const match = matchRoute(path);
-  if (match) {
-    const to = redirectFor(match.route.access, state);
-    return to === undefined
-      ? { kind: "view", view: viewForRoute(match.route) }
-      : { kind: "redirect", to };
-  }
-  return {
-    kind: "view",
-    view: resolveDevView(path) ?? {
-      title: "Page not found",
-      isHome: false,
-      render: () => <NotFound />,
-    },
-  };
-}
-
-/**
- * End the unlocked part of a session on this device: drop the keys from
- * memory and forget anything held for onboarding, such as an unconfirmed
- * recovery key. Used by both Lock and Sign out, so neither can leave key
- * material behind for whoever uses the device next.
- *
- * @param services - The app's services.
- */
-export function dropSecrets(services: Services): void {
-  services.vault.lock();
-  services.onboarding.clear();
-}
-
-function SessionControls(props: {
-  readonly navigate: (path: string) => void;
-}): JSX.Element | null {
-  const services = useServices();
-  const { auth, session } = services;
-  if (session.state === "signed_out") {
-    return null;
-  }
-  const signOut = (): void => {
-    // Signing out on this device must always succeed, and at once. The keys
-    // are dropped and the private screens close before the server is told,
-    // so a slow or failed request never leaves them open.
-    dropSecrets(services);
-    session.signOut();
-    props.navigate(SIGN_IN_PATH);
-    // Telling the server is best effort: if it fails, for example while
-    // offline, there is nothing more this device can do.
-    auth.signOut().catch(() => undefined);
-  };
-  const lock = (): void => {
-    dropSecrets(services);
-    session.lock();
-    props.navigate(LOCKED_PATH);
-  };
-  return (
-    <div class="button-row">
-      {session.state === "unlocked" && <Button onClick={lock}>Lock</Button>}
-      <Button onClick={signOut}>Sign out</Button>
-    </div>
-  );
 }
 
 function Header(props: {
@@ -223,36 +77,10 @@ export function App(props: AppProps): JSX.Element {
     () => props.services ?? createServices(),
     [props.services],
   );
-  const { auth, session } = services;
-  const [state, setState] = useState(session.state);
-  const [ready, setReady] = useState(false);
+  const { state, ready } = useSessionState(services);
   const [path, setPath] = useState(currentPath);
   // Counts in-app navigations. Zero means first render: focus is left alone.
   const [navigations, setNavigations] = useState(0);
-
-  useEffect(() => session.subscribe(setState), [session]);
-
-  // A reload keeps the user signed in but never unlocked: keys live in memory.
-  useEffect(() => {
-    let cancelled = false;
-    const finish = (signedIn: boolean): void => {
-      if (cancelled) {
-        return;
-      }
-      if (signedIn && session.state === "signed_out") {
-        session.signIn();
-      }
-      setReady(true);
-    };
-    // If the session cannot be restored, start signed out. Failing closed is
-    // the safe reading of "unknown".
-    auth.isSignedIn().then(finish, () => {
-      finish(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [auth, session]);
 
   const navigate = useCallback((target: string): void => {
     const next = normalisePath(target);

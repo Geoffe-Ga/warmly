@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { App, resolve } from "../../../src/app/App";
+import { App } from "../../../src/app/App";
+import { resolve } from "../../../src/app/resolve";
 import { redirectFor } from "../../../src/app/access";
 import { ROUTES, pathFor } from "../../../src/app/routes";
 
