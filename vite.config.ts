@@ -52,6 +52,8 @@ export default defineConfig({
     include: ["tests/frontend/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
     setupFiles: ["tests/frontend/setup.ts"],
     restoreMocks: true,
+    // Process CSS so the contrast test can read the real token sheet.
+    css: true,
     coverage: {
       provider: "v8",
       include: ["src/**/*.{ts,tsx}"],

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { matchRoute, normalisePath } from "../../../src/app/router";
+import {
+  isInAppPath,
+  matchRoute,
+  normalisePath,
+} from "../../../src/app/router";
 
 describe("normalisePath", () => {
   it.each([
@@ -41,5 +45,26 @@ describe("matchRoute", () => {
     "/journal/entries/" + "x".repeat(65),
   ])("returns undefined for %j", (path) => {
     expect(matchRoute(path)).toBeUndefined();
+  });
+});
+
+describe("isInAppPath", () => {
+  it.each(["/", "/journal", "/prepare/collections/c1"])(
+    "accepts %j",
+    (href) => {
+      expect(isInAppPath(href)).toBe(true);
+    },
+  );
+
+  it.each([
+    "//evil.example",
+    "/\\evil.example",
+    "/journal\\x",
+    "https://evil.example",
+    "javascript:alert(1)",
+    "journal",
+    "",
+  ])("rejects %j", (href) => {
+    expect(isInAppPath(href)).toBe(false);
   });
 });

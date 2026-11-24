@@ -1,6 +1,6 @@
 import type { JSX } from "preact";
 
-import { PageHeading } from "../components/PageHeading";
+import { PageLayout } from "../components/PageLayout";
 
 /**
  * Shown for a path that matches no route. It never echoes the path back, so
@@ -10,9 +10,9 @@ import { PageHeading } from "../components/PageHeading";
  */
 export function NotFound(): JSX.Element {
   return (
-    <>
-      <PageHeading>Page not found</PageHeading>
-      <p>There is nothing at this address. Use the link above to go home.</p>
-    </>
+    <PageLayout
+      title="Page not found"
+      lead="There is nothing at this address. Use the link above to go home."
+    />
   );
 }

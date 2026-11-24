@@ -2,7 +2,7 @@ import { cleanup, render, screen, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { App } from "../../../src/app/App";
+import { App, resolveView } from "../../../src/app/App";
 import { Link } from "../../../src/app/navigation";
 import { ROUTES, pathFor } from "../../../src/app/routes";
 
@@ -159,6 +159,74 @@ describe("App", () => {
     }
 
     expect(calls).toEqual([]);
+  });
+
+  it("marks the link to the current screen with aria-current", () => {
+    visit("/settings");
+    render(<App />);
+
+    expect(
+      screen
+        .getByRole("link", { name: "Settings" })
+        .getAttribute("aria-current"),
+    ).toBe("page");
+    expect(
+      screen
+        .getByRole("link", { name: "Collections" })
+        .getAttribute("aria-current"),
+    ).toBeNull();
+  });
+
+  it("re-announces the screen when its own link is activated", async () => {
+    visit("/settings");
+    render(<App />);
+
+    await userEvent.click(screen.getByRole("link", { name: "Settings" }));
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { level: 1 }),
+    );
+  });
+
+  it.each(["//evil.example", "https://evil.example", "journal"])(
+    "refuses to render a Link to %j",
+    (href) => {
+      expect(() => render(<Link href={href}>Out</Link>)).toThrow(
+        /in-app paths/,
+      );
+    },
+  );
+
+  it("resolves the component gallery in a development build", () => {
+    expect(resolveView("/dev/components").title).toBe("Component gallery");
+    expect(resolveView("/dev/other").title).toBe("Page not found");
+  });
+
+  it("renders the component gallery with one h1 and working controls", async () => {
+    visit("/dev/components");
+    render(<App />);
+
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    await userEvent.type(screen.getByLabelText("Device name"), "Phone");
+    await userEvent.type(screen.getByLabelText("What's going well?"), "A lot");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete sample" }),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("You cancelled.")).toBeDefined();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete sample" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete sample",
+      }),
+    );
+    expect(screen.getByText("You chose to delete.")).toBeDefined();
+    expect(screen.getByLabelText("Device name")).toHaveProperty(
+      "value",
+      "Phone",
+    );
   });
 
   it("renders a Link outside the app as an inert, harmless anchor", async () => {
