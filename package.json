@@ -28,6 +28,8 @@
     "@playwright/test": "1.65.1",
     "@stryker-mutator/core": "10.1.1",
     "@stryker-mutator/vitest-runner": "10.1.1",
+    "@testing-library/preact": "3.2.6",
+    "@testing-library/user-event": "14.6.13",
     "@types/node": "24.19.2",
     "@vitest/coverage-v8": "5.1.1",
     "eslint": "10.15.0",
@@ -42,5 +44,8 @@
     "vite-plugin-pwa": "2.0.0",
     "vitest": "5.1.1",
     "workbox-window": "7.4.1"
+  },
+  "dependencies": {
+    "preact": "11.2.0"
   }
 }

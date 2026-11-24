@@ -49,15 +49,15 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
-    include: ["tests/frontend/**/*.test.ts", "src/**/*.test.ts"],
+    include: ["tests/frontend/**/*.test.{ts,tsx}", "src/**/*.test.{ts,tsx}"],
     setupFiles: ["tests/frontend/setup.ts"],
     restoreMocks: true,
     coverage: {
       provider: "v8",
-      include: ["src/**/*.ts"],
-      // main.ts is the browser bootstrap (DOM lookup + SW registration) and is
+      include: ["src/**/*.{ts,tsx}"],
+      // main.tsx is the browser bootstrap (DOM lookup + SW registration) and is
       // exercised by the Playwright E2E suite instead of unit tests.
-      exclude: ["src/**/*.d.ts", "src/main.ts"],
+      exclude: ["src/**/*.d.ts", "src/main.tsx"],
       reporter: ["text", "html", "lcov"],
       thresholds: {
         lines: 90,

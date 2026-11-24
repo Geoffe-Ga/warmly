@@ -115,8 +115,7 @@ Frontend dev server: `npm run dev`. Production build: `npm run build`, then `npm
 
 ## Open decisions
 
-- **UI framework:** the shell is framework-free TypeScript. Record the choice in an ADR
-  before building features.
+- **UI framework:** Preact with TSX; see [ADR-0001](docs/adr/0001-ui-framework.md).
 - **PWA icons:** a single SVG icon ships now; PNG/maskable icons are still needed for the
   widest install support.
 
