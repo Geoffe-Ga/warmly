@@ -27,6 +27,10 @@ KEY_TTL_SECONDS = 600.0
 # The shortest gap between two fetches. A token naming an unknown key triggers
 # a fetch, so without this floor anyone could make the API hammer the provider.
 MIN_REFRESH_SECONDS = 30.0
+# How long keys may keep being used when they cannot be refreshed. It bounds
+# how long a key the provider has withdrawn, for example after a compromise,
+# stays trusted through an outage.
+MAX_STALE_SECONDS = 3600.0
 _FETCH_TIMEOUT_SECONDS = 5.0
 # A key set is a few hundred bytes per key. Refuse anything implausibly large.
 _MAX_DOCUMENT_BYTES = 256 * 1024
@@ -104,8 +108,9 @@ class JwksKeySource:
     Keys are fetched on first use, again once they are older than the TTL,
     and when a token names a key that is not cached (the provider may have
     rotated). Fetches are never closer together than the minimum interval.
-    If a fetch fails, keys already cached keep working; a key that is not
-    cached cannot be verified, and the failure is reported.
+    If a fetch fails, keys already cached keep working for up to the maximum
+    staleness, then are dropped. A key that is not cached cannot be verified,
+    and the failure is reported.
     """
 
     def __init__(
@@ -114,6 +119,7 @@ class JwksKeySource:
         *,
         ttl_seconds: float = KEY_TTL_SECONDS,
         min_refresh_seconds: float = MIN_REFRESH_SECONDS,
+        max_stale_seconds: float = MAX_STALE_SECONDS,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """Create the source.
@@ -122,11 +128,13 @@ class JwksKeySource:
             fetch: Returns the provider's current key set.
             ttl_seconds: How long fetched keys are trusted.
             min_refresh_seconds: The shortest gap between two fetches.
+            max_stale_seconds: How long keys survive failed refreshes.
             clock: A monotonic clock; tests pass their own.
         """
         self._fetch = fetch
         self._ttl = ttl_seconds
         self._min_refresh = min_refresh_seconds
+        self._max_stale = max_stale_seconds
         self._clock = clock
         self._keys: dict[str, PyJWK] = {}
         self._fetched_at: float | None = None
@@ -148,6 +156,14 @@ class JwksKeySource:
             or self._clock() - self._attempted_at >= self._min_refresh
         )
 
+    def _drop_keys_that_are_too_old(self) -> None:
+        """Stop trusting cached keys once they exceed the maximum staleness."""
+        if (
+            self._fetched_at is not None
+            and self._clock() - self._fetched_at >= self._max_stale
+        ):
+            self._keys = {}
+
     async def _refresh(self) -> None:
         """Fetch the key set, remembering whether it worked."""
         self._attempted_at = self._clock()
@@ -157,6 +173,7 @@ class JwksKeySource:
             # HTTPException covers a garbled or cut-off response, which is
             # not an OSError.
             self._last_attempt_failed = True
+            self._drop_keys_that_are_too_old()
             return
         self._last_attempt_failed = False
         self._fetched_at = self._clock()
@@ -222,6 +239,10 @@ def _connection(url: str) -> tuple[http.client.HTTPConnection, str]:
 
 def _get(url: str) -> tuple[int, bytes]:
     """Make one GET request and return the status and a capped body.
+
+    The standard library's blocking client is used, in a thread, instead of
+    an async HTTP library: this is the API's only outbound request, it runs
+    at most once every 30 seconds, and it is not worth a runtime dependency.
 
     One byte more than the cap is read, so the caller can tell "too large"
     from "exactly at the limit".

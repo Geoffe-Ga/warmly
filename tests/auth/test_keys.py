@@ -268,6 +268,30 @@ async def test_a_cached_key_is_served_while_a_slow_fetch_is_in_flight(
     assert await waiting is None
 
 
+async def test_cached_keys_are_dropped_after_an_hour_without_a_refresh(
+    first: Signer,
+) -> None:
+    """A withdrawn key cannot stay trusted for the whole of a long outage."""
+    clock = Clock()
+    provider = Provider(first.jwk())
+    source = JwksKeySource(
+        provider, ttl_seconds=600, max_stale_seconds=3600, clock=clock
+    )
+    await source.key_for("first")
+    provider.failure = OSError("down")
+
+    clock.now += 3599
+    assert await source.key_for("first") is not None
+
+    clock.now += 31
+    with pytest.raises(KeysUnavailableError):
+        await source.key_for("first")
+
+    provider.failure = None
+    clock.now += 31
+    assert await source.key_for("first") is not None
+
+
 async def test_an_unexpected_fetch_error_is_not_swallowed() -> None:
     """Only network and format failures mean 'unavailable'; bugs still surface."""
     provider = Provider()

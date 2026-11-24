@@ -52,7 +52,11 @@ Keys come from `<issuer>/.well-known/jwks.json`. They are cached for ten
 minutes. A token naming an unknown key triggers one fresh fetch, so key
 rotation works without a wait, but fetches are never less than 30 seconds
 apart, so a flood of made-up key IDs cannot make the API hammer the provider.
-During a provider outage, keys already cached keep working. A fresh cached
+During a provider outage, keys already cached keep working for up to an
+hour, then are dropped, so a key the provider withdrew cannot stay trusted
+for the whole of a long outage. For up to 30 seconds after a successful fetch,
+a token signed with a key published since then is refused; a client that
+retries succeeds. A fresh cached
 key is returned without waiting, even while another request is blocked on a
 slow fetch.
 
@@ -79,8 +83,9 @@ the launch checklist.
 - Uses `@supabase/auth-js` only. The browser never calls the Supabase Data API.
 - Never reads a session out of a URL (`detectSessionInUrl` is off). The
   one-time code in an email link is used for exactly one thing: letting the
-  person who opened a reset link choose a new password. The code is removed
-  from the address bar as soon as it is read.
+  person who opened a reset link choose a new password. The code is taken out
+  of the address bar and history when the page loads, and kept in memory
+  only. No session exists until the new password is submitted.
 - Setting a new password requires a reset link accepted on that page. An
   ordinary signed-in session is not enough, and the link's session is ended
   as soon as the password is set.
@@ -88,6 +93,12 @@ the launch checklist.
   works offline. The client then removes the stored session itself as well,
   whatever the library reported. A test runs the real library against a
   server that fails, errors or succeeds, and checks that nothing is left.
+- A reset link must be opened in the browser that asked for it, because the
+  other half of the exchange is kept there. Opened anywhere else it is
+  refused, and the message says to open it on the same device.
+- Holds the password typed at registration in memory until the address is
+  verified, so the user does not type it twice. It is never stored, and it is
+  dropped on verification, sign-in or sign-out.
 - Never reveals whether an address has an account: registering an existing
   address and asking for a reset for an unknown one look the same as the
   normal case.

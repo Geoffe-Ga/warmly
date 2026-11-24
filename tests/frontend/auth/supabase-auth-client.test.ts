@@ -312,7 +312,37 @@ describe("sign in and out", () => {
   });
 });
 
+/** Build the client as a page opened from an email link would. */
+function openedFromLink(code: string): void {
+  page.code = code;
+  client = new SupabaseAuthClient(api, page, () => {
+    forgotten += 1;
+  });
+}
+
 describe("password reset (DEV-006)", () => {
+  it("takes the code out of the address as soon as the page loads", () => {
+    openedFromLink("one-time-code");
+
+    expect(page.cleared).toBe(1);
+    expect(page.code).toBeNull();
+    expect(api.calls).toEqual([]);
+  });
+
+  it("leaves an ordinary address alone", () => {
+    expect(page.cleared).toBe(0);
+  });
+
+  it("forgets an unused code on sign out", async () => {
+    openedFromLink("one-time-code");
+    await client.signOut();
+
+    expect(
+      await failure(client.completePasswordReset(NEW_PHRASE)),
+    ).toMatchObject({ code: "reset_link_invalid" });
+    expect(api.called("exchangeCodeForSession")).toEqual([]);
+  });
+
   it("asks for a link that returns to the new-password screen", async () => {
     await client.requestPasswordReset(EMAIL);
 
@@ -334,7 +364,7 @@ describe("password reset (DEV-006)", () => {
   });
 
   it("trades the link's code for a session, sets the password, then signs out", async () => {
-    page.code = "one-time-code";
+    openedFromLink("one-time-code");
 
     await client.completePasswordReset(NEW_PHRASE);
 
@@ -358,7 +388,7 @@ describe("password reset (DEV-006)", () => {
   });
 
   it("refuses a used or expired link and removes it from the address", async () => {
-    page.code = "stale-code";
+    openedFromLink("stale-code");
     api.errors.exchangeCodeForSession = apiError("flow_state_not_found", 404);
 
     expect(
@@ -369,7 +399,7 @@ describe("password reset (DEV-006)", () => {
   });
 
   it("lets the user pick a stronger password without a new link", async () => {
-    page.code = "one-time-code";
+    openedFromLink("one-time-code");
     api.errors.updateUser = apiError("weak_password", 422);
     expect(await failure(client.completePasswordReset("short"))).toMatchObject({
       code: "weak_password",
@@ -385,7 +415,7 @@ describe("password reset (DEV-006)", () => {
   });
 
   it("a link works for one password change only", async () => {
-    page.code = "one-time-code";
+    openedFromLink("one-time-code");
     await client.completePasswordReset(NEW_PHRASE);
 
     expect(await failure(client.completePasswordReset(PHRASE))).toMatchObject({
@@ -395,7 +425,7 @@ describe("password reset (DEV-006)", () => {
   });
 
   it("ends the link's session even when the change fails", async () => {
-    page.code = "one-time-code";
+    openedFromLink("one-time-code");
     api.errors.updateUser = apiError("same_password", 422);
 
     const error = await failure(client.completePasswordReset(NEW_PHRASE));
@@ -405,7 +435,7 @@ describe("password reset (DEV-006)", () => {
   });
 
   it("reports the failed change even if ending the link's session also fails", async () => {
-    page.code = "one-time-code";
+    openedFromLink("one-time-code");
     api.errors.updateUser = apiError("over_request_rate_limit", 429);
     api.errors.signOut = OFFLINE;
 
@@ -416,7 +446,7 @@ describe("password reset (DEV-006)", () => {
   });
 
   it("reports being offline while trading the code", async () => {
-    page.code = "one-time-code";
+    openedFromLink("one-time-code");
     api.errors.exchangeCodeForSession = OFFLINE;
 
     expect(

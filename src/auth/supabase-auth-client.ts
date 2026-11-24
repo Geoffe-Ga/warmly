@@ -165,6 +165,8 @@ export class SupabaseAuthClient implements AuthClient {
   #pending: { email: string; password: string } | undefined;
   /** True once this page has traded a reset link for a short-lived session. */
   #resetLinkAccepted = false;
+  /** The one-time code this page was opened with, held in memory only. */
+  #code: string | null;
 
   /**
    * @param api - The provider calls to use.
@@ -176,6 +178,13 @@ export class SupabaseAuthClient implements AuthClient {
     this.#api = api;
     this.#page = page;
     this.#forgetStoredSession = forgetSession;
+    // An email link returns with a one-time code in the address. Take it out
+    // of the address bar and history at once, whichever screen it landed on,
+    // and keep it in memory in case it is for a password reset.
+    this.#code = page.readCode();
+    if (this.#code !== null) {
+      page.clearCode();
+    }
   }
 
   async isSignedIn(): Promise<boolean> {
@@ -221,6 +230,7 @@ export class SupabaseAuthClient implements AuthClient {
   async signOut(): Promise<void> {
     this.#pending = undefined;
     this.#resetLinkAccepted = false;
+    this.#code = null;
     try {
       // "local" asks the library to remove this device's session before the
       // server is contacted. Failing to reach the server afterwards is not
@@ -242,11 +252,10 @@ export class SupabaseAuthClient implements AuthClient {
   }
 
   async completePasswordReset(newPassword: string): Promise<void> {
-    const code = this.#page.readCode();
+    const code = this.#code;
     if (code !== null) {
-      // A code works once. Take it out of the address bar whatever happens,
-      // so it is not left in history or retried.
-      this.#page.clearCode();
+      // A code works once, so it is never tried again.
+      this.#code = null;
       const exchange = await this.#api.exchangeCodeForSession(code);
       if (isAuthRetryableFetchError(exchange.error)) {
         throw new AuthError("offline");

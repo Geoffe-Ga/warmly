@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 from typing import Any
 from uuid import UUID
 
@@ -48,6 +49,25 @@ def _assert_refused(response: Any, code: str) -> None:
         "errors": [],
     }
     Problem.model_validate(response.json())
+
+
+def test_every_documented_route_but_health_refuses_an_anonymous_caller(
+    anonymous: TestClient,
+) -> None:
+    """A route added later cannot forget authentication (SEC-006).
+
+    This walks the application's own contract rather than the smoke cases, so
+    it also covers a route nobody has written a case for yet.
+    """
+    schema = anonymous.get("/v1/openapi.json").json()
+    open_routes = set()
+    for template, item in schema["paths"].items():
+        path = re.sub(r"\{[^}]+\}", "55555555-5555-4555-8555-555555555555", template)
+        for method in item:
+            if anonymous.request(method.upper(), path).status_code != 401:
+                open_routes.add(template)
+
+    assert open_routes == PUBLIC_PATHS
 
 
 def test_the_private_cases_are_every_route_but_health() -> None:
