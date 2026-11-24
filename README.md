@@ -98,6 +98,9 @@ python -m warmly.db.migrate                       # create the schema in warmly_
 ./scripts/check-all.sh     # Python gates, then TypeScript gates
 ```
 
+Migrations are forward-only: there is no down migration. To undo a change, add
+a new migration.
+
 The database tests need a real PostgreSQL and fail, rather than skip, when
 `WARMLY_TEST_DATABASE_URL` is not set. Each run creates and drops its own database.
 

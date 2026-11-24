@@ -197,3 +197,56 @@ async def test_ping_reports_a_closed_pool() -> None:
     database = Database("postgresql://nobody@127.0.0.1:9/none?connect_timeout=1")
 
     assert not await database.ping()
+
+
+@pytest_asyncio.fixture
+async def login_db(
+    login_database_url: str, database_url: str
+) -> AsyncIterator[Database]:
+    """Open a pool as the least-privilege login and empty the probe table."""
+    with psycopg.connect(database_url) as conn:
+        conn.execute("TRUNCATE warmly_private.policy_probe")
+    database = Database(login_database_url, max_size=2)
+    await database.open()
+    try:
+        yield database
+    finally:
+        await database.close()
+
+
+async def test_a_least_privilege_login_can_work_through_as_owner(
+    login_db: Database,
+) -> None:
+    """The production shape: a non-superuser member of warmly_api.
+
+    Managed PostgreSQL does not hand out superuser logins, so this is the
+    path that actually runs in production.
+    """
+    await _insert(login_db, OWNER_A, "a-1")
+    await _insert(login_db, OWNER_B, "b-1")
+
+    assert await _notes(login_db, OWNER_A) == ["a-1"]
+    assert await _notes(login_db, OWNER_B) == ["b-1"]
+
+
+async def test_a_least_privilege_login_has_no_access_outside_as_owner(
+    login_database_url: str,
+) -> None:
+    """Without the role switch the login itself can touch nothing."""
+    with (
+        psycopg.connect(login_database_url) as conn,
+        pytest.raises(psycopg.errors.InsufficientPrivilege),
+    ):
+        conn.execute("SELECT count(*) FROM warmly_private.policy_probe")
+
+
+async def test_leaving_the_role_gives_a_least_privilege_login_nothing(
+    login_db: Database,
+) -> None:
+    """Even RESET ROLE inside the block only reaches a powerless login."""
+    await _insert(login_db, OWNER_A, "a-1")
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        async with login_db.as_owner(OWNER_B) as tx:
+            await tx.execute("RESET ROLE")
+            await tx.execute("SELECT note FROM warmly_private.policy_probe")

@@ -88,7 +88,15 @@ Use **option 3**.
   verified backup first (#65).
 - **Production must connect as a least-privilege login role** that is a member
   of `warmly_api` and nothing more: not a superuser, not the schema owner, no
-  `BYPASSRLS`. `SET LOCAL ROLE` is defence in depth, not a substitute. If the
+  `BYPASSRLS`. Provisioning it is two statements, run once by an administrator:
+  `CREATE ROLE <login> LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS PASSWORD
+  '<secret>'` and `GRANT warmly_api TO <login>`. Without the grant, `SET LOCAL
+  ROLE warmly_api` fails and every request errors. `NOINHERIT` matters: the
+  login then has none of the role's privileges until it switches to it, so
+  outside `as_owner`, or after a `RESET ROLE` inside it, it can read nothing.
+  The test suite runs this exact shape and asserts both.
+- **Production connections must be encrypted.** Settings refuse a production
+  URL whose `sslmode` is not `require`, `verify-ca` or `verify-full`. `SET LOCAL ROLE` is defence in depth, not a substitute. If the
   pool connected as an administrator, that one statement would be the only
   barrier.
 - **`as_owner` yields a raw connection, so the SQL run inside it is trusted.**

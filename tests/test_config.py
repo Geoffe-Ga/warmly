@@ -61,6 +61,48 @@ def test_production_refuses_a_local_database(url: str) -> None:
         load_settings({"WARMLY_ENV": "production", "WARMLY_DATABASE_URL": url})
 
 
+@pytest.mark.parametrize(
+    "query",
+    ["", "?sslmode=prefer", "?sslmode=disable", "?sslmode=allow", "?sslmode="],
+    ids=["missing", "prefer", "disable", "allow", "empty"],
+)
+def test_production_requires_an_encrypted_connection(query: str) -> None:
+    """Ciphertext and owner IDs must not cross the network in plain text."""
+    url = f"postgresql://warmly_api@db.internal.example:5432/warmly{query}"
+
+    with pytest.raises(SettingsError, match="sslmode"):
+        load_settings({"WARMLY_ENV": "production", "WARMLY_DATABASE_URL": url})
+
+
+@pytest.mark.parametrize("mode", ["require", "verify-ca", "verify-full"])
+def test_production_accepts_every_encrypting_sslmode(mode: str) -> None:
+    """Any mode that guarantees encryption is allowed."""
+    url = f"postgresql://warmly_api@db.internal.example/warmly?sslmode={mode}"
+
+    settings = load_settings({"WARMLY_ENV": "production", "WARMLY_DATABASE_URL": url})
+
+    assert settings.database_url == url
+
+
+def test_a_repeated_sslmode_is_refused_rather_than_guessed() -> None:
+    """Two values are ambiguous, so neither is trusted."""
+    url = (
+        "postgresql://warmly_api@db.internal.example/warmly"
+        "?sslmode=require&sslmode=disable"
+    )
+
+    with pytest.raises(SettingsError, match="sslmode"):
+        load_settings({"WARMLY_ENV": "production", "WARMLY_DATABASE_URL": url})
+
+
+def test_settings_repr_never_shows_the_database_url() -> None:
+    """Settings may be printed in a traceback; the URL can hold a password."""
+    settings = load_settings({"WARMLY_DATABASE_URL": PROD_URL})
+
+    assert "db.internal.example" not in repr(settings)
+    assert repr(settings) == "Settings(environment='development')"
+
+
 def test_production_accepts_a_remote_database() -> None:
     """A real host passes validation."""
     settings = load_settings(

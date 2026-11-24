@@ -7,7 +7,7 @@ process at startup instead of running with the wrong database (PRD §8).
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from ipaddress import ip_address
 from typing import Literal
 from urllib.parse import parse_qs, urlsplit
@@ -28,6 +28,13 @@ DATABASE_URL_VAR = "WARMLY_DATABASE_URL"
 
 _UNKNOWN_ENVIRONMENT = "WARMLY_ENV must be one of: development, test, production"
 _MISSING_DATABASE_URL = "WARMLY_DATABASE_URL is required in production"
+_UNENCRYPTED_DATABASE_IN_PRODUCTION = (
+    "WARMLY_DATABASE_URL must set sslmode to require, verify-ca or verify-full "
+    "in production"
+)
+# libpq sslmode values that guarantee an encrypted connection. The weaker
+# modes (prefer, allow, disable) can all end up in plain text.
+_ENCRYPTED_SSL_MODES = frozenset({"require", "verify-ca", "verify-full"})
 _LOCAL_DATABASE_IN_PRODUCTION = (
     "WARMLY_DATABASE_URL must not point at a local database in production"
 )
@@ -42,7 +49,8 @@ class Settings:
     """Runtime configuration for the API."""
 
     environment: Environment
-    database_url: str
+    # Kept out of repr(): a connection URL can contain a password.
+    database_url: str = field(repr=False)
 
 
 def _environment(env: Mapping[str, str]) -> Environment:
@@ -74,6 +82,12 @@ def _is_local(database_url: str) -> bool:
     return address.is_loopback or address.is_unspecified
 
 
+def _requires_tls(database_url: str) -> bool:
+    """Report whether a connection URL insists on an encrypted connection."""
+    modes = parse_qs(urlsplit(database_url).query).get("sslmode", [])
+    return len(modes) == 1 and modes[0] in _ENCRYPTED_SSL_MODES
+
+
 def load_settings(env: Mapping[str, str] | None = None) -> Settings:
     """Build settings from environment variables.
 
@@ -85,7 +99,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
 
     Raises:
         SettingsError: If the environment name is unknown, or production is
-            missing a database URL or points at a local database.
+            missing a database URL, points at a local database, or does not
+            require an encrypted connection.
     """
     source = os.environ if env is None else env
     environment = _environment(source)
@@ -95,6 +110,8 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
             raise SettingsError(_MISSING_DATABASE_URL)
         if _is_local(database_url):
             raise SettingsError(_LOCAL_DATABASE_IN_PRODUCTION)
+        if not _requires_tls(database_url):
+            raise SettingsError(_UNENCRYPTED_DATABASE_IN_PRODUCTION)
     return Settings(
         environment=environment, database_url=database_url or DEV_DATABASE_URL
     )

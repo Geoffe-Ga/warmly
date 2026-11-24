@@ -84,6 +84,37 @@ def empty_database_url(admin_url: str) -> Iterator[str]:
 
 
 @pytest.fixture(scope="session")
+def login_database_url(admin_url: str, database_url: str) -> Iterator[str]:
+    """Connect to the migrated database the way production must.
+
+    The login role is not a superuser, owns nothing and cannot bypass
+    row-level security. Its only privilege is membership of ``warmly_api``,
+    which is what lets ``SET LOCAL ROLE warmly_api`` succeed. It is created
+    ``NOINHERIT``, so it has none of that role's privileges until it switches
+    to it: on its own it cannot even read the schema.
+    """
+    role = f"warmly_login_{uuid4().hex[:12]}"
+    # A random credential for a role that exists for one test session.
+    credential = uuid4().hex
+    with psycopg.connect(admin_url, autocommit=True) as conn:
+        conn.execute(
+            sql.SQL(
+                "CREATE ROLE {} LOGIN NOINHERIT NOSUPERUSER NOBYPASSRLS "
+                "NOCREATEDB NOCREATEROLE PASSWORD {}"
+            ).format(sql.Identifier(role), sql.Literal(credential))
+        )
+        conn.execute(sql.SQL("GRANT warmly_api TO {}").format(sql.Identifier(role)))
+    parts = urlsplit(database_url)
+    host = parts.hostname or "127.0.0.1"
+    port = f":{parts.port}" if parts.port else ""
+    try:
+        yield urlunsplit(parts._replace(netloc=f"{role}:{credential}@{host}{port}"))
+    finally:
+        with psycopg.connect(admin_url, autocommit=True) as conn:
+            conn.execute(sql.SQL("DROP ROLE IF EXISTS {}").format(sql.Identifier(role)))
+
+
+@pytest.fixture(scope="session")
 def database_url(empty_database_url: str) -> str:
     """Return a throwaway database with every migration applied."""
     with psycopg.connect(empty_database_url) as conn:
