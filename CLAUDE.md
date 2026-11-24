@@ -11,7 +11,8 @@ Human-facing overview: [README.md](README.md).
 
 **Status:** walking skeleton in progress. `warmly/` (Python) serves every
 `/v1` route as a typed stub; `src/` is a Preact
-shell in which every MVP route renders an accessible placeholder.
+shell with the account screens (register, verify, recovery key, sign in, lock)
+working against in-memory doubles; other routes render accessible placeholders.
 
 ---
 
@@ -75,7 +76,8 @@ docs/security/           Threat model and security notes
 config/                  Build-time config shared with tests (security headers, CSP)
 public/, index.html      PWA static assets and entry; vite.config.ts = build, manifest, SW, Vitest
 tests/                   pytest (test_*.py); tests/frontend/ Vitest unit tests
-e2e/                     Playwright E2E + axe accessibility tests
+e2e/                     Playwright E2E + axe: production/ (the real build) and
+                         app/ (the e2e build, with in-memory service doubles)
 scripts/<gate>.sh        Runs the gate for Python, then TypeScript
 scripts/python/          Python-only gates
 scripts/typescript/      TypeScript-only gates
@@ -139,6 +141,17 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - The Content Security Policy lives in `config/security-headers.ts`. Never add
   `unsafe-inline`, `unsafe-eval` or a wildcard; a new `connect-src` origin needs a
   reason in the PR.
+- Access is decided in one place, `src/app/access.ts`, from the session state
+  (`signed_out`, `signed_in_locked`, `unlocked`). Every route declares its `access`
+  in `src/app/routes.ts`; anything that can show private content is `private`. A
+  screen never checks the session itself.
+- External services (auth, key vault) are interfaces reached through
+  `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
+  `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.
+- Two builds are tested in the browser: `e2e/production/` runs against the real
+  production build (headers, CSP, nothing fake shipped) and `e2e/app/` against the
+  same build made with `--mode e2e`, which includes the doubles. Feature flows go in
+  `e2e/app/`.
 - E2E specs import `test` and `expect` from `e2e/fixtures/test.ts`, never from
   `@playwright/test`: the fixture fails any test that contacts another host or
   violates the CSP. Unit tests cannot use the network at all.

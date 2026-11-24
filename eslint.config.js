@@ -9,6 +9,7 @@ export default tseslint.config(
     ignores: [
       "dist/",
       "dev-dist/",
+      "dist-e2e/",
       "coverage/",
       "node_modules/",
       "playwright-report/",
@@ -47,7 +48,7 @@ export default tseslint.config(
             {
               name: "@playwright/test",
               message:
-                "Import { test, expect } from './fixtures/test' so the egress guard applies.",
+                "Import { test, expect } from '../fixtures/test' so the egress guard applies.",
             },
           ],
         },

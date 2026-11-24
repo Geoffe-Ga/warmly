@@ -25,8 +25,20 @@ export type RouteId =
   | "settings"
   | "devices"
   | "onboarding"
+  | "verify-email"
+  | "recovery-key"
   | "sign-in"
+  | "reset-password"
+  | "recover"
   | "locked";
+
+/**
+ * Who may see a screen:
+ * - `public`: signed-out visitors (sign-in and registration).
+ * - `locked`: a signed-in user whose data is still locked (unlock, recovery).
+ * - `private`: an unlocked user. Everything that can show private content.
+ */
+export type RouteAccess = "public" | "locked" | "private";
 
 /** One entry in the route table. */
 export interface RouteDef {
@@ -38,6 +50,8 @@ export interface RouteDef {
   readonly title: string;
   /** One sentence describing what the finished screen will do. */
   readonly summary: string;
+  /** Which session state may see this screen. */
+  readonly access: RouteAccess;
 }
 
 /** A navigation link: a visible label and the path it leads to. */
@@ -59,96 +73,141 @@ export const ROUTES: readonly RouteDef[] = [
     path: "/",
     title: "Warmly",
     summary: "Your private journal and conversation aid.",
+    access: "private",
   },
   {
     id: "journal",
     path: "/journal",
     title: "Journal",
     summary: "Your entries in date order, with search.",
+    access: "private",
   },
   {
     id: "journal-new",
     path: "/journal/new",
     title: "New journal entry",
     summary: "Three questions to answer in your own words.",
+    access: "private",
   },
   {
     id: "journal-entry",
     path: "/journal/entries/:id",
     title: "Journal entry",
     summary: "One entry, which you can read, edit or delete.",
+    access: "private",
   },
   {
     id: "reflect",
     path: "/reflect",
     title: "Reflect",
     summary: "Ask your own question about your own journal.",
+    access: "private",
   },
   {
     id: "reflect-session",
     path: "/reflect/sessions/:id",
     title: "Reflection",
     summary: "One private conversation about your journal.",
+    access: "private",
   },
   {
     id: "prepare",
     path: "/prepare",
     title: "Prepare for a Conversation",
     summary: "Your private collections of conversation cards.",
+    access: "private",
   },
   {
     id: "collection",
     path: "/prepare/collections/:id",
     title: "Collection",
     summary: "The cards in one collection, in the order you chose.",
+    access: "private",
   },
   {
     id: "card",
     path: "/prepare/collections/:id/cards/:cardId",
     title: "Card",
     summary: "One conversation card, which you can rewrite freely.",
+    access: "private",
   },
   {
     id: "present",
     path: "/prepare/collections/:id/present",
     title: "Presentation",
     summary: "One card at a time, in large text.",
+    access: "private",
   },
   {
     id: "print",
     path: "/prepare/collections/:id/print",
     title: "Print",
     summary: "A clean printable copy of one collection.",
+    access: "private",
   },
   {
     id: "settings",
     path: "/settings",
     title: "Settings",
     summary: "Your account, AI provider and privacy settings.",
+    access: "private",
   },
   {
     id: "devices",
     path: "/settings/devices",
     title: "Manage Devices",
     summary: "The devices that can open your journal.",
+    access: "private",
   },
   {
     id: "onboarding",
     path: "/welcome",
-    title: "Welcome to Warmly",
-    summary: "Create your account and save your recovery key.",
+    title: "Create your account",
+    summary:
+      "Your journal is private to you. Start with an email and a password.",
+    access: "public",
+  },
+  {
+    id: "verify-email",
+    path: "/welcome/verify",
+    title: "Check your email",
+    summary: "Confirm your email address to continue.",
+    access: "public",
+  },
+  {
+    id: "recovery-key",
+    path: "/welcome/recovery-key",
+    title: "Save your recovery key",
+    summary: "The only way back into your journal if you lose your devices.",
+    access: "locked",
   },
   {
     id: "sign-in",
     path: "/sign-in",
     title: "Sign in",
     summary: "Sign in to your own account.",
+    access: "public",
+  },
+  {
+    id: "reset-password",
+    path: "/sign-in/reset",
+    title: "Reset your password",
+    summary: "Get a link to choose a new password.",
+    access: "public",
+  },
+  {
+    id: "recover",
+    path: "/recover",
+    title: "Unlock with your recovery key",
+    summary: "Use your recovery key to open your journal on this device.",
+    access: "locked",
   },
   {
     id: "locked",
     path: "/locked",
     title: "Warmly is locked",
-    summary: "Unlock to see your journal.",
+    summary: "Your journal is closed. Unlock it to continue.",
+    access: "locked",
   },
 ];
 

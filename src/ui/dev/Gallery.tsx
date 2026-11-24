@@ -8,7 +8,7 @@ import { TextArea, TextField } from "../components/Field";
 import { PageLayout } from "../components/PageLayout";
 import { StatusBanner } from "../components/StatusBanner";
 
-/** Path of the gallery. It exists in development builds only. */
+/** Path of the gallery. It never exists in a production build. */
 export const GALLERY_PATH = "/dev/components";
 
 /**

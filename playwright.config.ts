@@ -1,15 +1,23 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const PORT = 4173;
-const DEV_PORT = 4174;
-const DEV_URL = `http://localhost:${DEV_PORT}`;
-const GALLERY_SPEC = /gallery\.spec\.ts$/;
+const PRODUCTION_PORT = 4173;
+const APP_PORT = 4174;
+const PRODUCTION_URL = `http://localhost:${PRODUCTION_PORT}`;
+const APP_URL = `http://localhost:${APP_PORT}`;
 const isCI = Boolean(process.env["CI"]);
 
 /**
- * E2E + accessibility suite. Runs against the production build (`vite preview`)
- * so the service worker and manifest behave as they will when installed.
- * Browsers mirror PRD AC-28: mobile Safari and a modern desktop browser.
+ * E2E + accessibility suite. Browsers mirror PRD AC-28: mobile Safari and a
+ * modern desktop browser. Two builds are served, both through `vite preview`
+ * so the service worker, manifest and security headers behave as installed:
+ *
+ * - **production** (`e2e/production/`): exactly what ships. Used for what must
+ *   be true of the real artefact: headers, the Content Security Policy, and
+ *   that no test double or development tool is in the bundle.
+ * - **app** (`e2e/app/`): the same production build with `--mode e2e`, which
+ *   swaps in in-memory test doubles for external services and includes the
+ *   component gallery. Used for feature flows, which cannot depend on a real
+ *   auth server or AI provider.
  */
 export default defineConfig({
   testDir: "e2e",
@@ -18,43 +26,40 @@ export default defineConfig({
   retries: isCI ? 1 : 0,
   reporter: isCI ? [["github"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: `http://localhost:${PORT}`,
     trace: "on-first-retry",
   },
   projects: [
     {
-      name: "desktop-chromium",
-      testIgnore: GALLERY_SPEC,
-      use: { ...devices["Desktop Chrome"] },
+      name: "production-chromium",
+      testDir: "e2e/production",
+      use: { ...devices["Desktop Chrome"], baseURL: PRODUCTION_URL },
     },
     {
-      name: "mobile-safari",
-      testIgnore: GALLERY_SPEC,
-      use: { ...devices["iPhone 15"] },
-    },
-    // The component gallery exists only in development builds, so these two
-    // projects run its spec against the dev server instead of the preview.
-    {
-      name: "gallery-chromium",
-      testMatch: GALLERY_SPEC,
-      use: { ...devices["Desktop Chrome"], baseURL: DEV_URL },
+      name: "production-mobile-safari",
+      testDir: "e2e/production",
+      use: { ...devices["iPhone 15"], baseURL: PRODUCTION_URL },
     },
     {
-      name: "gallery-mobile-safari",
-      testMatch: GALLERY_SPEC,
-      use: { ...devices["iPhone 15"], baseURL: DEV_URL },
+      name: "app-chromium",
+      testDir: "e2e/app",
+      use: { ...devices["Desktop Chrome"], baseURL: APP_URL },
+    },
+    {
+      name: "app-mobile-safari",
+      testDir: "e2e/app",
+      use: { ...devices["iPhone 15"], baseURL: APP_URL },
     },
   ],
   webServer: [
     {
       command: "npm run build && npm run preview",
-      url: `http://localhost:${PORT}`,
+      url: PRODUCTION_URL,
       reuseExistingServer: !isCI,
       timeout: 120_000,
     },
     {
-      command: `npm run dev -- --port ${DEV_PORT} --strictPort`,
-      url: DEV_URL,
+      command: `npm run build:e2e && npm run preview:e2e -- --port ${APP_PORT}`,
+      url: APP_URL,
       reuseExistingServer: !isCI,
       timeout: 120_000,
     },
