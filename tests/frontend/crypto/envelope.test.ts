@@ -295,6 +295,17 @@ describe("record envelope (SEC-002, AC-04)", () => {
 });
 
 describe("JSON records", () => {
+  it.each([undefined, () => 1, Symbol("x")])(
+    "refuses a value with no JSON form",
+    async (value) => {
+      const root = await newRoot();
+
+      await expect(sealJson(root, CONTEXT, value)).rejects.toThrow(
+        "The record has no JSON form",
+      );
+    },
+  );
+
   it("round-trips a structured record", async () => {
     const root = await newRoot();
     const entry = {

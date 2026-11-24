@@ -367,6 +367,35 @@ describe("sign in, unlock and recover", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it.each([
+    ["on this device", "/locked", "Unlock", "unlock"],
+    ["with the recovery key", "/recover", "Unlock", "unlockWithRecoveryKey"],
+  ] as const)(
+    "locks the keys again if the session ends while unlocking %s",
+    async (_name, path, button, method) => {
+      const services = testServices("signed_in_locked");
+      await setUpKeys(services.vault);
+      services.vault.lock();
+      const open = services.vault[method].bind(services.vault);
+      services.vault[method] = async (key: string = FAKE_RECOVERY_KEY) => {
+        await open(key);
+        // A sign-out lands while the keys are being opened.
+        services.session.signOut();
+      };
+      await renderApp(path, services);
+      if (path === "/recover") {
+        await fill("Recovery key", FAKE_RECOVERY_KEY);
+      }
+
+      await press(button);
+
+      await waitFor(() => {
+        expect(services.session.state).toBe("signed_out");
+        expect(services.vault.isUnlocked).toBe(false);
+      });
+    },
+  );
+
   it("explains a device that cannot unlock on its own", async () => {
     await renderApp("/locked", testServices("signed_in_locked"));
 

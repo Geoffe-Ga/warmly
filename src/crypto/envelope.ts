@@ -185,13 +185,20 @@ export async function open(
  * @param context - The owner, record ID and type the record is bound to.
  * @param value - The record.
  * @returns The envelope.
+ * @throws Error if the value has no JSON form, such as `undefined`.
  */
 export async function sealJson(
   root: RootKey,
   context: RecordContext,
   value: unknown,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  return seal(root, context, utf8(JSON.stringify(value)));
+  const text: string | undefined = JSON.stringify(value);
+  // `undefined`, a function or a symbol has no JSON form, and would otherwise
+  // fail later with an error that says nothing useful.
+  if (text === undefined) {
+    throw new Error("The record has no JSON form");
+  }
+  return seal(root, context, utf8(text));
 }
 
 /**
