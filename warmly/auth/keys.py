@@ -173,7 +173,6 @@ class JwksKeySource:
             # HTTPException covers a garbled or cut-off response, which is
             # not an OSError.
             self._last_attempt_failed = True
-            self._drop_keys_that_are_too_old()
             return
         self._last_attempt_failed = False
         self._fetched_at = self._clock()
@@ -192,13 +191,18 @@ class JwksKeySource:
                 could not be fetched.
         """
         # The common case takes no lock: a fresh cached key is returned even
-        # while another request is waiting on a slow fetch.
+        # while another request is waiting on a slow fetch. Reading here is
+        # safe because a refresh replaces the whole dictionary in one step
+        # and nothing in this coroutine yields between the check and the read.
         if self._is_fresh() and key_id in self._keys:
             return self._keys[key_id]
         async with self._lock:
             needs_fetch = not self._is_fresh() or key_id not in self._keys
             if needs_fetch and self._may_fetch():
                 await self._refresh()
+            # Checked on every path, not only after a failed fetch, so no key
+            # is ever served beyond the maximum staleness.
+            self._drop_keys_that_are_too_old()
             key = self._keys.get(key_id)
             # "Not published" can only be said from a key set that was
             # actually fetched. After a failed fetch the honest answer for a

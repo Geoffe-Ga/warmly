@@ -73,8 +73,8 @@ enforce it, and the first is the one that matters:
    It is not sufficient alone, because a signed-in user can edit their own
    `user_metadata`.
 
-Whoever operates the Supabase project must keep "Confirm email" on. This is on
-the launch checklist.
+Whoever operates the Supabase project must keep "Confirm email" on. It is the
+first item in [the release checklist](../release-checklist.md).
 
 ## What the browser client does and does not do
 

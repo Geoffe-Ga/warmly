@@ -292,6 +292,32 @@ async def test_cached_keys_are_dropped_after_an_hour_without_a_refresh(
     assert await source.key_for("first") is not None
 
 
+async def test_no_key_is_served_beyond_the_cap_even_between_fetch_attempts(
+    first: Signer,
+) -> None:
+    """The cap holds on the path that is not allowed to fetch yet, too."""
+    clock = Clock()
+    provider = Provider(first.jwk())
+    source = JwksKeySource(
+        provider,
+        ttl_seconds=600,
+        min_refresh_seconds=300,
+        max_stale_seconds=3600,
+        clock=clock,
+    )
+    await source.key_for("first")
+    provider.failure = OSError("down")
+    clock.now += 3500
+    assert await source.key_for("first") is not None
+    calls = provider.calls
+
+    # Past the cap, but inside the interval in which no fetch may be made.
+    clock.now += 200
+    with pytest.raises(KeysUnavailableError):
+        await source.key_for("first")
+    assert provider.calls == calls
+
+
 async def test_an_unexpected_fetch_error_is_not_swallowed() -> None:
     """Only network and format failures mean 'unavailable'; bugs still surface."""
     provider = Provider()

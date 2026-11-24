@@ -60,9 +60,12 @@ def _invalid() -> AuthenticationError:
 def _email_is_verified(claims: dict[str, object]) -> bool:
     """Report whether the token says the account's email is confirmed.
 
-    This claim is defence in depth. The control that matters is the auth
-    provider's "confirm email" setting, which stops an unconfirmed account
-    from getting a token at all; see docs/security/authentication.md.
+    **This claim is not a control.** A signed-in user can edit their own
+    ``user_metadata``, so the check only catches a misconfigured project. What
+    enforces verification is the auth provider's "Confirm email" setting,
+    which stops an unconfirmed account from getting a token at all. Keeping
+    that setting on is a release-checklist item; see
+    docs/release-checklist.md and docs/security/authentication.md.
     """
     metadata = claims.get("user_metadata")
     return isinstance(metadata, dict) and metadata.get("email_verified") is True

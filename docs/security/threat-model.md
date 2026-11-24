@@ -43,6 +43,13 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Oversized or abusive requests | Request body cap | **In place**; rate limits planned: #38 |
 | Prompt injection in journal text | Evidence framing; citation grounding | Planned: #43, #52 |
 
+## Known windows
+
+- **A signed-out or revoked session's access token** stays valid until it
+  expires, because the API verifies tokens without calling the auth provider.
+  The token decrypts nothing by itself. Binding each request to a device key
+  that can be revoked at once is planned in #21 and #23.
+
 ## Controls added by the security baseline
 
 ### Content Security Policy and headers (frontend)
