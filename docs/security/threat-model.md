@@ -47,12 +47,18 @@ encrypted on the user's device and the backend stores ciphertext only.
 
 ### Content Security Policy and headers (frontend)
 
-One definition, `build/security-headers.ts`, feeds the preview server, the
+One definition, `config/security-headers.ts`, feeds the preview server, the
 `<meta>` tag embedded at build time, and the tests. The policy starts from
 `default-src 'none'`. Scripts and styles load from the app's own origin, with
 no inline code and no `eval`. `connect-src` is an explicit allowlist of exact
 `https` origins; wildcards are rejected. AI provider hosts are absent until
 the AI gateway adds them.
+
+The policy is delivered twice on purpose. The header is authoritative and is
+the only place `frame-ancestors` works. The `<meta>` tag travels inside
+`index.html`, so the page keeps a policy even on a host that sends no headers
+at all. A build with a `VITE_API_ORIGIN` or `VITE_AUTH_ORIGIN` that is not an
+exact `https` origin fails, so a typo cannot quietly widen the policy.
 
 The production host must send the same headers. Until the deploy pipeline
 exists (#61), only the preview server is verified.

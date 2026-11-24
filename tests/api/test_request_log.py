@@ -5,6 +5,7 @@ import logging
 import sys
 
 import pytest
+from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
 from tests.api.cases import CASES, DEVICE_ID, ENROLLMENT_ID, Case
@@ -93,6 +94,30 @@ def test_route_is_logged_as_a_template_not_a_concrete_path(
     logged = json.dumps(_fields(caplog))
     assert DEVICE_ID not in logged
     assert ENROLLMENT_ID not in logged
+
+
+def test_route_template_survives_values_that_collide_with_segments(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A parameter equal to a literal segment, or to another parameter, is fine."""
+    app = create_app()
+    router = APIRouter(prefix="/v1/pairs")
+
+    @router.get("/{first}/v1/{second}")
+    def pair(first: str, second: str) -> dict[str, str]:
+        """Echo the two path parameters."""
+        return {"first": first, "second": second}
+
+    app.include_router(router)
+    caplog.set_level(logging.INFO, logger=LOGGER_NAME)
+
+    TestClient(app).get("/v1/pairs/v1/v1/v1")
+    TestClient(app).get("/v1/pairs/pairs/v1/pairs")
+
+    assert [fields["route"] for fields in _fields(caplog)] == [
+        "/v1/pairs/{first}/v1/{second}",
+        "/v1/pairs/{first}/v1/{second}",
+    ]
 
 
 def test_unmatched_path_is_logged_without_the_path(

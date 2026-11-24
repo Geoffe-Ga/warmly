@@ -6,7 +6,7 @@ import {
   cspMeta,
   securityHeaders,
   type ConnectSources,
-} from "./build/security-headers.ts";
+} from "./config/security-headers.ts";
 
 // Design references from the PRD (UI-001). These are brand colours, not
 // guaranteed-accessible text colours; text contrast is handled in CSS tokens.
@@ -102,7 +102,7 @@ export default defineConfig({
     css: true,
     coverage: {
       provider: "v8",
-      include: ["src/**/*.{ts,tsx}", "build/**/*.ts"],
+      include: ["src/**/*.{ts,tsx}", "config/**/*.ts"],
       // main.tsx is the browser bootstrap (DOM lookup + SW registration) and is
       // exercised by the Playwright E2E suite instead of unit tests.
       exclude: ["src/**/*.d.ts", "src/main.tsx"],

@@ -1,4 +1,4 @@
-import { cspHeader, securityHeaders } from "../build/security-headers";
+import { cspHeader, securityHeaders } from "../config/security-headers";
 import { ROUTES, pathFor } from "../src/app/routes";
 
 import { expect, test } from "./fixtures/test";

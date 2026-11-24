@@ -3,7 +3,10 @@
 Without a cap, one batch of sync operations could reach well over 100 MB of
 JSON, all of it parsed and validated in memory. The limit is enforced twice:
 from the ``Content-Length`` header when present, and by counting the bytes
-actually received, because the header can be missing or wrong.
+actually received, because the header can be missing or wrong. In the second
+case the middleware answers 413 itself and tells the application the client
+went away, so the result does not depend on how a framework handles errors
+raised while it reads a body.
 """
 
 from http import HTTPStatus
@@ -16,10 +19,6 @@ from warmly.schemas.problem import Problem
 # Enough for several maximum-size records in one batch. Clients split larger
 # batches; the server never truncates.
 MAX_BODY_BYTES = 8 * 1024 * 1024
-
-
-class BodyTooLargeError(Exception):
-    """Raised inside the receive channel when the byte count passes the cap."""
 
 
 def too_large_problem() -> Problem:
@@ -75,27 +74,47 @@ class BodyLimitMiddleware:
 
         received = 0
         response_started = False
+        rejected = False
+
+        async def reject() -> None:
+            """Answer 413 once, unless the application already responded."""
+            nonlocal rejected, response_started
+            rejected = True
+            if not response_started:
+                response_started = True
+                await problem_response(too_large_problem())(scope, receive, send)
 
         async def counting_receive() -> Message:
-            """Pass request events through while counting body bytes."""
+            """Count body bytes; past the cap, reject and report a disconnect.
+
+            The refusal is sent from here rather than raised, because a web
+            framework may catch an exception raised while it reads the body
+            and turn it into a different error.
+            """
             nonlocal received
+            if rejected:
+                return {"type": "http.disconnect"}
             message = await receive()
             if message["type"] == "http.request":
                 received += len(message.get("body", b""))
                 if received > self.max_bytes:
-                    raise BodyTooLargeError
+                    await reject()
+                    return {"type": "http.disconnect"}
             return message
 
-        async def tracking_send(message: Message) -> None:
-            """Remember whether the application has begun its response."""
+        async def guarded_send(message: Message) -> None:
+            """Forward the application's response unless we already refused."""
             nonlocal response_started
+            if rejected:
+                return
             if message["type"] == "http.response.start":
                 response_started = True
             await send(message)
 
         try:
-            await self.app(scope, counting_receive, tracking_send)
-        except BodyTooLargeError:
-            if response_started:
+            await self.app(scope, counting_receive, guarded_send)
+        except Exception:
+            # The application may fail when its client "disconnects". That is
+            # our doing and already answered; any other failure is real.
+            if not rejected:
                 raise
-            await problem_response(too_large_problem())(scope, receive, send)

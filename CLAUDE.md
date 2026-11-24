@@ -69,7 +69,7 @@ src/                     TypeScript PWA: app/ (route table, router, shell), ui/ 
                          components), main.tsx (bootstrap + SW registration)
 docs/adr/                Architecture Decision Records
 docs/security/           Threat model and security notes
-build/                   Build-time config shared with tests (security headers, CSP)
+config/                  Build-time config shared with tests (security headers, CSP)
 public/, index.html      PWA static assets and entry; vite.config.ts = build, manifest, SW, Vitest
 tests/                   pytest (test_*.py); tests/frontend/ Vitest unit tests
 e2e/                     Playwright E2E + axe accessibility tests
@@ -124,7 +124,7 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   a draft may be unsaved. Precache only the public app shell; never add runtime caching
   of API responses or anything containing plaintext.
 - `no-console` is an ESLint error, because logs must never contain journal content.
-- The Content Security Policy lives in `build/security-headers.ts`. Never add
+- The Content Security Policy lives in `config/security-headers.ts`. Never add
   `unsafe-inline`, `unsafe-eval` or a wildcard; a new `connect-src` origin needs a
   reason in the PR.
 - E2E specs import `test` and `expect` from `e2e/fixtures/test.ts`, never from

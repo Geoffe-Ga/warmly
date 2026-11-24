@@ -5,7 +5,7 @@ import {
   cspHeader,
   cspMeta,
   securityHeaders,
-} from "../../build/security-headers";
+} from "../../config/security-headers";
 
 describe("Content Security Policy (SEC-007)", () => {
   it("denies everything by default and allows only same-origin code", () => {

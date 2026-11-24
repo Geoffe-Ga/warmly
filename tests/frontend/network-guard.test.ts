@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { NetworkAccessError, installNetworkGuard } from "./setup";
+import { NetworkAccessError, installNetworkGuard } from "./network-guard";
 
 describe("unit-test network guard (AC-03)", () => {
   it.each([

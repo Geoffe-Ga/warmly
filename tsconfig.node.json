@@ -19,7 +19,7 @@
     "playwright.config.ts",
     "eslint.config.js",
     "e2e/**/*.ts",
-    "build/**/*.ts",
+    "config/**/*.ts",
     "src/app/routes.ts"
   ]
 }

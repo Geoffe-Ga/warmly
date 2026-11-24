@@ -20,21 +20,23 @@ UNMATCHED_ROUTE = "unmatched"
 def _route_template(scope: Scope) -> str:
     """Return the matched route's template, never the concrete path.
 
-    The template is rebuilt from the request path by putting each path
-    parameter's name back in place of its value, which works however deeply
-    the router that matched is nested. A request that matched no route is
-    reported as ``unmatched``, because its path is arbitrary user input.
+    The matched route knows its own template, but a route inside a nested
+    router only knows the part after the router's prefix. The prefix is
+    therefore taken from the front of the real path: it is whatever precedes
+    the route's own segments, and router prefixes in this application are
+    static. Parameter values never enter the result, so two equal values, or
+    a value that happens to equal a literal segment, cannot confuse it.
+
+    A request that matched no route is reported as ``unmatched``, because its
+    path is arbitrary user input.
     """
-    if scope.get("route") is None:
+    own_template = getattr(scope.get("route"), "path", None)
+    if not isinstance(own_template, str):
         return UNMATCHED_ROUTE
-    names_by_value = {
-        str(value): name for name, value in scope.get("path_params", {}).items()
-    }
-    segments = [
-        f"{{{names_by_value[segment]}}}" if segment in names_by_value else segment
-        for segment in scope["path"].split("/")
-    ]
-    return "/".join(segments)
+    own_segments = own_template.strip("/").split("/") if own_template.strip("/") else []
+    path_segments = scope["path"].strip("/").split("/")
+    prefix = path_segments[: len(path_segments) - len(own_segments)]
+    return "/" + "/".join([*prefix, *own_segments])
 
 
 class RequestLogMiddleware:
