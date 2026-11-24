@@ -1,0 +1,32 @@
+{
+  "formatVersion": 1,
+  "note": "Synthetic fixtures. The root key is the bytes 0..31 and protects nothing real.",
+  "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "rootKeyFingerprint": "72462f5e2b2b5faf",
+  "records": [
+    {
+      "name": "journal entry as JSON",
+      "owner": "0b0f7c1e-5a2d-4a53-9c1d-2f6a3e1b7c90",
+      "recordId": "11111111-1111-4111-8111-111111111111",
+      "type": 1,
+      "plaintext": "eyJyZXNwb25zZXMiOnsiZ29vZCI6IldlIGNvb2tlZCBkaW5uZXIgdG9nZXRoZXIuIiwiaW1wcm92ZSI6Ikxpc3RlbmluZyBiZWZvcmUgcmVwbHlpbmcuIiwibG92ZWQiOiJBIGN1cCBvZiB0ZWEgd2l0aG91dCBiZWluZyBhc2tlZC4ifSwiZmVlbGluZ3MiOlsiY2FsbSIsImdyYXRlZnVsIl19",
+      "envelope": "AS/ABzMcotyM42xjf8GPDd3h7/ke51vFQuzmKbYTSAKupnaegE6anVeFG4XyZL1XEYtOzg/SLJGB98Awyfsu8Pyi1tLdvwD/c97POld1riLVaa/Lc5b0Swz134PGC3ZxcyfdJ+EbaZ9Wv5vc6KLVYq+EYb8FrGBURLmwXc8YB8XxY+L74/m5B75/3ckyS7Ap+tiwxd7oVp8FXC/5TDwDHQvDJbGc9cBPcO+py8RniLxicc/u6iuSJcAl/H1TrYDQoLc="
+    },
+    {
+      "name": "empty record",
+      "owner": "0b0f7c1e-5a2d-4a53-9c1d-2f6a3e1b7c90",
+      "recordId": "22222222-2222-4222-8222-222222222222",
+      "type": 0,
+      "plaintext": "",
+      "envelope": "Ac6M0OKwi7nI7ley2m/Se+XG8EJ6ddLPZtVVkvs="
+    },
+    {
+      "name": "unicode text",
+      "owner": "0b0f7c1e-5a2d-4a53-9c1d-2f6a3e1b7c90",
+      "recordId": "33333333-3333-4333-8333-333333333333",
+      "type": 255,
+      "plaintext": "bmHDr3ZlIGNhZsOpIPCfkpsg4oCUIHN5bnRoZXRpYw==",
+      "envelope": "ARwXB2VYRCQWYgAH14hv3bVNC6ysPkX3472zyYT3UlQcbqsIFGfCV0nryoOzMuLn03vz99fRSFQ7ijwo"
+    }
+  ]
+}

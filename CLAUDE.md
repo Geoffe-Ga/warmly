@@ -145,6 +145,9 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   (`signed_out`, `signed_in_locked`, `unlocked`). Every route declares its `access`
   in `src/app/routes.ts`; anything that can show private content is `private`. A
   screen never checks the session itself.
+- All encryption goes through `src/crypto/envelope.ts` (ADR-0003). Use WebCrypto
+  only; add no crypto dependency. Never edit a directory under
+  `tests/fixtures/crypto/`: a format change adds a new version beside it.
 - External services (auth, key vault) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.
