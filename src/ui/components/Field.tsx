@@ -9,8 +9,11 @@ interface FieldBaseProps {
   readonly onInput: (value: string) => void;
   /** Extra guidance shown under the label. */
   readonly hint?: string;
-  /** Validation message. When set, the field is marked invalid. */
-  readonly error?: string;
+  /**
+   * Validation message. When set, the field is marked invalid. `undefined`
+   * may be passed explicitly, so a caller can hand over its error state as is.
+   */
+  readonly error?: string | undefined;
   readonly required?: boolean;
   readonly name?: string;
 }

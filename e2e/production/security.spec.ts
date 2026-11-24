@@ -1,7 +1,7 @@
-import { cspHeader, securityHeaders } from "../config/security-headers";
-import { ROUTES, pathFor } from "../src/app/routes";
+import { cspHeader, securityHeaders } from "../../config/security-headers";
+import { ROUTES, pathFor } from "../../src/app/routes";
 
-import { expect, test } from "./fixtures/test";
+import { expect, test } from "../fixtures/test";
 
 const SAMPLE_PARAMS = { id: "sample-1", cardId: "sample-2" };
 const EXPECTED = securityHeaders();

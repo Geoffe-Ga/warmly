@@ -76,7 +76,7 @@ warmly/
 ├── public/                # Static PWA assets (icon)
 ├── index.html             # PWA entry; vite.config.ts holds build, manifest, SW and Vitest config
 ├── tests/                 # pytest (test_*.py); tests/frontend/ for Vitest unit tests
-├── e2e/                   # Playwright E2E + axe-core accessibility tests
+├── e2e/                   # Playwright E2E + axe: production/ (real build), app/ (build with test doubles)
 ├── scripts/               # Quality gates; root scripts run both languages
 │   ├── python/            #   Python-only gates (ruff, mypy, bandit, pytest, mutmut…)
 │   └── typescript/        #   TypeScript-only gates (eslint, tsc, prettier, vitest, playwright, stryker)

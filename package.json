@@ -11,6 +11,8 @@
     "dev": "vite",
     "build": "npm run type-check && vite build",
     "preview": "vite preview --port 4173 --strictPort",
+    "build:e2e": "vite build --mode e2e --outDir dist-e2e",
+    "preview:e2e": "vite preview --outDir dist-e2e --strictPort",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

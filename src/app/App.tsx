@@ -1,106 +1,83 @@
 /**
- * Application shell (ADR-0001): resolves the current path to a screen and
- * wraps it in the shared header, secondary navigation and `<main>` landmark.
+ * Application shell (ADR-0001): owns the current path, applies the access
+ * rules for the session state, and wraps the screen in the shared header and
+ * `<main>` landmark.
  */
 import type { JSX } from "preact";
-import { useCallback, useEffect, useMemo, useState } from "preact/hooks";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useState,
+} from "preact/hooks";
 
 import { PAGE_HEADING_ATTRIBUTE } from "../ui/components/PageHeading";
-import { GALLERY_PATH, Gallery } from "../ui/dev/Gallery";
-import { Home } from "../ui/screens/Home";
-import { NotFound } from "../ui/screens/NotFound";
-import { Placeholder } from "../ui/screens/Placeholder";
+import { PageLayout } from "../ui/components/PageLayout";
+import { SessionControls } from "./SessionControls";
 import { Link, NavigationContext, type Navigation } from "./navigation";
-import { matchRoute, normalisePath } from "./router";
+import { APP_NAME, resolve } from "./resolve";
+import { normalisePath } from "./router";
 import { SECONDARY_NAV } from "./routes";
-
-const APP_NAME = "Warmly";
-
-/** What to show for a path: its title and the screen to render. */
-interface View {
-  readonly title: string;
-  readonly isHome: boolean;
-  readonly render: () => JSX.Element;
-}
+import { ServicesProvider, createServices, type Services } from "./services";
+import type { SessionState } from "./session";
+import { useSessionState } from "./use-session-state";
 
 function currentPath(): string {
   return normalisePath(window.location.pathname);
 }
 
-/**
- * Development-only screens. `import.meta.env.DEV` is replaced with `false` in
- * a production build, so the bundler drops this branch and the gallery with it.
- *
- * @param path - A normalised pathname.
- * @returns The development view for that path, if there is one.
- */
-function resolveDevView(path: string): View | undefined {
-  if (import.meta.env.DEV && path === GALLERY_PATH) {
-    return {
-      title: "Component gallery",
-      isHome: false,
-      render: () => <Gallery />,
-    };
-  }
-  return undefined;
-}
-
-/**
- * Decide what a path shows.
- *
- * @param path - A normalised pathname.
- * @returns The view for that path.
- */
-export function resolveView(path: string): View {
-  const match = matchRoute(path);
-  if (match?.route.id === "home") {
-    return { title: APP_NAME, isHome: true, render: () => <Home /> };
-  }
-  if (match) {
-    return {
-      title: match.route.title,
-      isHome: false,
-      render: () => <Placeholder route={match.route} />,
-    };
-  }
-  return (
-    resolveDevView(path) ?? {
-      title: "Page not found",
-      isHome: false,
-      render: () => <NotFound />,
-    }
-  );
-}
-
-function Header(props: { readonly showHomeLink: boolean }): JSX.Element {
+function Header(props: {
+  readonly showHomeLink: boolean;
+  readonly state: SessionState;
+  readonly navigate: (path: string) => void;
+}): JSX.Element {
+  const unlocked = props.state === "unlocked";
   return (
     <header class="app-header">
-      {props.showHomeLink && (
+      {props.showHomeLink && unlocked && (
         <Link href="/" label="Warmly home" class="home-link">
           {APP_NAME}
         </Link>
       )}
-      <nav aria-label="Secondary">
-        <ul class="secondary-nav">
-          {SECONDARY_NAV.map((item) => (
-            <li key={item.label}>
-              <Link href={item.path}>{item.label}</Link>
-            </li>
-          ))}
-        </ul>
-      </nav>
+      {!unlocked && <span class="app-name">{APP_NAME}</span>}
+      {unlocked && (
+        <nav aria-label="Secondary">
+          <ul class="secondary-nav">
+            {SECONDARY_NAV.map((item) => (
+              <li key={item.label}>
+                <Link href={item.path}>{item.label}</Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
+      <SessionControls navigate={props.navigate} />
     </header>
   );
 }
 
+/** Props for {@link App}. */
+export interface AppProps {
+  /** Services to use; a test passes its own. Defaults to this build's. */
+  readonly services?: Services;
+}
+
 /**
- * Root component. Owns the current path, keeps it in step with the browser
- * history, sets the document title, and moves focus to the page heading after
- * each in-app navigation, including a click on the link to the current screen.
+ * Root component. Restores the signed-in session, owns the current path and
+ * keeps it in step with the browser history, enforces the access rules, sets
+ * the document title, and moves focus to the page heading after each in-app
+ * navigation.
  *
+ * @param props - See {@link AppProps}.
  * @returns The whole application.
  */
-export function App(): JSX.Element {
+export function App(props: AppProps): JSX.Element {
+  const services = useMemo(
+    () => props.services ?? createServices(),
+    [props.services],
+  );
+  const { state, ready } = useSessionState(services);
   const [path, setPath] = useState(currentPath);
   // Counts in-app navigations. Zero means first render: focus is left alone.
   const [navigations, setNavigations] = useState(0);
@@ -125,19 +102,38 @@ export function App(): JSX.Element {
     };
   }, []);
 
-  const view = useMemo(() => resolveView(path), [path]);
+  const resolution = useMemo(() => resolve(path, state), [path, state]);
+
+  // A redirect replaces the history entry, so Back does not return to a
+  // screen the session may not see.
+  useEffect(() => {
+    if (ready && resolution.kind === "redirect") {
+      window.history.replaceState(null, "", resolution.to);
+      setPath(resolution.to);
+      setNavigations((count) => count + 1);
+    }
+  }, [ready, resolution]);
+
+  const view =
+    ready && resolution.kind === "view" ? resolution.view : undefined;
 
   useEffect(() => {
-    document.title = view.isHome ? APP_NAME : `${view.title} · ${APP_NAME}`;
+    if (view !== undefined) {
+      document.title = view.isHome ? APP_NAME : `${view.title} · ${APP_NAME}`;
+    }
   }, [view]);
 
-  useEffect(() => {
-    if (navigations > 0) {
+  // A layout effect, so focus moves in the same step as the screen change.
+  // A deferred effect would leave a moment in which the new screen is visible
+  // and usable but focus has not moved yet, and input started in that moment
+  // would be interrupted when focus jumped to the heading.
+  useLayoutEffect(() => {
+    if (navigations > 0 && view !== undefined) {
       document
         .querySelector<HTMLElement>(`[${PAGE_HEADING_ATTRIBUTE}]`)
         ?.focus();
     }
-  }, [navigations]);
+  }, [navigations, view]);
 
   const navigation = useMemo<Navigation>(
     () => ({ path, navigate }),
@@ -145,11 +141,23 @@ export function App(): JSX.Element {
   );
 
   return (
-    <NavigationContext.Provider value={navigation}>
-      <div class="shell">
-        <Header showHomeLink={!view.isHome} />
-        <main>{view.render()}</main>
-      </div>
-    </NavigationContext.Provider>
+    <ServicesProvider value={services}>
+      <NavigationContext.Provider value={navigation}>
+        <div class="shell">
+          <Header
+            showHomeLink={view?.isHome !== true}
+            state={state}
+            navigate={navigate}
+          />
+          <main>
+            {view === undefined ? (
+              <PageLayout title="Opening Warmly" />
+            ) : (
+              view.render()
+            )}
+          </main>
+        </div>
+      </NavigationContext.Provider>
+    </ServicesProvider>
   );
 }

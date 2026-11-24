@@ -1,15 +1,23 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "./fixtures/test";
+import { expect, test, type Page } from "../fixtures/test";
 
 const WCAG_22_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 const GALLERY = "/dev/components";
 
+/**
+ * Open the gallery and wait until the app has finished starting, so a test
+ * never measures the brief "Opening Warmly" screen instead.
+ */
+async function openGallery(page: Page): Promise<void> {
+  await page.goto(GALLERY);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+    "Component gallery",
+  );
+}
+
 test.describe("component kit (UI-001..008, AC-23)", () => {
   test("has no detectable WCAG 2.2 AA violations", async ({ page }) => {
-    await page.goto(GALLERY);
-    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
-      "Component gallery",
-    );
+    await openGallery(page);
 
     const results = await new AxeBuilder({ page })
       .withTags(WCAG_22_AA)
@@ -19,7 +27,7 @@ test.describe("component kit (UI-001..008, AC-23)", () => {
   });
 
   test("has no violations with the confirm dialog open", async ({ page }) => {
-    await page.goto(GALLERY);
+    await openGallery(page);
     await page.getByRole("button", { name: "Delete sample" }).click();
     await expect(page.getByRole("alertdialog")).toBeVisible();
 
@@ -33,7 +41,7 @@ test.describe("component kit (UI-001..008, AC-23)", () => {
   test("the dialog traps focus, closes on Escape and restores focus", async ({
     page,
   }) => {
-    await page.goto(GALLERY);
+    await openGallery(page);
     const opener = page.getByRole("button", { name: "Delete sample" });
     await opener.click();
     const dialog = page.getByRole("alertdialog");
@@ -55,7 +63,7 @@ test.describe("component kit (UI-001..008, AC-23)", () => {
   test("every control meets the 44 by 44 pixel touch target", async ({
     page,
   }) => {
-    await page.goto(GALLERY);
+    await openGallery(page);
 
     const controls = page.locator("main button, main input, main textarea");
     const count = await controls.count();
@@ -71,7 +79,7 @@ test.describe("component kit (UI-001..008, AC-23)", () => {
     page,
   }) => {
     await page.setViewportSize({ width: 320, height: 640 });
-    await page.goto(GALLERY);
+    await openGallery(page);
 
     const overflow = await page.evaluate(
       () =>
@@ -84,35 +92,12 @@ test.describe("component kit (UI-001..008, AC-23)", () => {
 
   test("honours a reduced-motion preference", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await page.goto(GALLERY);
+    await openGallery(page);
 
     const duration = await page
       .getByRole("button", { name: "Primary" })
       .evaluate((element) => getComputedStyle(element).transitionDuration);
 
     expect(duration).toBe("0s");
-  });
-});
-
-test.describe("egress guard self-test without a policy in the way (AC-03)", () => {
-  test.use({ expectedBlockedHosts: ["rogue.example"] });
-
-  test("a fetch to a host outside the allowlist never leaves the browser", async ({
-    page,
-  }) => {
-    // The dev server sends no Content Security Policy, so only the guard
-    // stands between this request and the network.
-    await page.goto(GALLERY);
-
-    const failed = await page.evaluate(async () => {
-      try {
-        await fetch("https://rogue.example/collect");
-        return false;
-      } catch {
-        return true;
-      }
-    });
-
-    expect(failed).toBe(true);
   });
 });

@@ -98,3 +98,4 @@ export const test = base.extend<GuardOptions & GuardFixtures>({
 });
 
 export { expect };
+export type { Page } from "@playwright/test";

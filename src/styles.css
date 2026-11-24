@@ -119,7 +119,8 @@ a {
   margin-bottom: var(--space-3);
 }
 
-.home-link {
+.home-link,
+.app-name {
   display: inline-flex;
   align-items: center;
   min-height: var(--touch-target);
@@ -300,6 +301,21 @@ textarea.field__control {
 
 .banner__label {
   font-weight: 700;
+}
+
+/* Recovery key: large, spaced and selectable so it is easy to copy by hand */
+
+.recovery-key {
+  padding: var(--space-3);
+  border: var(--border-width) dashed var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-paper);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: var(--font-size-large);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  overflow-wrap: anywhere;
+  user-select: all;
 }
 
 /* Confirm dialog */

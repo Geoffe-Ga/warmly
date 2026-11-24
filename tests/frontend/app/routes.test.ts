@@ -25,7 +25,11 @@ describe("route table", () => {
       "settings",
       "devices",
       "onboarding",
+      "verify-email",
+      "recovery-key",
       "sign-in",
+      "reset-password",
+      "recover",
       "locked",
     ]);
   });

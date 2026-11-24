@@ -1,0 +1,62 @@
+/**
+ * The external services the app depends on, and how screens reach them.
+ */
+import { createContext } from "preact";
+import { useContext } from "preact/hooks";
+
+import { UnavailableAuthClient, type AuthClient } from "../auth/auth-client";
+import { UnavailableKeyVault, type KeyVault } from "../crypto/key-vault";
+import { FakeAuthClient } from "../testing/fake-auth-client";
+import { FakeKeyVault } from "../testing/fake-key-vault";
+import { createOnboarding, type Onboarding } from "./onboarding";
+import { createSession, type Session } from "./session";
+
+/** Everything a screen may use to act on the account. */
+export interface Services {
+  readonly auth: AuthClient;
+  readonly vault: KeyVault;
+  readonly session: Session;
+  /** In-memory state of an account being set up; see {@link Onboarding}. */
+  readonly onboarding: Onboarding;
+}
+
+/**
+ * Build the services for this build.
+ *
+ * The build mode is a compile-time constant. In a production build the
+ * condition is `false`, so the in-memory doubles are removed from the bundle
+ * and the app uses the "unavailable" stand-ins until the real clients land
+ * (issues #18 and #20). Development, unit tests and the `e2e` build get the
+ * doubles.
+ *
+ * @returns Fresh services with a signed-out session.
+ */
+export function createServices(): Services {
+  const useDoubles = import.meta.env.MODE !== "production";
+  return {
+    auth: useDoubles ? new FakeAuthClient() : new UnavailableAuthClient(),
+    vault: useDoubles ? new FakeKeyVault() : new UnavailableKeyVault(),
+    session: createSession(),
+    onboarding: createOnboarding(),
+  };
+}
+
+const ServicesContext = createContext<Services | undefined>(undefined);
+
+/** Provides {@link Services} to the screens below it. */
+export const ServicesProvider = ServicesContext.Provider;
+
+/**
+ * Read the services from context.
+ *
+ * @returns The services.
+ * @throws Error when rendered outside a {@link ServicesProvider}, which is a
+ *   programming mistake worth failing loudly on.
+ */
+export function useServices(): Services {
+  const services = useContext(ServicesContext);
+  if (services === undefined) {
+    throw new Error("useServices must be used inside a ServicesProvider");
+  }
+  return services;
+}
