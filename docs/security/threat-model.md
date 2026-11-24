@@ -28,7 +28,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 
 | Threat (PRD SEC-001) | Control | Status |
 | --- | --- | --- |
-| Cloud database compromise | Client-side encryption; server holds ciphertext | Planned: #17, #25 |
+| Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003); storage planned: #25 |
 | Backend or operator curiosity | Same, plus logs that cannot contain request content | Logging: **in place** (this issue) |
 | Cross-account access | Owner-only API checks and database policies | Planned: #15, #18, #38 |
 | Stolen session token | Every request also signed by a device key | Planned: #21 |
@@ -106,7 +106,8 @@ State these plainly to users; never promise absolute secrecy.
 - **Offline copies after revocation.** A revoked device keeps what it already
   has; remote wipe is not promised.
 - **Metadata.** The server can see account identity, how many records exist,
-  their sizes and when they change.
+  their sizes and when they change. Records are not padded, so ciphertext
+  length reveals plaintext length.
 - **Backups.** Deleted ciphertext remains in rolling backups until they expire.
 
 ## What the automated tests do and do not show
