@@ -119,7 +119,7 @@ def analyze_cache(
             FROM Mutant m, Line l, SourceFile sf
             WHERE m.line = l.id
               AND l.sourcefile = sf.id
-              AND m.status = "bad_survived"
+              AND m.status = 'bad_survived'
               AND (:pattern IS NULL OR sf.filename LIKE :pattern)
             GROUP BY sf.filename
             ORDER BY count DESC
@@ -138,7 +138,7 @@ def analyze_cache(
             FROM Mutant m, Line l, SourceFile sf
             WHERE m.line = l.id
               AND l.sourcefile = sf.id
-              AND m.status = "bad_survived"
+              AND m.status = 'bad_survived'
               AND (:pattern IS NULL OR sf.filename LIKE :pattern)
             ORDER BY sf.filename, l.line_number
             LIMIT 10

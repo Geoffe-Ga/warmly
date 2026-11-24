@@ -123,9 +123,10 @@ disallow_untyped_defs = false
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-# Agent context (.claude/) and docs contain illustrative code blocks in Markdown,
-# and the frontend toolchain directories are not Python.
-extend-exclude = [".claude", "docs", "plans", "node_modules", "dist", "coverage", "playwright-report", "test-results", "reports"]
+# Agent context (.claude/), docs and the filed backlog (git-issues/) contain
+# illustrative code blocks in Markdown, and the frontend toolchain directories are
+# not Python.
+extend-exclude = [".claude", "docs", "git-issues", "plans", "node_modules", "dist", "coverage", "playwright-report", "test-results", "reports"]
 
 [tool.ruff.lint]
 select = [

@@ -63,7 +63,7 @@ if $VERBOSE; then
     set -x
 fi
 
-echo "=== Formatting (Black + isort) ==="
+echo "=== Formatting (isort + Black + Ruff) ==="
 
 # Determine mode
 if $CHECK; then
@@ -83,6 +83,13 @@ if $VERBOSE; then
     echo "Running Black..."
 fi
 black $MODE . || { echo "✗ Black failed" >&2; exit 1; }
+
+# Run the Ruff formatter last. CI runs `ruff format --check .`, which also
+# formats Python code blocks inside Markdown, so the local gate must match it.
+if $VERBOSE; then
+    echo "Running Ruff format..."
+fi
+ruff format $MODE . || { echo "✗ Ruff format failed" >&2; exit 1; }
 
 if [ -n "$MODE" ]; then
     echo "✓ Code formatting check passed"

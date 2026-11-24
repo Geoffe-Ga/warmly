@@ -62,11 +62,18 @@ echo "=== Code Complexity Analysis ==="
 if command -v radon &> /dev/null; then
     echo ""
     echo "Cyclomatic Complexity (should be <= 10):"
-    radon cc -a warmly/ || true
+    radon cc -a warmly/
 
     echo ""
-    echo "Maintainability Index (should be >= 20):"
-    radon mi -s warmly/ || true
+    echo "Maintainability Index (every module must rank A, a score of 20 or more):"
+    radon mi -s warmly/
+    # `-n B` lists only modules ranked B or worse, so any output is a failure.
+    below_threshold="$(radon mi -n B warmly/)"
+    if [ -n "$below_threshold" ]; then
+        echo "$below_threshold" >&2
+        echo "✗ Maintainability index below 20" >&2
+        exit 1
+    fi
 else
     echo "Warning: radon not installed, skipping cyclomatic complexity check" >&2
 fi

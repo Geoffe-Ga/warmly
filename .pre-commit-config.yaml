@@ -12,6 +12,8 @@ repos:
   # GitHub app, which refuses to run on a pull request that edits them, so
   # whitespace fixes to them must be committed to main directly.
   - id: trailing-whitespace
+    # Two trailing spaces are a hard line break in Markdown; keep them.
+    args: [--markdown-linebreak-ext=md]
     exclude: ^\.github/workflows/(claude|code-review)\.yml$
   - id: end-of-file-fixer
     exclude: ^\.github/workflows/(claude|code-review)\.yml$
@@ -57,6 +59,10 @@ repos:
   - id: mypy
     args:
     - --strict
+    # The hook runs in its own environment, so every package the checked code
+    # imports must be listed here as well as in the requirements files.
+    additional_dependencies:
+    - pytest>=7.4.0
 - repo: https://github.com/PyCQA/bandit
   rev: 1.7.7
   hooks:
