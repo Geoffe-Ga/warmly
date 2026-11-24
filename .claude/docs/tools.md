@@ -16,8 +16,8 @@
 
 | Task | ❌ NEVER DO THIS | ✅ ALWAYS DO THIS |
 |------|------------------|-------------------|
-| **Format code** | `black .`<br>`isort .` | `./scripts/format.sh` |
-| **Check formatting** | `black --check .` | `./scripts/check-all.sh` |
+| **Format code** | `ruff format .` | `./scripts/format.sh` |
+| **Check formatting** | `ruff format --check .` | `./scripts/check-all.sh` |
 | **Lint code** | `ruff check .`<br>`pylint src/` | `./scripts/lint.sh` |
 | **Type check** | `mypy src/` | `./scripts/lint.sh` |
 | **Run tests** | `pytest` | `./scripts/test.sh` |
@@ -34,7 +34,7 @@
 ❌ **BAD - Direct invocation:**
 ```bash
 # Missing project-specific flags
-black tests/unit/test_module.py
+ruff format tests/unit/test_module.py
 
 # Wrong configuration
 ruff check . --fix
@@ -45,14 +45,14 @@ pytest tests/
 
 **Issues with direct invocation:**
 - May use different settings than CI
-- Might skip important checks (e.g., isort after black)
+- Might skip important checks (e.g., import sorting before formatting)
 - Won't generate proper coverage reports
 - Results differ from CI pipeline
 - Wastes time debugging CI failures locally
 
 ✅ **GOOD - Use scripts:**
 ```bash
-# Formats with black + isort + ruff, correct config
+# Formats with Ruff (imports, then layout), correct config
 ./scripts/format.sh
 
 # Fixes formatting and linting issues automatically
@@ -64,7 +64,7 @@ pytest tests/
 
 **Benefits of using scripts:**
 - ✅ Same configuration as CI pipeline
-- ✅ Proper tool ordering (e.g., black before isort)
+- ✅ Proper tool ordering (e.g., import sorting before formatting)
 - ✅ Comprehensive coverage reporting
 - ✅ Consistent results across developers
 - ✅ Catches issues before CI runs
@@ -74,7 +74,7 @@ pytest tests/
 **`./scripts/check-all.sh`** - Run all quality checks (use before every commit)
 
 Runs in order:
-1. Formatting checks (ruff, black, isort)
+1. Formatting checks (ruff)
 2. Linting (ruff, pylint, mypy)
 3. Security scanning (bandit, pip-audit)
 4. Complexity analysis (radon, xenon)

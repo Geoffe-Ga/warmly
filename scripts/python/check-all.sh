@@ -24,7 +24,7 @@ Run all quality checks in sequence.
 
 Runs:
   1. Linting (Ruff)
-  2. Formatting (Black + isort)
+  2. Formatting (Ruff)
   3. Type checking (MyPy)
   4. Security checks (Bandit + Safety)
   5. Complexity analysis (Radon)
@@ -89,6 +89,7 @@ run_check() {
 run_check "Linting" "lint.sh" --check
 run_check "Formatting" "format.sh" --check
 run_check "Type checking" "typecheck.sh"
+run_check "API contract" "contract.sh" --check
 run_check "Security checks" "security.sh"
 run_check "Complexity analysis" "complexity.sh"
 run_check "Unit tests" "test.sh" --unit

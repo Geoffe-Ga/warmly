@@ -28,8 +28,8 @@ All code must meet these standards before merging to main:
 
 ### Linting and Formatting
 - **Ruff**: ALL rules enabled (no exceptions unless documented)
-- **Black**: Line length 88 characters
-- **isort**: Import sorting per configuration
+- **Ruff format**: Line length 88 characters; the only Python formatter
+- **Ruff `I` rules**: Import sorting per configuration
 - **Pylint**: Score of 9.0+ required
 - **Bandit**: Security scanning with zero exceptions
 - **Safety**: Dependency vulnerability checking

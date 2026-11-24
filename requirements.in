@@ -1,0 +1,6 @@
+# Runtime dependencies for the Warmly API. Edit this file, then regenerate the
+# pinned, hashed requirements.txt with:
+#   pip-compile --generate-hashes --output-file requirements.txt requirements.in
+fastapi==0.165.0
+pydantic==2.14.4
+uvicorn==0.54.0

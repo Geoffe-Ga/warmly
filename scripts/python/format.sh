@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/format.sh - Format code with Black and isort
+# scripts/format.sh - Format code with Ruff (import order and layout)
 # Usage: ./scripts/format.sh [--fix] [--check] [--verbose] [--help]
 
 set -euo pipefail
@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
             cat << EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Format code using Black and isort.
+Format code using Ruff: import order, then layout.
 
 OPTIONS:
     --fix       Apply formatting changes (default)
@@ -63,35 +63,19 @@ if $VERBOSE; then
     set -x
 fi
 
-echo "=== Formatting (isort + Black + Ruff) ==="
+echo "=== Formatting (Ruff) ==="
 
-# Determine mode
+# Ruff is the only Python formatter, matching CI's `ruff format --check .`.
+# Running a second formatter alongside it produced files the two disagreed on.
 if $CHECK; then
-    MODE="--check"
+    ruff check --select I . || { echo "✗ Import order check failed" >&2; exit 1; }
+    ruff format --check . || { echo "✗ Ruff format failed" >&2; exit 1; }
 else
-    MODE=""
+    ruff check --select I --fix . || { echo "✗ Import sorting failed" >&2; exit 1; }
+    ruff format . || { echo "✗ Ruff format failed" >&2; exit 1; }
 fi
 
-# Run isort
-if $VERBOSE; then
-    echo "Running isort..."
-fi
-isort $MODE . || { echo "✗ isort failed" >&2; exit 1; }
-
-# Run Black
-if $VERBOSE; then
-    echo "Running Black..."
-fi
-black $MODE . || { echo "✗ Black failed" >&2; exit 1; }
-
-# Run the Ruff formatter last. CI runs `ruff format --check .`, which also
-# formats Python code blocks inside Markdown, so the local gate must match it.
-if $VERBOSE; then
-    echo "Running Ruff format..."
-fi
-ruff format $MODE . || { echo "✗ Ruff format failed" >&2; exit 1; }
-
-if [ -n "$MODE" ]; then
+if $CHECK; then
     echo "✓ Code formatting check passed"
 else
     echo "✓ Code formatted successfully"

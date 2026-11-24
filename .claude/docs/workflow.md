@@ -144,7 +144,7 @@ or release blocker. Use it as an advisory test-quality report when cutting a fin
    ./scripts/check-all.sh
    ```
    This runs (in order):
-   - Formatting checks (ruff format, black)
+   - Formatting checks (ruff format)
    - Linting (ruff, pylint, mypy)
    - Security checks (bandit, pip-audit)
    - Tests with coverage

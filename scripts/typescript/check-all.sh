@@ -79,6 +79,7 @@ run_check() {
 run_check "Linting" "lint.sh" --check
 run_check "Formatting" "format.sh" --check
 run_check "Type checking" "typecheck.sh"
+run_check "API contract" "contract.sh" --check
 run_check "Tests" "test.sh" --coverage
 run_check "E2E + accessibility" "e2e.sh"
 

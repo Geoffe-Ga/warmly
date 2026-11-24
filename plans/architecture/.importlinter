@@ -1,27 +1,31 @@
 [importlinter]
 root_package = warmly
+include_external_packages = True
 
+# Layers from highest to lowest. A module may import from layers below it and
+# never from layers above. Layers in parentheses do not exist yet; they are
+# listed so the rule already holds when they are added.
 [importlinter:contract:layers]
 name = Enforce layered architecture
 type = layers
 layers =
-    presentation
-    application
-    domain
-    infrastructure
+    warmly.main
+    warmly.contract
+    warmly.app
+    warmly.api
+    (warmly.services)
+    (warmly.auth)
+    (warmly.db)
+    warmly.schemas
+    (warmly.config)
 
-[importlinter:contract:independence]
-name = Domain layer independence
+# The wire contract must stay free of framework and storage concerns.
+[importlinter:contract:schemas-are-pure]
+name = Schemas do not depend on the web framework or storage
 type = forbidden
 source_modules =
-    warmly.domain
+    warmly.schemas
 forbidden_modules =
-    warmly.presentation
-    warmly.application
-    warmly.infrastructure
-
-[importlinter:contract:no-cycles]
-name = Prevent circular dependencies
-type = independence
-modules =
-    warmly
+    fastapi
+    starlette
+    uvicorn
