@@ -2142,6 +2142,24 @@
               "title": "Cursor",
               "type": "string"
             }
+          },
+          {
+            "description": "The sync protocol version the client speaks.",
+            "in": "header",
+            "name": "Warmly-Sync-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The sync protocol version the client speaks.",
+              "title": "Warmly-Sync-Version"
+            }
           }
         ],
         "responses": {
@@ -2185,6 +2203,16 @@
             },
             "description": "Invalid request"
           },
+          "426": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The client speaks a sync version this server does not. Nothing was applied. Warmly-Sync-Min and Warmly-Sync-Max say which versions are spoken"
+          },
           "429": {
             "content": {
               "application/json": {
@@ -2221,6 +2249,26 @@
       "post": {
         "description": "Apply an idempotent batch of record operations.\n\nEach operation is applied on its own, in request order: one that is\nrefused does not stop the others. A change is stored only when it was\nmade on top of the record's current revision. The server never merges\nand never lets the latest writer win. Sending an operation that was\nalready applied again changes nothing and reports ``duplicate``.\n\nA batch is not all-or-nothing. If the request fails part-way, the\noperations already applied stay applied, and sending the batch again\nreports them as ``duplicate``.\n\nThe payloads are opaque: they are stored as sent and never decoded.\n\nArgs:\n    request: The batch to apply.\n    caller: The verified account and device.\n    store: Where records are kept.\n\nReturns:\n    One result per operation, in request order.",
         "operationId": "post_operations_v1_sync_operations_post",
+        "parameters": [
+          {
+            "description": "The sync protocol version the client speaks.",
+            "in": "header",
+            "name": "Warmly-Sync-Version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The sync protocol version the client speaks.",
+              "title": "Warmly-Sync-Version"
+            }
+          }
+        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2261,6 +2309,16 @@
               }
             },
             "description": "Invalid request"
+          },
+          "426": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The client speaks a sync version this server does not. Nothing was applied. Warmly-Sync-Min and Warmly-Sync-Max say which versions are spoken"
           },
           "429": {
             "content": {

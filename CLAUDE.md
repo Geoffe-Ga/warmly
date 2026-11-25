@@ -82,6 +82,7 @@ src/                     TypeScript PWA: app/ (route table, router, shell), ui/ 
                          (bootstrap + SW registration)
 docs/adr/                Architecture Decision Records
 docs/security/           Threat model and security notes
+docs/runbooks/           How to do risky operational changes safely
 config/                  Build-time config shared with tests (security headers, CSP)
 public/, index.html      PWA static assets and entry; vite.config.ts = build, manifest, SW, Vitest
 tests/                   pytest (test_*.py); tests/frontend/ Vitest unit tests
@@ -273,6 +274,16 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   compacted; the ledger is written by a database trigger, never by
   application code. Only a deletion the server has not accepted may be
   taken back, and only by the person (`keepEdited`).
+- Every sync request states `SYNC_VERSION` (`src/sync/compat.ts`); the
+  server speaks `SYNC_VERSION_MIN` to `SYNC_VERSION_MAX`
+  (`warmly/schemas/sync.py`) and refuses anything else with 426. A refused
+  build keeps every record and queued change and asks for an update: never
+  discard anything to get past a refusal. Change either number only by
+  following `docs/runbooks/sync-versions.md`.
+- A new version of the app is applied only when the person presses "Update
+  now" (`UpdateNotice`, `src/app/App.tsx`), and only after
+  `services.lockHooks.flush()` has saved unsaved writing. Never call the
+  service worker's update function anywhere else.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

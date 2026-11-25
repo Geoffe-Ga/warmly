@@ -2033,7 +2033,10 @@ export interface operations {
         /** @description Last change sequence this device has applied; 0 to start. */
         cursor?: string;
       };
-      header?: never;
+      header?: {
+        /** @description The sync protocol version the client speaks. */
+        "Warmly-Sync-Version"?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -2075,6 +2078,15 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description The client speaks a sync version this server does not. Nothing was applied. Warmly-Sync-Min and Warmly-Sync-Max say which versions are spoken */
+      426: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
       429: {
         headers: {
@@ -2098,7 +2110,10 @@ export interface operations {
   post_operations_v1_sync_operations_post: {
     parameters: {
       query?: never;
-      header?: never;
+      header?: {
+        /** @description The sync protocol version the client speaks. */
+        "Warmly-Sync-Version"?: string | null;
+      };
       path?: never;
       cookie?: never;
     };
@@ -2128,6 +2143,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The client speaks a sync version this server does not. Nothing was applied. Warmly-Sync-Min and Warmly-Sync-Max say which versions are spoken */
+      426: {
         headers: {
           [name: string]: unknown;
         };

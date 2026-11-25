@@ -65,6 +65,7 @@ import { createEventBus, type EventBus } from "../domain/events";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
+import { appUpdates, type AppUpdates } from "./updates";
 
 /** Everything a screen may use to act on the account. */
 export interface Services {
@@ -87,6 +88,8 @@ export interface Services {
   readonly lockHooks: LockHooks;
   /** Sends local changes to the server and fetches remote ones. */
   readonly sync: SyncControl;
+  /** A new version of the app waiting to be used. */
+  readonly updates: AppUpdates;
   /** Asks the browser to keep this device's data, and reports the answer. */
   readonly persistence: StoragePersistence;
   /** Announces changes to private records; see {@link EventBus}. */
@@ -384,6 +387,7 @@ export function createServices(): Services {
     revocation,
     records,
     sync,
+    updates: appUpdates,
     persistence,
     session: createSession(),
     onboarding: createOnboarding(),

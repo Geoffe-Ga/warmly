@@ -10,6 +10,12 @@ import type { components } from "../api/schema";
 import type { AuthClient } from "../auth/auth-client";
 import { fromBase64, toBase64 } from "../crypto/encoding";
 import type { DeviceIdentityStore } from "../devices/identity";
+import {
+  SYNC_VERSION,
+  SYNC_VERSION_HEADER,
+  UPGRADE_REQUIRED,
+  versionRefusal,
+} from "./compat";
 import type {
   ChangePage,
   OperationResult,
@@ -65,6 +71,8 @@ export interface SyncTransport {
    *   `unexpected` if it failed or answered with something unreadable.
    * @throws SyncUnavailableError if sync cannot be used right now.
    * @throws SyncRefusedError if the server refused the request.
+   * @throws SyncUpgradeRequiredError if this build is too old to sync.
+   * @throws SyncServerBehindError if the server is older than this build.
    */
   push(operations: readonly SyncOperation[]): Promise<OperationResult[]>;
   /**
@@ -77,6 +85,8 @@ export interface SyncTransport {
    * @throws SyncUnavailableError if sync cannot be used right now.
    * @throws SyncRefusedError if the server refused the request.
    * @throws SyncCursorError if the server does not recognise the cursor.
+   * @throws SyncUpgradeRequiredError if this build is too old to sync.
+   * @throws SyncServerBehindError if the server is older than this build.
    */
   pull(cursor: string): Promise<ChangePage>;
 }
@@ -145,6 +155,9 @@ async function problemCode(response: Response): Promise<string | undefined> {
  * never shown or kept.
  */
 async function failure(response: Response): Promise<Error> {
+  if (response.status === UPGRADE_REQUIRED) {
+    return versionRefusal(response.headers);
+  }
   // The server is failing or busy: the same request may work later.
   if (response.status >= 500 || response.status === 429) {
     return new ApiError("unexpected");
@@ -243,6 +256,7 @@ export class ApiSyncTransport implements SyncTransport {
       method,
       path,
       signedBy: identity,
+      headers: { [SYNC_VERSION_HEADER]: String(SYNC_VERSION) },
       ...(body === undefined ? {} : { body }),
     });
     if (!response.ok) {

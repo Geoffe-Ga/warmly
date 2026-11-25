@@ -5,10 +5,11 @@
 only on the verified caller's own records, and neither reads a payload.
 """
 
+import re
 from http import HTTPStatus
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Header, Query, Request
 
 from warmly.api.errors import SIGNED_IN_RESPONSES, ProblemError
 from warmly.api.ports import DeviceStore, SyncStore
@@ -22,6 +23,12 @@ from warmly.schemas.sync import (
 )
 
 CURSOR_UNKNOWN_CODE = "sync.cursor_unknown"
+UPGRADE_REQUIRED_CODE = "sync.upgrade_required"
+# The request header in which a client says which sync version it speaks.
+VERSION_HEADER = "Warmly-Sync-Version"
+# The response headers that say which versions the server speaks.
+MIN_HEADER = "Warmly-Sync-Min"
+MAX_HEADER = "Warmly-Sync-Max"
 # The name logged when a device's last-sync time could not be stored.
 LAST_SYNC_FAILED = "sync.last_sync_failed"
 
@@ -38,11 +45,68 @@ _RESYNC: dict[int | str, dict[str, Any]] = {
     }
 }
 
+_UPGRADE: dict[int | str, dict[str, Any]] = {
+    426: {
+        "model": Problem,
+        "description": (
+            "The client speaks a sync version this server does not. Nothing "
+            "was applied. Warmly-Sync-Min and Warmly-Sync-Max say which "
+            "versions are spoken"
+        ),
+    }
+}
+
+SyncVersion = Annotated[
+    str | None,
+    Header(
+        alias=VERSION_HEADER,
+        description="The sync protocol version the client speaks.",
+    ),
+]
+
+
+_VERSION = re.compile(r"[0-9]{1,9}")
+
+
+def require_supported_version(request: Request, version: SyncVersion = None) -> None:
+    """Refuse a client that speaks a sync version this server does not.
+
+    Old and new clients are in use at the same time. One that is too old,
+    too new or does not say is refused before anything is read or written,
+    and told which versions the server speaks, so it can keep its changes
+    queued and ask the person to update (ADR-0006).
+
+    Args:
+        request: The current request; its application holds the versions.
+        version: What the client sent in ``Warmly-Sync-Version``.
+
+    Raises:
+        ProblemError: 426 when the version is missing, not a number, or
+            outside the supported range.
+    """
+    oldest, newest = request.app.state.sync_versions
+    # A short run of digits and nothing else. The length is limited so that
+    # no header, however long, can be anything but a refusal.
+    spoken = (
+        int(version)
+        if version is not None and _VERSION.fullmatch(version) is not None
+        else None
+    )
+    if spoken is None or not oldest <= spoken <= newest:
+        raise ProblemError(
+            HTTPStatus.UPGRADE_REQUIRED,
+            UPGRADE_REQUIRED_CODE,
+            headers={MIN_HEADER: str(oldest), MAX_HEADER: str(newest)},
+        )
+
+
 router = APIRouter(
     prefix="/sync",
     tags=["sync"],
-    dependencies=[Depends(require_device)],
-    responses=SIGNED_IN_RESPONSES,
+    # The device is checked first: only a caller that is allowed to sync is
+    # told which versions the server speaks.
+    dependencies=[Depends(require_device), Depends(require_supported_version)],
+    responses=SIGNED_IN_RESPONSES | _UPGRADE,
 )
 
 

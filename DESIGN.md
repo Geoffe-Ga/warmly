@@ -403,7 +403,9 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`versions`** — Two `{component.card}`s side by side, stacking on a narrow screen, each one whole version of an entry: a muted "Last changed" line, then each question in bold with its answer under it, line breaks kept. Used where the person chooses between two versions. The two are told apart by their headings ("On this device", "On your other device"), never by colour.
 
-**`sync-status`** — In the header while unlocked: one line in `{typography.small}` and `{colors.ink-muted}` ("All changes saved", "3 changes waiting to sync", "Couldn't sync. Your writing is saved on this device.", "Needs your attention") beside a `{component.button-secondary}` "Sync now". It is a state and a count, never private text.
+**`update-notice`** — One line under the header when a new version of the app has been downloaded, styled like `offline-notice`, with a `{component.button-secondary}` "Update now" beside it: "A new version of Warmly is ready." It never appears on its own schedule and never reloads the page by itself; pressing the button saves unsaved writing first.
+
+**`sync-status`** — In the header while unlocked: one line in `{typography.small}` and `{colors.ink-muted}` ("All changes saved", "3 changes waiting to sync", "Couldn't sync. Your writing is saved on this device.", "Update Warmly to keep syncing. Your writing is saved on this device.", "Needs your attention") beside a `{component.button-secondary}` "Sync now". It is a state and a count, never private text.
 
 ### Status Banners
 

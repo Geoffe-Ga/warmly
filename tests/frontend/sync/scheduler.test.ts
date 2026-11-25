@@ -329,7 +329,7 @@ describe("when sync runs on its own (SYNC-008, SYNC-010)", () => {
     expect(browser.planned()).toEqual([1_000]);
   });
 
-  it.each(["stopped", "unavailable"] as const)(
+  it.each(["stopped", "outdated", "unavailable"] as const)(
     "does not retry on a timer after a %s cycle, but a new change or a tap tries again",
     async (outcome) => {
       const sync = engine(outcome, outcome, "done");

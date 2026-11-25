@@ -13,6 +13,7 @@
 import { ApiError } from "../api/client";
 import { MAX_OPERATIONS_PER_BATCH, type OperationResult } from "./protocol";
 import type { Acknowledged, PendingChange, SyncSource } from "./source";
+import { SyncServerBehindError, SyncUpgradeRequiredError } from "./compat";
 import {
   SyncCursorError,
   SyncUnavailableError,
@@ -27,12 +28,16 @@ export interface SyncState {
    * - `offline`: the server could not be reached; changes are kept here.
    * - `failed`: the server was reached but sync did not finish; changes
    *   are kept here.
+   * - `outdated`: this version of the app is too old to sync. Changes are
+   *   kept here and the app works as before; syncing starts again once the
+   *   app is updated.
    * - `attention`: the server refused a change, or a record was changed in
    *   two places. Nothing was discarded; the person has to decide. This is
    *   shown in preference to `offline` and `failed`, because the person can
    *   act on it without a connection.
    */
-  readonly status: "synced" | "pending" | "offline" | "failed" | "attention";
+  readonly status:
+    "synced" | "pending" | "offline" | "failed" | "outdated" | "attention";
   /** How many records have changes the server has not accepted. */
   readonly waiting: number;
 }
@@ -45,12 +50,20 @@ export interface SyncState {
  * - `retry`: the server failed or was busy. Worth trying again later.
  * - `stopped`: it cannot work until something changes, for example the
  *   person signs in again. Trying again on a timer would not help.
+ * - `outdated`: this build is too old for the server. Only updating the
+ *   app helps, so nothing is retried.
  * - `unavailable`: this device has nothing to sync with yet: it is not
  *   signed in and registered, or the build has no server. Nothing failed.
  * - `busy`: another tab is syncing this account right now.
  */
 export type CycleOutcome =
-  "done" | "offline" | "retry" | "stopped" | "unavailable" | "busy";
+  | "done"
+  | "offline"
+  | "retry"
+  | "stopped"
+  | "outdated"
+  | "unavailable"
+  | "busy";
 
 /** What the app uses to run sync and show its status. */
 export interface SyncControl {
@@ -121,6 +134,13 @@ function outcomeOf(error: unknown): CycleOutcome {
     // "unexpected" is a server that failed or answered badly. Every other
     // code is about this session or device and needs the person.
     return error.code === "unexpected" ? "retry" : "stopped";
+  }
+  if (error instanceof SyncUpgradeRequiredError) {
+    return "outdated";
+  }
+  if (error instanceof SyncServerBehindError) {
+    // The server catches up when its own update finishes.
+    return "retry";
   }
   return error instanceof SyncUnavailableError ? "unavailable" : "stopped";
 }
@@ -221,7 +241,14 @@ export class SyncEngine {
     const { status } = this.#state;
     if (attention) {
       this.#set({ status: "attention", waiting });
-    } else if (status === "offline" || status === "failed") {
+    } else if (
+      status === "offline" ||
+      status === "failed" ||
+      status === "outdated"
+    ) {
+      // What the last cycle found still holds until another cycle says
+      // otherwise. `outdated` ends when the app is updated, which reloads
+      // the page.
       this.#set({ status, waiting });
     } else {
       this.#set({ status: waiting > 0 ? "pending" : "synced", waiting });
@@ -363,6 +390,8 @@ export class SyncEngine {
       this.#set({ status: "attention", waiting });
     } else if (outcome === "offline") {
       this.#set({ status: "offline", waiting });
+    } else if (outcome === "outdated") {
+      this.#set({ status: "outdated", waiting });
     } else if (outcome === "retry" || outcome === "stopped") {
       this.#set({ status: "failed", waiting });
     } else {

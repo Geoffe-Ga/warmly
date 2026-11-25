@@ -25,6 +25,7 @@ from warmly.db.sync_store import PostgresSyncStore
 from warmly.middleware.body_limit import BodyLimitMiddleware
 from warmly.middleware.request_log import RequestLogMiddleware
 from warmly.middleware.security_headers import SecurityHeadersMiddleware
+from warmly.schemas.sync import SYNC_VERSION_MAX, SYNC_VERSION_MIN
 
 API_TITLE = "Warmly API"
 API_DESCRIPTION = (
@@ -94,6 +95,7 @@ def create_app(
     sync_store: SyncStore | None = None,
     request_counters: RequestCounters | None = None,
     rate_limits: RateLimits | None = None,
+    sync_versions: tuple[int, int] = (SYNC_VERSION_MIN, SYNC_VERSION_MAX),
     clock: Callable[[], float] = time.time,
 ) -> FastAPI:
     """Build the FastAPI application.
@@ -119,6 +121,9 @@ def create_app(
         request_counters: Where requests are counted for rate limiting,
             instead of the database table.
         rate_limits: How many requests an account and a device may make.
+        sync_versions: The oldest and newest sync protocol versions to
+            accept. Tests pass a different range to stand in for a server
+            that has moved on.
         clock: Seconds since the epoch, for judging request timestamps and
             rate-limit windows.
 
@@ -160,6 +165,7 @@ def create_app(
         sync_store=sync_store,
     )
     app.state.clock = clock
+    app.state.sync_versions = sync_versions
     app.state.rate_limiter = RateLimiter(
         request_counters or PostgresRateLimitStore(database),
         rate_limits or RateLimits(),

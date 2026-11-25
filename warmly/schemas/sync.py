@@ -12,6 +12,13 @@ from pydantic import Field, model_validator
 
 from warmly.schemas.common import ApiModel, Ciphertext
 
+# The sync protocol versions this server speaks, oldest and newest
+# (ADR-0006). A client says which one it speaks on every sync request. To
+# drop support for an old version, follow docs/runbooks/sync-versions.md:
+# never raise the minimum past a version that clients in use still send.
+SYNC_VERSION_MIN = 1
+SYNC_VERSION_MAX = 1
+
 MAX_OPERATIONS_PER_BATCH = 100
 
 # Opaque record category. The server stores it and never interprets it.
