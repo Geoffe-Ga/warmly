@@ -389,6 +389,69 @@ test.describe("the journal", () => {
     expect(stored.deletes).toBe(1);
   });
 
+  test("offline: search finds an entry by its words, shows a snippet and a count, and opens it (AC-06, JR-010)", async ({
+    page,
+    context,
+  }) => {
+    await onboard(page);
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    for (const text of [
+      "Synthetic: we cooked DINNER together",
+      "Synthetic: a long walk by the canal",
+    ]) {
+      await page.getByRole("link", { name: "Journal", exact: true }).click();
+      await page.getByRole("link", { name: "Write a new entry" }).click();
+      for (const prompt of PROMPTS) {
+        await page.getByLabel(prompt).fill(text);
+      }
+      await page.getByRole("button", { name: "Save entry" }).click();
+      await expect(page.getByText("A journal entry.")).toBeVisible();
+      await page.getByRole("link", { name: "Warmly" }).click();
+    }
+
+    await context.setOffline(true);
+    await page.getByRole("link", { name: "Journal", exact: true }).click();
+    await expect(entries(page)).toHaveCount(2);
+    const count = page.locator(".result-count");
+    await expect(count).toHaveText("");
+
+    // Case does not matter, and the last word may be unfinished.
+    await page.getByLabel("Search your journal").fill("cooked din");
+    await expect(entries(page)).toHaveCount(1);
+    await expect(count).toHaveText("1 entry found.");
+    await expect(count).toHaveAttribute("aria-live", "polite");
+    await expect(entries(page).first()).toContainText(
+      "Synthetic: we cooked DINNER together",
+    );
+    await expectNoViolations(page);
+
+    // Every word must match, and a word is not found inside another.
+    await page.getByLabel("Search your journal").fill("cooked canal");
+    await expect(count).toHaveText("No entry mentions that.");
+    await page.getByLabel("Search your journal").fill("inner");
+    await expect(count).toHaveText("No entry mentions that.");
+    await expectNoViolations(page);
+
+    await page.getByLabel("Search your journal").fill("synthetic");
+    await expect(count).toHaveText("2 entries found.");
+
+    // What was typed is nowhere but the box.
+    await expect(page).toHaveURL(/\/journal$/);
+    const stored = await page.evaluate(() =>
+      JSON.stringify([{ ...localStorage }, { ...sessionStorage }]),
+    );
+    expect(stored.toLowerCase()).not.toContain("synthetic");
+
+    await page.getByLabel("Search your journal").fill("CANAL");
+    await entries(page).first().click();
+    await expect(page).toHaveURL(/\/journal\/entries\/[0-9a-f-]{36}$/);
+    await expect(
+      page.getByText("Synthetic: a long walk by the canal").first(),
+    ).toBeVisible();
+  });
+
   test("an entry that is not on this device says so", async ({ page }) => {
     await onboard(page);
     await page.evaluate(() => {

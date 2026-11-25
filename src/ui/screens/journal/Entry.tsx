@@ -55,7 +55,13 @@ const NOTICES = {
   },
 } as const;
 
-/** What deleting does, said before the person confirms (JR-007, OPS-003). */
+/**
+ * What deleting does, said before the person confirms (JR-007, OPS-003).
+ *
+ * This text must be true. It describes sync and backups: check it against
+ * what they really do when sync ships (#32) and when backup retention is
+ * verified (#65), and change it and its tests if they differ.
+ */
 export const DELETE_WARNING =
   "This deletes it from this device now, and from your other devices the next time they sync. There is no trash and no undo. Encrypted copies held in backups cannot be read by anyone but you, and are removed as those backups expire, within 30 days.";
 

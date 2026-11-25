@@ -1,45 +1,36 @@
 import type { JSX } from "preact";
-import { useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
 
 import { Link } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
 import { currentDraft } from "../../../domain/journal/drafts";
-import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
+import type { JournalEntry } from "../../../domain/journal/types";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
+import { ResultCount, useJournalSearch } from "./Search";
 import { CANNOT_OPEN, formatEntryDate, useJournalEntries } from "./shared";
 
-/**
- * Whether an entry mentions the text, ignoring case. A plain stand-in until
- * real local search is built: it looks for the text exactly as typed.
- */
-function mentions(entry: JournalEntry, query: string): boolean {
-  const wanted = query.trim().toLowerCase();
-  return (
-    wanted === "" ||
-    PROMPTS.some((prompt) =>
-      entry.responses[prompt.key].toLowerCase().includes(wanted),
-    )
-  );
-}
-
-function EntryLink(props: { readonly entry: JournalEntry }): JSX.Element {
+function EntryLink(props: {
+  readonly entry: JournalEntry;
+  /** A piece of the entry's text to show under its date, for a search. */
+  readonly snippet?: string;
+}): JSX.Element {
   const { entry } = props;
   return (
     <li>
       <Link href={pathFor("journal-entry", { id: entry.id })} class="action">
         {formatEntryDate(entry.entryDate)}
+        {props.snippet !== undefined && props.snippet !== "" && (
+          <span class="action__detail">{props.snippet}</span>
+        )}
       </Link>
     </li>
   );
 }
 
-/** What to say when no entry is listed. */
-function emptyMessage(noEntries: boolean, hasDraft: boolean): string {
-  if (!noEntries) {
-    return "No entry mentions that.";
-  }
+/** What to say when there is no finished entry at all. */
+function emptyMessage(hasDraft: boolean): string {
   return hasDraft
     ? "You haven't finished an entry yet."
     : "You haven't written anything yet.";
@@ -61,12 +52,17 @@ function DraftLink(props: { readonly draft: JournalEntry }): JSX.Element {
   );
 }
 
+/** Searched while the entries are still loading: nothing. */
+const NO_ENTRIES: readonly JournalEntry[] = [];
+
 /**
  * The journal: completed entries newest first, a box to search them, the
  * draft being written if there is one, and the way to a new entry (PRD
  * JR-001, JR-004). A draft is not a completed entry, so it is shown apart
- * and is not searched. Nothing here calls AI, and what is typed in the
- * search box stays in memory: it is never put in the address.
+ * and is not searched. Search matches whole words, ignoring case, with the
+ * last word allowed to be unfinished (JR-010). Nothing here calls AI, and
+ * what is typed in the search box stays in memory: it is never put in the
+ * address, in storage or in a log.
  *
  * @returns The journal timeline screen.
  */
@@ -74,9 +70,15 @@ export function Timeline(): JSX.Element {
   const journal = useJournalEntries();
   const [query, setQuery] = useState("");
   const all = journal.state === "ready" ? journal.entries : undefined;
-  const entries = all?.filter((entry) => entry.status === "complete");
+  const entries = useMemo(
+    () => all?.filter((entry) => entry.status === "complete"),
+    [all],
+  );
   const draft = currentDraft(all ?? []);
-  const shown = entries?.filter((entry) => mentions(entry, query));
+  const search = useJournalSearch(entries ?? NO_ENTRIES, query);
+  const shown = search.searching
+    ? search.matches
+    : entries?.map((entry) => ({ entry, snippet: "" }));
   const unreadable = journal.state === "ready" ? journal.unreadable : 0;
 
   return (
@@ -92,7 +94,7 @@ export function Timeline(): JSX.Element {
         label="Search your journal"
         name="journal-search"
         autocomplete="off"
-        hint="Looks through what you wrote, on this device only."
+        hint="Finds entries that have every word you type. It looks through what you wrote on this device only."
         value={query}
         onInput={setQuery}
       />
@@ -113,14 +115,13 @@ export function Timeline(): JSX.Element {
             : `${String(unreadable)} entries saved on this device can't be read by this version of Warmly. They have been left as they are.`}
         </StatusBanner>
       )}
-      {shown !== undefined && shown.length === 0 && (
-        <p>{emptyMessage(entries?.length === 0, draft !== undefined)}</p>
-      )}
+      <ResultCount search={search} />
+      {entries?.length === 0 && <p>{emptyMessage(draft !== undefined)}</p>}
       {shown !== undefined && shown.length > 0 && (
         <nav aria-label="Entries">
           <ul class="action-list">
-            {shown.map((entry) => (
-              <EntryLink key={entry.id} entry={entry} />
+            {shown.map(({ entry, snippet }) => (
+              <EntryLink key={entry.id} entry={entry} snippet={snippet} />
             ))}
           </ul>
         </nav>

@@ -316,6 +316,32 @@ textarea.field__control {
   margin-top: var(--space-2);
 }
 
+/* A second line inside an action link, such as a search snippet */
+.action:has(.action__detail) {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+.action__detail {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-small);
+  font-weight: 400;
+}
+
+/* How many entries a search found; empty when nothing is searched for */
+.result-count {
+  margin: 0;
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-small);
+}
+
+.result-count:empty {
+  display: none;
+}
+
 /* Save status: where a draft stands, under the form */
 
 .save-status {

@@ -17,6 +17,7 @@ export const TEXT_PAIRS: readonly TokenPair[] = [
   ["--color-ink", "--color-surface"],
   ["--color-ink-muted", "--color-paper"],
   ["--color-ink-muted", "--color-surface"],
+  ["--color-ink-muted", "--color-blush"],
   ["--color-coral-text", "--color-paper"],
   ["--color-coral-text", "--color-surface"],
   ["--color-coral-text", "--color-blush"],
