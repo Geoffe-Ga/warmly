@@ -99,6 +99,12 @@ export function Compose(): JSX.Element {
           {formatEntryDate(form.resumed)}.
         </StatusBanner>
       )}
+      {form.draftGone && (
+        <StatusBanner tone="info" label="Draft no longer here">
+          That draft was finished or discarded in another tab or window, so this
+          form has been emptied. Anything you write now starts a new draft.
+        </StatusBanner>
+      )}
       {form.outOfDate && (
         <OutOfDate
           what="draft"

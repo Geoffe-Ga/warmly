@@ -5,6 +5,12 @@
  *
  * Events stay on this device and in memory. An event carries IDs and
  * hashes, never what a record says.
+ *
+ * An event is announced after the change it describes has been stored, and
+ * at most once: if the app stops in between, or a listener fails, it is not
+ * announced again. So a listener must not be the only thing that keeps
+ * dependent records right. Whatever depends on an entry stores that entry's
+ * content hash and checks it again when the app is unlocked.
  */
 
 /** Every event, and what it carries. */
@@ -16,6 +22,12 @@ export interface DomainEvents {
     readonly oldHash: string;
     /** The content hash after it. Never equal to `oldHash`. */
     readonly newHash: string;
+  };
+  /** A completed journal entry has been deleted for good. */
+  readonly "journal.deleted": {
+    readonly entryId: string;
+    /** The content hash the entry had when it was deleted. */
+    readonly oldHash: string;
   };
 }
 
@@ -62,7 +74,7 @@ export interface EventBus {
 export function createEventBus(): EventBus {
   const listeners: {
     [K in DomainEventType]: Set<DomainEventListener<K>>;
-  } = { "journal.changed": new Set() };
+  } = { "journal.changed": new Set(), "journal.deleted": new Set() };
 
   return {
     on(type, listener) {

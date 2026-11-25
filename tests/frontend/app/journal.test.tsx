@@ -785,6 +785,13 @@ describe("drafts (JR-004)", () => {
     });
     expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
     expect(screen.queryByText(/carrying on with the draft/)).toBeNull();
+    // The form does not empty without saying why.
+    const why = screen.getByText(/finished or discarded in another tab/);
+    expect(why.textContent).toContain("this form has been emptied");
+    await userEvent.type(first(), "a new start");
+    expect(
+      screen.queryByText(/finished or discarded in another tab/),
+    ).toBeNull();
   });
 
   it("shows that it is saving without reading that out", async () => {

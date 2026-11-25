@@ -80,6 +80,20 @@ describe("the domain event bus (DEP-001)", () => {
     expect(after).toHaveBeenCalledTimes(1);
   });
 
+  it("gives each kind of event only to its own listeners", async () => {
+    const bus = createEventBus();
+    const changed = vi.fn();
+    const deleted = vi.fn();
+    bus.on("journal.changed", changed);
+    bus.on("journal.deleted", deleted);
+    const gone = { entryId: "entry-1", oldHash: "a".repeat(64) };
+
+    await bus.emit("journal.deleted", gone);
+
+    expect(deleted).toHaveBeenCalledExactlyOnceWith(gone);
+    expect(changed).not.toHaveBeenCalled();
+  });
+
   it("keeps separate buses apart", async () => {
     const heard = vi.fn();
     createEventBus().on("journal.changed", heard);

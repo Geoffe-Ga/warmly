@@ -204,6 +204,31 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
     expect(heard).toEqual([]);
   });
 
+  it("when a listener fails, the edit is already stored and the failure is reported; a second try announces nothing", async () => {
+    // This pins today's behaviour. Whether a save should report a failure
+    // that happened only in a listener is decided with the invalidation
+    // engine (#51), which must not rely on hearing the event.
+    const { records, events, heard, entry } = await setUp();
+    events.on("journal.changed", () => {
+      throw new Error("synthetic listener failure");
+    });
+    const rewritten = {
+      responses: { ...ORIGINAL.responses, good: "rewritten" },
+      feelings: ORIGINAL.feelings,
+    };
+
+    await expect(
+      editEntry({ records, events }, entry.id, rewritten),
+    ).rejects.toBeInstanceOf(AggregateError);
+
+    expect((await records.get("journal-entry", entry.id))?.responses.good).toBe(
+      "rewritten",
+    );
+    expect(heard).toHaveLength(1);
+    await editEntry({ records, events }, entry.id, rewritten);
+    expect(heard).toHaveLength(1);
+  });
+
   it("keeps no trace of the old text: not in memory, and not in IndexedDB", async () => {
     const name = `edit-test-${crypto.randomUUID()}`;
     const store = new EncryptedRecordStore(() => name);
