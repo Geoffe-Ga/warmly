@@ -105,7 +105,22 @@ async def test_a_nonce_is_kept_until_its_timestamp_would_be_stale_anyway() -> No
 
 @pytest.mark.parametrize(
     "timestamp",
-    ["", " 1", "1 ", "+5", "-5", "12.5", "1e9", "١٢٣", "0x10", "soon"],
+    [
+        "",
+        " 1",
+        "1 ",
+        "+5",
+        "-5",
+        "12.5",
+        "1e9",
+        "١٢٣",
+        "0x10",
+        "soon",
+        "9" * 13,
+        # Longer than Python will convert to a number at all.
+        "9" * 5000,
+    ],
+    ids=lambda value: value if len(value) < 12 else f"{len(value)} digits",
 )
 async def test_only_ascii_digits_are_a_timestamp(timestamp: str) -> None:
     """Anything else is refused before it is turned into a number."""
@@ -115,6 +130,14 @@ async def test_only_ascii_digits_are_a_timestamp(timestamp: str) -> None:
         verifier.check_timestamp(timestamp)
 
     assert raised.value.code == "device.stale_request"
+
+
+async def test_a_timestamp_of_the_longest_allowed_length_is_read_as_a_number() -> None:
+    """Twelve digits is a real, far-future time: stale, but not malformed."""
+    far_future = 10**11
+    verifier = DeviceVerifier(Devices(TestDevice()), clock=lambda: far_future)
+
+    verifier.check_timestamp(str(far_future))
 
 
 @pytest.mark.parametrize(

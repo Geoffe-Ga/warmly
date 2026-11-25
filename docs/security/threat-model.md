@@ -62,6 +62,11 @@ encrypted on the user's device and the backend stores ciphertext only.
   the database and also holds a valid session token could register a device
   of their own. They would hold no decryption key (ADR-0005). Replacing the
   verifier with a public key is tracked in #84.
+- **The first recovery envelope is created without a device signature.** No
+  device can exist before it. A session token stolen between sign-up and
+  the user confirming their recovery key could create the envelope and its
+  verifier first, and then register a device. The real user's own attempt
+  would be refused at once, and the account holds nothing yet (ADR-0005).
 - **Same-origin script can ask the browser to sign.** The device key cannot
   be copied, but script running in the app's origin can use it while it runs
   there. The CSP is the control.

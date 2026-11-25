@@ -232,3 +232,24 @@ async def test_the_table_refuses_impossible_rows(
             f"INSERT INTO {TABLE} (owner_id, version, format_version, wrapped_key)"
             f" VALUES ('{OWNER_A}', {values})"
         )
+
+
+async def test_an_envelope_stored_before_verifiers_existed_has_none(
+    store: PostgresRecoveryStore, database_url: str
+) -> None:
+    """Such an account cannot register a device, and says so (ADR-0005).
+
+    Nothing can add a verifier later: only the first write sets it, so that a
+    session token alone can never plant one on an account that has keys.
+    """
+    with psycopg.connect(database_url) as conn:
+        conn.execute(
+            f"INSERT INTO {TABLE} (owner_id, version, format_version, wrapped_key)"
+            " VALUES (%s, 1, 1, 'b2xk')",
+            (OWNER_A,),
+        )
+        conn.commit()
+
+    assert await store.enrollment_verifier(OWNER_A) is None
+    await store.write(OWNER_A, _request(1, "bmV3"))
+    assert await store.enrollment_verifier(OWNER_A) is None

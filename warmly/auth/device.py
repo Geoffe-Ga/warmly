@@ -42,6 +42,10 @@ ENROLLMENT_PROOF_VERSION = "warmly-device-enrollment-v1"
 
 # How far a request's timestamp may be from the server's clock, either way.
 MAX_CLOCK_SKEW_SECONDS = 300
+# Seconds since the epoch need 10 digits today and 11 from the year 2286.
+# The cap also keeps a huge digit string away from ``int``, which refuses
+# to convert one and would turn a bad header into a server error.
+_MAX_TIMESTAMP_DIGITS = 12
 _MIN_NONCE_CHARS = 16
 _MAX_NONCE_CHARS = 64
 # An uncompressed P-256 point, and a raw r||s signature over it.
@@ -248,7 +252,11 @@ class DeviceVerifier:
         Raises:
             DeviceAuthorizationError: ``device.stale_request``.
         """
-        if not timestamp.isascii() or not timestamp.isdigit():
+        if (
+            len(timestamp) > _MAX_TIMESTAMP_DIGITS
+            or not timestamp.isascii()
+            or not timestamp.isdigit()
+        ):
             raise DeviceAuthorizationError(STALE_REQUEST)
         if abs(self._clock() - int(timestamp)) > MAX_CLOCK_SKEW_SECONDS:
             raise DeviceAuthorizationError(STALE_REQUEST)

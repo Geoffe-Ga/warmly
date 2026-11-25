@@ -50,3 +50,6 @@ the whole product; items are added here as the work that creates them lands.
 - [ ] **The API servers' clocks are synchronised** (NTP). A request is
       refused when its timestamp is more than 5 minutes from the server's
       clock. Tracked in #61.
+- [ ] **No recovery envelope in the production database lacks an enrollment
+      verifier** (`device_enrollment_verifier IS NULL` returns no rows). An
+      account without one can never register a device. Tracked in #61.

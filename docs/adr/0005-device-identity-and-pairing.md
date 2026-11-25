@@ -162,8 +162,16 @@ on this list.
   Policy remains the control for that (see the threat model).
 - Signing proves which device sent a request. It does not prove the device
   is unlocked; that is the client's own rule (ADR-0004).
-- An account created before this change has no enrollment verifier, so its
-  devices cannot register. No such account exists outside development.
+- **An account whose envelope predates this change has no verifier**, and
+  nothing can add one: only the first write of the envelope sets it, so that
+  a session token alone can never plant a verifier on an account that
+  already has keys. Such an account gets `device.account_not_ready` and
+  cannot register a device. This is acceptable only because no deployed
+  database exists yet: the only such rows are in developers' local
+  databases, which are reset. The release checklist requires confirming
+  that no envelope in the production database lacks a verifier. If that
+  ever stopped being true, the fix would be a signed, one-time upgrade
+  designed for the purpose, not a relaxation of this rule.
 - **The enrollment verifier is a secret the server holds.** It is the HMAC
   key for the registration proof, so someone who can read the database *and*
   holds a valid session token for the account could register a device of
