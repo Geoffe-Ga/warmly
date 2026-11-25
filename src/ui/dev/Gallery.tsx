@@ -15,7 +15,16 @@ import { StatusBanner } from "../components/StatusBanner";
 const SAMPLE_REQUEST: ReflectRequest = {
   kind: "reflect",
   question: "Synthetic question",
-  entries: [],
+  // Enough invented text to show what a large request looks like.
+  entries: Array.from({ length: 14 }, (_, index) => ({
+    id: `sample-entry-${String(index + 1)}`,
+    contentHash: "0".repeat(64),
+    responses: {
+      good: "Synthetic sample text. ".repeat(20),
+      improve: "Synthetic sample text. ".repeat(20),
+      loved: "Synthetic sample text. ".repeat(20),
+    },
+  })),
 };
 
 /** Path of the gallery. It never exists in a production build. */
@@ -137,13 +146,6 @@ export function Gallery(): JSX.Element {
         <AiDisclosureDialog
           open={asking}
           request={SAMPLE_REQUEST}
-          disclosure={{
-            provider: "Example AI",
-            entries: 14,
-            also: "your question",
-            estimatedTokens: 5_200,
-            large: true,
-          }}
           onConfirm={() => {
             setAsking(false);
             setSent("You chose to send.");

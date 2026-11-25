@@ -2,16 +2,20 @@ import type { JSX } from "preact";
 
 import { grantConsent, type ConsentToken } from "../../ai/consent";
 import type { Disclosure } from "../../ai/gateway";
+import { useServices } from "../../app/services";
 import type { AiRequest } from "../../ai/provider";
 import { ConfirmDialog } from "./ConfirmDialog";
 
 /** Props for {@link AiDisclosureDialog}. */
 export interface AiDisclosureDialogProps {
   readonly open: boolean;
-  /** The request the person is being asked about. */
+  /**
+   * The request the person is being asked about. The dialog works out what
+   * to say about it from this request and nothing else, so it cannot
+   * describe one thing and ask about another. Showing the dialog seals the
+   * request: it cannot be changed afterwards.
+   */
   readonly request: AiRequest;
-  /** What sending it would send, from `AiGateway.disclose`. */
-  readonly disclosure: Disclosure;
   /**
    * Called when the person agrees, with their consent to send this request
    * once.
@@ -48,13 +52,22 @@ export function describeSent(disclosure: Disclosure): string {
  * the token is for this request only and works once. Cancel is the default,
  * and it sends nothing.
  *
+ * What it says comes from the gateway's own description of the very
+ * request the token is made for.
+ *
  * @param props - See {@link AiDisclosureDialogProps}.
  * @returns The dialog, or `null` when closed.
+ * @throws NoProviderError if it is opened with no provider connected.
  */
 export function AiDisclosureDialog(
   props: AiDisclosureDialogProps,
 ): JSX.Element | null {
-  const { disclosure, request } = props;
+  const { ai } = useServices();
+  const { request } = props;
+  if (!props.open) {
+    return null;
+  }
+  const disclosure = ai.disclose(request);
   return (
     <ConfirmDialog
       open={props.open}

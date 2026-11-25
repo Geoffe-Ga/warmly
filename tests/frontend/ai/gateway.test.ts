@@ -295,6 +295,51 @@ describe("what the person is shown before agreeing (AI-015, AI-016)", () => {
     expect(disclosure.large).toBe(true);
   });
 
+  it("describing a request seals it, so what is described is what is sent (SEC-009)", () => {
+    const { gateway } = connected();
+    const request = {
+      kind: "reflect" as const,
+      question: "Synthetic question",
+      entries: [{ ...ENTRY, responses: { ...ENTRY.responses } }],
+    };
+
+    gateway.disclose(request);
+
+    expect(() => {
+      request.question = "Another question";
+    }).toThrow(TypeError);
+    expect(() => {
+      request.entries.push(ENTRY);
+    }).toThrow(TypeError);
+    expect(() => {
+      (request.entries[0] as SourceEntry as { id: string }).id = "other";
+    }).toThrow(TypeError);
+    expect(() => {
+      (request.entries[0]?.responses as { good: string }).good = "Changed";
+    }).toThrow(TypeError);
+  });
+
+  it("a request cannot be changed between agreeing and sending", async () => {
+    const { gateway, provider } = connected();
+    const request = {
+      kind: "reflect" as const,
+      question: "Synthetic question",
+      entries: [{ ...ENTRY, responses: { ...ENTRY.responses } }],
+    };
+    const before = structuredClone(request);
+    const token = grantConsent(request);
+
+    expect(() => {
+      request.question = "Send everything instead";
+    }).toThrow(TypeError);
+    expect(() => {
+      request.entries.push({ ...ENTRY, id: "smuggled" });
+    }).toThrow(TypeError);
+    await gateway.reflect(request, token);
+
+    expect(provider.calls).toEqual([before]);
+  });
+
   it("describing a request sends nothing and uses no consent", () => {
     const { gateway, provider } = connected();
     const request = reflect();

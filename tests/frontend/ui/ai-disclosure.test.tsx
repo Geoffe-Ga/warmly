@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FakeProvider } from "../../../src/ai/fake-provider";
 import { AiGateway, ConsentRequiredError } from "../../../src/ai/gateway";
 import type { Disclosure } from "../../../src/ai/gateway";
-import type { ReflectRequest } from "../../../src/ai/provider";
+import type {
+  AIProvider,
+  ReflectRequest,
+  SourceEntry,
+} from "../../../src/ai/provider";
+import { ServicesProvider } from "../../../src/app/services";
 import {
   AiDisclosureDialog,
   describeSent,
@@ -23,11 +28,21 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-const REQUEST: ReflectRequest = {
-  kind: "reflect",
-  question: "CANARY question",
-  entries: [],
-};
+function entries(count: number): SourceEntry[] {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `entry-${String(index)}`,
+    contentHash: "a".repeat(64),
+    responses: { good: "CANARY good", improve: "CANARY", loved: "CANARY" },
+  }));
+}
+
+function request(count = 14): ReflectRequest {
+  return {
+    kind: "reflect",
+    question: "CANARY question",
+    entries: entries(count),
+  };
+}
 
 const DISCLOSURE: Disclosure = {
   provider: "Example AI",
@@ -37,25 +52,51 @@ const DISCLOSURE: Disclosure = {
   large: false,
 };
 
+/** A provider called "Example AI" that says a request is as big as it is told. */
+function exampleAi(tokens = 900): AIProvider {
+  const base = new FakeProvider();
+  return {
+    id: base.id,
+    name: "Example AI",
+    capabilities: () => base.capabilities(),
+    validateConfig: () => base.validateConfig(),
+    estimateTokens: () => tokens,
+    reflect: (asked, signal) => base.reflect(asked, signal),
+    generateCards: (asked, signal) => base.generateCards(asked, signal),
+    generateSegmentAlternatives: (asked, signal) =>
+      base.generateSegmentAlternatives(asked, signal),
+  };
+}
+
 function open(
-  disclosure: Disclosure = DISCLOSURE,
-  request: ReflectRequest = REQUEST,
+  options: {
+    readonly gateway?: AiGateway;
+    readonly request?: ReflectRequest;
+    readonly open?: boolean;
+  } = {},
 ): {
   confirmed: ReturnType<typeof vi.fn>;
   cancelled: ReturnType<typeof vi.fn>;
+  request: ReflectRequest;
 } {
   const confirmed = vi.fn();
   const cancelled = vi.fn();
+  const asked = options.request ?? request();
+  const services = {
+    ...testServices("unlocked"),
+    ai: options.gateway ?? new AiGateway(exampleAi()),
+  };
   render(
-    <AiDisclosureDialog
-      open
-      request={request}
-      disclosure={disclosure}
-      onConfirm={confirmed}
-      onCancel={cancelled}
-    />,
+    <ServicesProvider value={services}>
+      <AiDisclosureDialog
+        open={options.open ?? true}
+        request={asked}
+        onConfirm={confirmed}
+        onCancel={cancelled}
+      />
+    </ServicesProvider>,
   );
-  return { confirmed, cancelled };
+  return { confirmed, cancelled, request: asked };
 }
 
 describe("what a request sends, in words (AI-015)", () => {
@@ -93,7 +134,7 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
   });
 
   it("points out a large request and its cost, only when it is one (AI-016)", () => {
-    open({ ...DISCLOSURE, large: true, estimatedTokens: 5_200 });
+    open({ gateway: new AiGateway(exampleAi(5_200)) });
     expect(screen.getByRole("alertdialog").textContent).toContain(
       "large request (about 5,200 tokens), which costs more",
     );
@@ -122,24 +163,53 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
     expect(confirmed).not.toHaveBeenCalled();
   });
 
-  it("is not shown at all when closed", () => {
-    render(
-      <AiDisclosureDialog
-        open={false}
-        request={REQUEST}
-        disclosure={DISCLOSURE}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
+  it("is not shown at all when closed, and describes nothing", () => {
+    const provider = exampleAi();
+    const estimate = vi.spyOn(provider, "estimateTokens");
+    open({ gateway: new AiGateway(provider), open: false });
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(estimate).not.toHaveBeenCalled();
+  });
+
+  it("describes the very request it asks about, whatever the screen might have said (SEC-009)", () => {
+    open({ request: request(3) });
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+      "3 journal entries and your question",
+    );
+    cleanup();
+
+    open({ request: request(1) });
+    expect(screen.getByRole("alertdialog").textContent).toContain(
+      "1 journal entry and your question",
+    );
+  });
+
+  it("the request cannot be changed once it has been shown", () => {
+    const { request: shown } = open({ request: request(2) });
+    const loose = shown as unknown as {
+      question: string;
+      entries: { responses: { good: string } }[];
+    };
+
+    expect(() => {
+      loose.question = "Something else";
+    }).toThrow(TypeError);
+    expect(() => {
+      loose.entries.push(loose.entries[0] as never);
+    }).toThrow(TypeError);
+    expect(() => {
+      (loose.entries[0] as { responses: { good: string } }).responses.good =
+        "Something else";
+    }).toThrow(TypeError);
+    expect(shown.question).toBe("CANARY question");
+    expect(shown.entries).toHaveLength(2);
   });
 
   it("agreeing gives consent that sends this request once, and no other", async () => {
     const provider = new FakeProvider();
     const gateway = new AiGateway(provider);
-    const { confirmed } = open(gateway.disclose(REQUEST));
+    const { confirmed, request: shown } = open({ gateway });
 
     await userEvent
       .setup()
@@ -147,7 +217,7 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
 
     expect(confirmed).toHaveBeenCalledTimes(1);
     const consent = confirmed.mock.calls[0]?.[0] as never;
-    const other: ReflectRequest = { ...REQUEST };
+    const other: ReflectRequest = { ...shown };
     await expect(gateway.reflect(other, consent)).rejects.toThrow(
       ConsentRequiredError,
     );
@@ -157,18 +227,18 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
   it("the consent from the dialog lets the gateway send exactly what was shown", async () => {
     const provider = new FakeProvider();
     const gateway = new AiGateway(provider);
-    const { confirmed } = open(gateway.disclose(REQUEST));
+    const { confirmed, request: shown } = open({ gateway });
     await userEvent
       .setup()
       .click(screen.getByRole("button", { name: "Send to Test provider" }));
     const consent = confirmed.mock.calls[0]?.[0] as never;
 
-    await gateway.reflect(REQUEST, consent);
-    await expect(gateway.reflect(REQUEST, consent)).rejects.toThrow(
+    await gateway.reflect(shown, consent);
+    await expect(gateway.reflect(shown, consent)).rejects.toThrow(
       ConsentRequiredError,
     );
 
-    expect(provider.calls).toEqual([REQUEST]);
+    expect(provider.calls).toEqual([shown]);
   });
 });
 

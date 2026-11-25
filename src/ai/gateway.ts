@@ -17,7 +17,7 @@
  * Journal text passes through this module on its way to the provider and is
  * never logged, stored or sent anywhere else.
  */
-import { consumeConsent, type ConsentToken } from "./consent";
+import { consumeConsent, sealRequest, type ConsentToken } from "./consent";
 import { FakeProvider } from "./fake-provider";
 import type {
   AIProvider,
@@ -79,7 +79,10 @@ export type ProviderState =
       readonly standIn: boolean;
     };
 
-/** A request of this many estimated tokens or more is called out as large. */
+/**
+ * A request of this many estimated tokens or more is called out as large,
+ * with a word about cost, before the person agrees (PRD AI-016).
+ */
 export const LARGE_REQUEST_TOKENS = 4_000;
 
 const ALSO = {
@@ -127,12 +130,16 @@ export class AiGateway {
    * Describe what sending a request would send, for the disclosure dialog.
    * Makes no network call and sends nothing.
    *
+   * Describing a request seals it: from here on it cannot be changed, so
+   * what is described is what would be sent.
+   *
    * @param request - The request the person is about to be asked about.
    * @returns What to show them.
    * @throws NoProviderError if no provider is connected.
    */
   disclose(request: AiRequest): Disclosure {
     const provider = this.#need();
+    sealRequest(request);
     const estimatedTokens = provider.estimateTokens(request);
     return {
       provider: provider.name,

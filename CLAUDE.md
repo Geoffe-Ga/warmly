@@ -291,7 +291,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - Every AI call goes through `AiGateway` (`src/ai/gateway.ts`), reached as
   `services.ai` (D-17). Only the gateway imports a provider, and it needs a
   consent token for the very request being sent. A token is made only by
-  the confirm button of `AiDisclosureDialog`, and works once. Never make,
+  the confirm button of `AiDisclosureDialog`, and works once. The dialog
+  takes the request alone and asks the gateway what to say about it, and a
+  request is sealed (deep-frozen) once it has been described or agreed to:
+  never pass the dialog its own description, and never copy a request to
+  get around the seal. Never make,
   store or reuse a token anywhere else, never call a provider directly, and
   never add a retry or a second provider. A lint rule and
   `tests/frontend/ai/dependencies.test.ts` enforce the imports. A provider's

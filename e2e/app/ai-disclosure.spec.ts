@@ -27,14 +27,14 @@ test.describe("the AI disclosure", () => {
 
     const dialog = page.getByRole("alertdialog");
     await expect(dialog.getByRole("heading")).toHaveText(
-      "Send this to Example AI?",
+      "Send this to Test provider?",
     );
     await expect(dialog).toContainText("14 journal entries and your question");
-    await expect(dialog).toContainText("Example AI is a separate company");
+    await expect(dialog).toContainText("Test provider is a separate company");
     await expect(dialog).toContainText(
-      "does not mean Example AI keeps nothing",
+      "does not mean Test provider keeps nothing",
     );
-    await expect(dialog).toContainText("large request (about 5,200 tokens)");
+    await expect(dialog).toContainText(/large request \(about [\d,]+ tokens\)/);
     await expect(
       dialog.getByRole("button", { name: "Don't send" }),
     ).toBeFocused();
@@ -56,7 +56,7 @@ test.describe("the AI disclosure", () => {
     ).toBeFocused();
     await page.keyboard.press("Tab");
     await expect(
-      dialog.getByRole("button", { name: "Send to Example AI" }),
+      dialog.getByRole("button", { name: "Send to Test provider" }),
     ).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.getByText("You chose to send.")).toBeVisible();

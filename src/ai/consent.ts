@@ -22,6 +22,34 @@ export interface ConsentToken {
   readonly [consent]: true;
 }
 
+function deepFreeze(value: unknown): void {
+  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+    return;
+  }
+  Object.freeze(value);
+  for (const inner of Object.values(value)) {
+    deepFreeze(inner);
+  }
+}
+
+/**
+ * Fix a request so that it cannot be changed from now on: not its words,
+ * not its list of entries, not any entry's text. What the person is shown
+ * and agrees to is then exactly what is sent. Trying to change a sealed
+ * request throws.
+ *
+ * The gateway seals a request when it describes it for the dialog, and the
+ * dialog seals it again when it makes the token.
+ *
+ * @param request - The request. Build it from copies: everything reachable
+ *   from it is frozen.
+ * @returns The same request.
+ */
+export function sealRequest<T extends AiRequest>(request: T): T {
+  deepFreeze(request);
+  return request;
+}
+
 /** Which request each unused token was given for. */
 const granted = new WeakMap<ConsentToken, AiRequest>();
 
@@ -29,12 +57,13 @@ const granted = new WeakMap<ConsentToken, AiRequest>();
  * Record the person's agreement to send one request. Called only by the
  * disclosure dialog's confirm button.
  *
- * @param request - The request that was shown to the person.
+ * @param request - The request that was shown to the person. It is sealed:
+ *   it cannot be changed afterwards.
  * @returns A token that lets the gateway send that request, once.
  */
 export function grantConsent(request: AiRequest): ConsentToken {
   const token = Object.freeze({}) as ConsentToken;
-  granted.set(token, request);
+  granted.set(token, sealRequest(request));
   return token;
 }
 
