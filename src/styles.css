@@ -150,6 +150,10 @@ a {
 
 .stack {
   display: grid;
+  /* One column that may shrink below its widest child, so a wide field or
+     button wraps or shrinks at large text sizes and the page never scrolls
+     sideways. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
 }
 
@@ -573,6 +577,12 @@ textarea.field__control {
   background: var(--color-surface);
   font-size: var(--font-size-heading);
   line-height: 1.35;
+}
+
+/* Next and previous: big enough to press with a thumb */
+.present-controls .button {
+  flex: 1 1 8rem;
+  min-height: 3.5rem;
 }
 
 /* What the print screen will print */

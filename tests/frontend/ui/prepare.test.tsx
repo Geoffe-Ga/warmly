@@ -329,7 +329,7 @@ describe("presentation (CC-012)", () => {
     expect(sessionStorage.length + localStorage.length).toBe(0);
 
     await user.click(
-      screen.getByRole("link", { name: "Back to the collection" }),
+      screen.getByRole("link", { name: "Close and go back to the collection" }),
     );
     await user.click(
       await screen.findByRole("link", { name: "Present these cards" }),
