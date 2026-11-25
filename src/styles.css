@@ -545,6 +545,24 @@ textarea.field__control {
   user-select: all;
 }
 
+/* An AI request in progress: one line and a Cancel button */
+.ai-request {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.ai-request p {
+  margin: 0;
+}
+
+/* The second paragraph of an AI error: what was kept, what retrying does */
+.ai-request__note {
+  display: block;
+  margin-top: var(--space-2);
+}
+
 /* Conversation cards */
 
 /* A card's words as they are meant to be read */

@@ -341,6 +341,18 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   it, and never record which cards were shown or for how long (PRD
   CC-012). The print view shows card text only, and printing happens only
   when the person presses Print.
+- A screen that asks AI for something uses one `AiRequestController`
+  (`src/ai/request-controller.ts`) and renders `AiRequestStatus` for it
+  (PRD AI-014 to AI-017). The controller keeps the request through failure
+  and cancel, sends only from `confirm` with a consent token, and after a
+  failure does nothing until the person presses Try again, which reopens
+  the dialog. Its one timer stops a request that takes too long; never add
+  a timer, retry, backoff or second provider. Failures are named by
+  `classifyAiError` and put into words by `describeAiError`
+  (`src/ai/errors.ts`): never show a provider's own error text. A request
+  must fit the budget (`src/ai/budget.ts`, limits in `src/ai/config.ts`),
+  and the gateway runs one request at a time. Call `reset()` when the
+  screen closes or the app locks.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

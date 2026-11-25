@@ -83,9 +83,41 @@ describe("the AI layer's boundaries (D-17, SEC-009)", () => {
       expect(path).not.toMatch(/^src\/(sync|storage|domain)\//);
     }
     for (const [path, source] of Object.entries(SOURCES)) {
-      if (path.includes("/src/ai/")) {
+      if (
+        path.includes("/src/ai/") &&
+        !path.endsWith("/ai/request-controller.ts")
+      ) {
         expect(source, path).not.toMatch(/setTimeout|setInterval/);
       }
     }
+  });
+
+  it("the one timer in the AI code stops a request and can never send one", () => {
+    const source = SOURCES["../../../src/ai/request-controller.ts"] ?? "";
+    // Comments describe timers in words; only code is looked at.
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+    expect(code).not.toMatch(
+      /setInterval|requestAnimationFrame|requestIdleCallback/,
+    );
+    expect(code.match(/setTimeout\(/g)).toHaveLength(1);
+    // What the timer runs: stop the request that is waiting. Nothing else.
+    expect(code).toMatch(
+      /setTimeout\(\(\) => \{\s*this\.#stop\("timeout"\);\s*\}, this\.#timeoutMs\)/,
+    );
+    // The only place a request is sent is `confirm`, which needs consent.
+    expect(code.match(/this\.#send\(/g)).toHaveLength(1);
+    expect(code).toMatch(
+      /async confirm\(consent: ConsentToken\)[\s\S]*this\.#send\(request, consent, abort\.signal\)/,
+    );
+    // `retry` only reopens the dialog.
+    const retry = code.slice(
+      code.indexOf("  retry(): void {"),
+      code.indexOf("  reset(): void {"),
+    );
+    expect(retry).toContain('phase: "awaiting-consent"');
+    expect(retry).not.toMatch(/#send|confirm\(/);
   });
 });

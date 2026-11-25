@@ -6,6 +6,7 @@
  * run without a network, a key or a cost. It is never part of
  * a production build, and only the gateway may import it.
  */
+import { AiError, type AiErrorKind } from "./errors";
 import type {
   AIProvider,
   AiPrompt,
@@ -71,6 +72,44 @@ export class FakeProvider implements AIProvider {
   readonly mark = FAKE_PROVIDER_MARK;
   /** What it was given, in order. */
   readonly calls: AiPrompt[] = [];
+  #failure: AiErrorKind | undefined;
+  #hanging = false;
+
+  /**
+   * Make the next call fail the way a real provider can, for tests and
+   * the component gallery.
+   *
+   * @param kind - The kind of failure. `cancelled` fails as an aborted
+   *   request does.
+   */
+  failNextWith(kind: AiErrorKind): void {
+    this.#failure = kind;
+  }
+
+  /** Make the next call wait until it is cancelled, and never answer. */
+  hangNext(): void {
+    this.#hanging = true;
+  }
+
+  /** What the next call was told to do instead of answering. */
+  async #outcome(signal: AbortSignal): Promise<void> {
+    const failure = this.#failure;
+    this.#failure = undefined;
+    if (failure === "cancelled") {
+      throw new DOMException("The request was cancelled", "AbortError");
+    }
+    if (failure !== undefined) {
+      throw new AiError(failure);
+    }
+    if (this.#hanging) {
+      this.#hanging = false;
+      await new Promise<never>((_resolve, reject) => {
+        signal.addEventListener("abort", () => {
+          reject(new DOMException("The request was cancelled", "AbortError"));
+        });
+      });
+    }
+  }
 
   capabilities(): Capabilities {
     return CAPABILITIES;
@@ -90,6 +129,7 @@ export class FakeProvider implements AIProvider {
   async reflect(prompt: ReflectPrompt, signal: AbortSignal): Promise<unknown> {
     await cancelled(signal);
     this.calls.push(prompt);
+    await this.#outcome(signal);
     const found = quotes(prompt.sources);
     const marks = found.map((_, index) => `[c${String(index + 1)}]`).join(" ");
     return {
@@ -108,6 +148,7 @@ export class FakeProvider implements AIProvider {
   ): Promise<unknown> {
     await cancelled(signal);
     this.calls.push(prompt);
+    await this.#outcome(signal);
     return {
       cards: quotes(prompt.sources).map((quote) => ({
         type: "appreciation",
@@ -131,6 +172,7 @@ export class FakeProvider implements AIProvider {
   ): Promise<unknown> {
     await cancelled(signal);
     this.calls.push(prompt);
+    await this.#outcome(signal);
     return {
       alternatives: ["A test alternative.", "Another test alternative."],
     };

@@ -23,6 +23,7 @@
  * Journal text passes through this module on its way to the provider and is
  * never logged, stored or sent anywhere else.
  */
+import { budgetFor, withinBudget } from "./budget";
 import { consumeConsent, sealRequest, type ConsentToken } from "./consent";
 import type {
   GeneratedCard,
@@ -40,6 +41,11 @@ import type {
   ReflectRequest,
   SegmentAlternativesRequest,
 } from "./provider";
+
+// The type of a consent token, for code that passes one through without
+// being able to make one. Making a token still needs the consent module,
+// which only the disclosure dialog may import.
+export type { ConsentToken } from "./consent";
 
 /** No provider is connected, so there is nothing to send a request to. */
 export class NoProviderError extends Error {
@@ -65,6 +71,14 @@ export class RequestTooLargeError extends Error {
   constructor() {
     super("The request is too large for the provider");
     this.name = "RequestTooLargeError";
+  }
+}
+
+/** Another AI request is still running. Nothing was sent or used up. */
+export class AiBusyError extends Error {
+  constructor() {
+    super("Another AI request is still running");
+    this.name = "AiBusyError";
   }
 }
 
@@ -107,6 +121,8 @@ const ALSO = {
 /** The gateway. One per app; screens reach it as `services.ai`. */
 export class AiGateway {
   readonly #provider: AIProvider | undefined;
+  /** Whether a call is running. Only one runs at a time. */
+  #busy = false;
 
   /**
    * @param provider - The connected provider, if there is one.
@@ -174,8 +190,9 @@ export class AiGateway {
 
   /**
    * The checks every call makes before anything is sent, in this order: a
-   * provider, the person's agreement to this request, and a size the
-   * provider accepts. The token is used up even if a later check fails.
+   * provider, the person's agreement to this request, and a size within
+   * the budget (the smaller of what the provider accepts and what the app
+   * allows; see `budget.ts`). The token is used up even if a later check fails.
    * If the provider throws while sizing the request, the call is refused
    * with that error after the token has been used, and nothing is sent.
    */
@@ -189,12 +206,31 @@ export class AiGateway {
     }
     const manifest = buildManifest(request.entries);
     if (
-      provider.estimateTokens(promptFor(request, manifest)) >
-      provider.capabilities().maxInputTokens
+      !withinBudget(
+        provider.estimateTokens(promptFor(request, manifest)),
+        budgetFor(provider.capabilities()),
+      )
     ) {
       throw new RequestTooLargeError();
     }
     return { provider, manifest };
+  }
+
+  /**
+   * Make one call, and only one at a time (PRD AI-016). A second call
+   * while one is running is refused before its consent is looked at, so
+   * its token is not used up.
+   */
+  async #one<T>(call: () => Promise<T>): Promise<T> {
+    if (this.#busy) {
+      throw new AiBusyError();
+    }
+    this.#busy = true;
+    try {
+      return await call();
+    } finally {
+      this.#busy = false;
+    }
   }
 
   /**
@@ -215,9 +251,11 @@ export class AiGateway {
     consent: ConsentToken,
     signal: AbortSignal = new AbortController().signal,
   ): Promise<ReflectionAnswer> {
-    const { provider, manifest } = this.#admit(request, consent);
-    const raw = await provider.reflect(promptFor(request, manifest), signal);
-    return groundReflection(raw, manifest, request.coverage);
+    return this.#one(async () => {
+      const { provider, manifest } = this.#admit(request, consent);
+      const raw = await provider.reflect(promptFor(request, manifest), signal);
+      return groundReflection(raw, manifest, request.coverage);
+    });
   }
 
   /**
@@ -234,12 +272,14 @@ export class AiGateway {
     consent: ConsentToken,
     signal: AbortSignal = new AbortController().signal,
   ): Promise<readonly GeneratedCard[]> {
-    const { provider, manifest } = this.#admit(request, consent);
-    const raw = await provider.generateCards(
-      promptFor(request, manifest),
-      signal,
-    );
-    return groundCards(raw, manifest);
+    return this.#one(async () => {
+      const { provider, manifest } = this.#admit(request, consent);
+      const raw = await provider.generateCards(
+        promptFor(request, manifest),
+        signal,
+      );
+      return groundCards(raw, manifest);
+    });
   }
 
   /**
@@ -256,12 +296,14 @@ export class AiGateway {
     consent: ConsentToken,
     signal: AbortSignal = new AbortController().signal,
   ): Promise<SegmentAlternatives> {
-    const { provider, manifest } = this.#admit(request, consent);
-    const raw = await provider.generateSegmentAlternatives(
-      promptFor(request, manifest),
-      signal,
-    );
-    return groundAlternatives(raw);
+    return this.#one(async () => {
+      const { provider, manifest } = this.#admit(request, consent);
+      const raw = await provider.generateSegmentAlternatives(
+        promptFor(request, manifest),
+        signal,
+      );
+      return groundAlternatives(raw);
+    });
   }
 }
 

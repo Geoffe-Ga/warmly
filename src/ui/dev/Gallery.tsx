@@ -1,8 +1,11 @@
 import type { JSX } from "preact";
-import { useState } from "preact/hooks";
+import { useMemo, useRef, useState } from "preact/hooks";
 
+import { AiError } from "../../ai/errors";
 import type { ReflectRequest } from "../../ai/provider";
+import { AiRequestController } from "../../ai/request-controller";
 import { AiDisclosureDialog } from "../components/AiDisclosureDialog";
+import { AiRequestStatus, useAiRequest } from "../components/AiRequestStatus";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { CheckboxGroup } from "../components/CheckboxGroup";
@@ -26,6 +29,90 @@ const SAMPLE_REQUEST: ReflectRequest = {
     },
   })),
 };
+
+/** A small synthetic request for the request-status sample. */
+const SMALL_REQUEST: ReflectRequest = {
+  kind: "reflect",
+  question: "Synthetic question",
+  entries: [
+    {
+      id: "sample-entry",
+      contentHash: "0".repeat(64),
+      responses: {
+        good: "Synthetic sample text.",
+        improve: "Synthetic sample text.",
+        loved: "Synthetic sample text.",
+      },
+    },
+  ],
+};
+
+/** How the sample request ends: the three things a real one can do. */
+type SampleEnding = "answer" | "fail" | "wait";
+
+/**
+ * The states of an AI request, driven by a stand-in that sends nothing: an
+ * answer, a failure, and a wait that only Cancel ends.
+ */
+function AiRequestSample(): JSX.Element {
+  const ending = useRef<SampleEnding>("answer");
+  const controller = useMemo(
+    () =>
+      new AiRequestController<ReflectRequest, string>(
+        (_request, _consent, signal) => {
+          if (ending.current === "fail") {
+            return Promise.reject(new AiError("rate_limited"));
+          }
+          if (ending.current === "answer") {
+            return Promise.resolve("An answer came back.");
+          }
+          return new Promise<string>((_resolve, reject) => {
+            signal.addEventListener("abort", () => {
+              reject(new DOMException("Cancelled", "AbortError"));
+            });
+          });
+        },
+      ),
+    [],
+  );
+  const state = useAiRequest(controller);
+  const ask = (how: SampleEnding): void => {
+    ending.current = how;
+    controller.ask(SMALL_REQUEST);
+  };
+
+  return (
+    <Card heading="AI request">
+      <p role="status">
+        {state.phase === "done" ? state.result : "No answer yet."}
+      </p>
+      <div class="button-row">
+        <Button
+          onClick={() => {
+            ask("answer");
+          }}
+        >
+          Ask and get an answer
+        </Button>
+        <Button
+          onClick={() => {
+            ask("fail");
+          }}
+        >
+          Ask and fail
+        </Button>
+        <Button
+          onClick={() => {
+            ask("wait");
+          }}
+        >
+          Ask and wait
+        </Button>
+      </div>
+      <AiRequestStatus controller={controller} />
+    </Card>
+  );
+}
 
 /** Path of the gallery. It never exists in a production build. */
 export const GALLERY_PATH = "/dev/components";
@@ -156,6 +243,8 @@ export function Gallery(): JSX.Element {
           }}
         />
       </Card>
+
+      <AiRequestSample />
     </PageLayout>
   );
 }
