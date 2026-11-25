@@ -262,13 +262,124 @@ describe("reviewing an entry changed in two places (SYNC-004, AC-16)", () => {
     expect(screen.queryByText("Theirs improve")).toBeNull();
   });
 
+  /** The other device changes the entry again just as a choice is stored. */
+  function changesAgain(services: TestServices): JournalEntry {
+    const newer = version({
+      responses: { good: "Newer good", improve: "Newer improve", loved: "x" },
+      contentHash: "c".repeat(64),
+    });
+    const real = services.records.resolve.bind(services.records);
+    vi.spyOn(services.records, "resolve").mockImplementationOnce(
+      (kind, id, keep, seen, merged) => {
+        services.records.park(ID, newer, 3);
+        return real(kind, id, keep, seen, merged);
+      },
+    );
+    return newer;
+  }
+
+  it("does not act on a version that changed again: it says so, shows the newer one, and asks again", async () => {
+    const { services, synced } = await open();
+    const user = userEvent.setup();
+    const keep = await screen.findByRole("button", {
+      name: "Keep the other version",
+    });
+    changesAgain(services);
+
+    await user.click(keep);
+
+    await waitFor(() => {
+      expect(document.body.textContent).toMatch(
+        /changed again while you were looking, so nothing\s+was stored/,
+      );
+    });
+    expect(await services.records.get("journal-entry", ID)).toEqual(MINE);
+    expect(
+      within(card("On your other device")).getByText("Newer improve"),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Kept the version/)).toBeNull();
+    expect(synced).not.toHaveBeenCalled();
+
+    // Having seen the newer version, the same choice is stored.
+    await user.click(
+      screen.getByRole("button", { name: "Keep the other version" }),
+    );
+    await screen.findByText(/Kept the version from your other device/);
+    expect(screen.queryByText(/changed again/)).toBeNull();
+    expect(
+      (await services.records.get("journal-entry", ID))?.responses.improve,
+    ).toBe("Newer improve");
+  });
+
+  it("keeps what was typed in the merge form when the other version changes again", async () => {
+    const { services } = await open();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Write one from both" }),
+    );
+    const good = screen.getByLabelText<HTMLTextAreaElement>(
+      PROMPTS[0]?.label ?? "",
+    );
+    await user.clear(good);
+    await user.type(good, "Typed with care");
+    changesAgain(services);
+
+    await user.click(screen.getByRole("button", { name: "Save this version" }));
+
+    await waitFor(() => {
+      expect(document.body.textContent).toMatch(/changed again/);
+    });
+    // Still on the form, with the text, and the newer version beside it.
+    expect(heading().textContent).toBe("Write one version from both");
+    expect(
+      screen.getByLabelText<HTMLTextAreaElement>(PROMPTS[0]?.label ?? "").value,
+    ).toBe("Typed with care");
+    expect(
+      within(card("On your other device")).getByText("Newer improve"),
+    ).toBeTruthy();
+    expect(await services.records.get("journal-entry", ID)).toEqual(MINE);
+
+    await user.click(screen.getByRole("button", { name: "Save this version" }));
+    await screen.findByText(/Saved the version you wrote/);
+    expect(
+      (await services.records.get("journal-entry", ID))?.responses.good,
+    ).toBe("Typed with care");
+  });
+
+  it("does not swap the version beside the merge form without saying so", async () => {
+    const { services } = await open();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Write one from both" }),
+    );
+    const good = screen.getByLabelText(PROMPTS[0]?.label ?? "");
+    good.focus();
+
+    services.records.park(
+      ID,
+      version({ responses: { good: "g", improve: "Swapped", loved: "l" } }),
+      3,
+    );
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+
+    expect(
+      within(card("On your other device")).getByText("Theirs improve"),
+    ).toBeTruthy();
+    expect(screen.queryByText("Swapped")).toBeNull();
+    // And reading the list again did not take focus from the field.
+    expect(document.activeElement).toBe(good);
+  });
+
   it("treats an entry that was settled meanwhile as settled, not as an error", async () => {
     const { services } = await open();
     const user = userEvent.setup();
     const keep = await screen.findByRole("button", {
       name: "Keep the other version",
     });
-    vi.spyOn(services.records, "conflicts").mockResolvedValue([]);
+    // Settled in another tab since this screen read the list.
+    vi.spyOn(services.records, "resolve").mockResolvedValue(false);
 
     await user.click(keep);
 

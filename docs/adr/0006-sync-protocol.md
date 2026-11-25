@@ -208,6 +208,12 @@ two places" screen (`src/sync/conflicts.ts`) and chooses:
   version, then as "keep this device's version". A finished entry must
   still have all three answers.
 
+Each choice is one local transaction, the merged text included: after a
+crash it is stored whole or not at all. A choice carries the revision of
+the other version the person was shown. If a newer one has arrived since,
+the choice is refused, nothing is changed, and they are shown the newer
+version and asked again, so no version is removed unseen.
+
 Nothing is merged for the person and neither version is removed before
 they choose. Afterwards the version not kept exists nowhere: there is no
 history (PRD §5.2). If the server's version changes again before the choice

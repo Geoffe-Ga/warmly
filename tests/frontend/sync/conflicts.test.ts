@@ -16,13 +16,16 @@ import {
 } from "../../../src/storage/encrypted-record-store";
 import { MemoryRecordStore } from "../../../src/storage/record-store";
 import {
+  ConflictChangedError,
   ConflictGoneError,
   IncompleteMergeError,
   keepMerged,
   keepMine,
   keepTheirs,
   listConflicts,
+  isEdited,
   type ConflictDeps,
+  type EditedConflict,
 } from "../../../src/sync/conflicts";
 import type { RemoteChange } from "../../../src/sync/protocol";
 import { MemoryServer } from "../../../src/sync/testing/memory-server";
@@ -45,6 +48,17 @@ function listening(store: EncryptedRecordStore | MemoryRecordStore): {
     deleted.push(event);
   });
   return { deps: { records: store, events }, changed, deleted };
+}
+
+/** The conflict as the review screen would show it for an entry. */
+async function shown(deps: ConflictDeps, id: string): Promise<EditedConflict> {
+  const conflict = (await listConflicts(deps.records)).find(
+    (each) => each.id === id,
+  );
+  if (conflict === undefined || !isEdited(conflict)) {
+    throw new Error("an entry with two readable versions is expected");
+  }
+  return conflict;
 }
 
 function answers(good: string): {
@@ -90,7 +104,7 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
     const conflicts = await listConflicts(b.store);
 
     expect(conflicts).toEqual([
-      { id: fromB.id, kind: "edited", mine: fromB, theirs: fromA },
+      { id: fromB.id, revision: 2, kind: "edited", mine: fromB, theirs: fromA },
     ]);
     expect(b.engine.state()).toEqual({ status: "attention", waiting: 1 });
     // The entry itself still reads as this device's version.
@@ -104,7 +118,7 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
     const { server, a, b, fromB } = await clash();
     const { deps, changed } = listening(b.store);
 
-    await keepMine(deps, fromB.id);
+    await keepMine(deps, await shown(deps, fromB.id));
 
     expect(await listConflicts(b.store)).toEqual([]);
     expect(await readRows(b.name, PARKED)).toEqual([]);
@@ -120,7 +134,7 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
     const { server, a, b, fromA, fromB } = await clash();
     const { deps, changed } = listening(b.store);
 
-    await keepTheirs(deps, fromB.id);
+    await keepTheirs(deps, await shown(deps, fromB.id));
 
     expect(await b.store.get("journal-entry", fromB.id)).toEqual(fromA);
     expect(await readRows(b.name, OUTBOX)).toEqual([]);
@@ -146,7 +160,12 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
     const { deps, changed } = listening(b.store);
     const now = new Date("2026-11-25T12:00:00.000Z");
 
-    const merged = await keepMerged(deps, fromB.id, answers("from both"), now);
+    const merged = await keepMerged(
+      deps,
+      await shown(deps, fromB.id),
+      answers("from both"),
+      now,
+    );
 
     expect(merged).toMatchObject({
       id: fromB.id,
@@ -175,7 +194,7 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
     const { deps, changed } = listening(b.store);
 
     await expect(
-      keepMerged(deps, fromB.id, {
+      keepMerged(deps, await shown(deps, fromB.id), {
         responses: { good: "  ", improve: "x", loved: "y" },
         feelings: [],
       }),
@@ -190,7 +209,7 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
   it("settles a second clash that arrives before the first choice was sent", async () => {
     const { a, b, fromA, fromB } = await clash();
     const { deps } = listening(b.store);
-    await keepMine(deps, fromB.id);
+    await keepMine(deps, await shown(deps, fromB.id));
     // Before b syncs, a changes the entry again.
     const again = await completedFrom(answers("from A again"), fromA);
     await a.store.put("journal-entry", again);
@@ -198,20 +217,101 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
 
     expect(await b.sync()).toEqual({ status: "attention", waiting: 1 });
     expect(await listConflicts(b.store)).toEqual([
-      { id: fromB.id, kind: "edited", mine: fromB, theirs: again },
+      { id: fromB.id, revision: 3, kind: "edited", mine: fromB, theirs: again },
     ]);
 
-    await keepMine(deps, fromB.id);
+    await keepMine(deps, await shown(deps, fromB.id));
     expect(await b.sync()).toEqual({ status: "synced", waiting: 0 });
     await a.sync();
     expect(await a.store.get("journal-entry", fromB.id)).toEqual(fromB);
+  });
+
+  it("does not remove a newer version that arrived while the person was reading the older one", async () => {
+    const { a, b, fromA, fromB } = await clash();
+    const { deps, changed } = listening(b.store);
+    // The review is open, showing a's first change.
+    const reading = await shown(deps, fromB.id);
+    const told: string[] = [];
+    b.store.subscribe(() => {
+      told.push("changed");
+    });
+    // Meanwhile a changes the entry again and b's scheduler pulls it.
+    const again = await completedFrom(answers("from A again"), fromA);
+    await a.store.put("journal-entry", again);
+    await a.sync();
+    await b.sync();
+    expect(told.length).toBeGreaterThan(0);
+    const before = await readRows(b.name, RECORDS);
+    const queued = await readRows(b.name, OUTBOX);
+
+    for (const settle of [keepMine, keepTheirs]) {
+      await expect(settle(deps, reading)).rejects.toThrow(ConflictChangedError);
+    }
+    await expect(
+      keepMerged(deps, reading, answers("from both")),
+    ).rejects.toThrow(ConflictChangedError);
+
+    // Nothing moved: both versions, the newer one included, are still here.
+    expect(await readRows(b.name, RECORDS)).toEqual(before);
+    expect(await readRows(b.name, OUTBOX)).toEqual(queued);
+    expect(changed).toEqual([]);
+    expect(await listConflicts(b.store)).toEqual([
+      { id: fromB.id, revision: 3, kind: "edited", mine: fromB, theirs: again },
+    ]);
+    // Shown the newer one, the person chooses again and it is stored.
+    await keepTheirs(deps, await shown(deps, fromB.id));
+    expect(await b.store.get("journal-entry", fromB.id)).toEqual(again);
+  });
+
+  it("stores a version written from both in one step: the text, the queued change and the removal together", async () => {
+    const { b, fromB } = await clash();
+    const { deps } = listening(b.store);
+    const before = await readRows<StoredRecord>(b.name, RECORDS);
+    const queued = await readRows(b.name, OUTBOX);
+
+    const merged = await keepMerged(
+      deps,
+      await shown(deps, fromB.id),
+      answers("from both"),
+    );
+
+    const [row] = await readRows<StoredRecord>(b.name, RECORDS);
+    expect(row).toMatchObject({
+      baseRevision: 2,
+      dirty: true,
+      localRevision: (before[0]?.localRevision ?? 0) + 1,
+    });
+    expect(await readRows(b.name, OUTBOX)).toHaveLength(queued.length + 1);
+    expect(await readRows(b.name, PARKED)).toEqual([]);
+    expect(await b.store.get("journal-entry", fromB.id)).toEqual(merged);
+    // A restart reads the same thing back.
+    b.store.lock();
+    const again = await device(new MemoryServer(), undefined, { name: b.name });
+    expect(await again.store.get("journal-entry", fromB.id)).toEqual(merged);
+  });
+
+  it("stores nothing of a merged version if the choice cannot be stored", async () => {
+    const { b, fromB } = await clash();
+    const { deps, changed } = listening(b.store);
+    const reading = await shown(deps, fromB.id);
+    const before = await readRows(b.name, RECORDS);
+
+    // As if the other version had moved on: the one step is refused whole.
+    await expect(
+      keepMerged(deps, { ...reading, revision: 99 }, answers("from both")),
+    ).rejects.toThrow(ConflictChangedError);
+
+    expect(await readRows(b.name, RECORDS)).toEqual(before);
+    expect(await b.store.get("journal-entry", fromB.id)).toEqual(fromB);
+    expect(await readRows(b.name, PARKED)).toHaveLength(1);
+    expect(changed).toEqual([]);
   });
 
   it("stops saying it needs attention once the other version is kept", async () => {
     const { b, fromB } = await clash();
     const { deps } = listening(b.store);
 
-    await keepTheirs(deps, fromB.id);
+    await keepTheirs(deps, await shown(deps, fromB.id));
 
     // No cycle has run yet: the status follows the store.
     await expect
@@ -251,7 +351,7 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
     await b.sync();
     const { deps, changed, deleted } = listening(b.store);
 
-    const merged = await keepMerged(deps, draft.id, {
+    const merged = await keepMerged(deps, await shown(deps, draft.id), {
       responses: { good: "A and B", improve: "", loved: "" },
       feelings: [],
     });
@@ -274,7 +374,7 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
     await b.sync();
     const { deps, changed, deleted } = listening(b.store);
 
-    await keepTheirs(deps, draft.id);
+    await keepTheirs(deps, await shown(deps, draft.id));
 
     expect(changed).toEqual([]);
     expect(deleted).toEqual([
@@ -288,13 +388,25 @@ describe("an entry changed on two devices (SYNC-004, AC-16)", () => {
     const other = await entry("no clash");
     await b.store.put("journal-entry", other);
 
+    // As a screen would hold it if the entry had been settled meanwhile.
+    const stale: EditedConflict = {
+      id: other.id,
+      revision: 2,
+      kind: "edited",
+      mine: other,
+      theirs: { ...other, updatedAt: "2026-01-01T00:00:00.000Z" },
+    };
+    const { changed, deleted } = listening(b.store);
+
     for (const settle of [keepMine, keepTheirs]) {
-      await expect(settle(deps, other.id)).rejects.toThrow(ConflictGoneError);
+      await expect(settle(deps, stale)).rejects.toThrow(ConflictGoneError);
     }
     await expect(
-      keepMerged(deps, crypto.randomUUID(), answers("x")),
+      keepMerged(deps, { ...stale, id: crypto.randomUUID() }, answers("x")),
     ).rejects.toThrow(ConflictGoneError);
     expect(await b.store.get("journal-entry", other.id)).toEqual(other);
+    // Nothing happened, so nothing is announced.
+    expect([changed, deleted]).toEqual([[], []]);
   });
 
   it("lists the oldest entry first", async () => {
@@ -344,23 +456,18 @@ describe("a version that is deleted or cannot be read (SYNC-005)", () => {
       remote({ recordId: gone.id, tombstone: true, payload: null }),
     );
     await apply(b.store, remote({ recordId: unread.id, schemaVersion: 99 }));
-    const { deps } = listening(b.store);
 
     const conflicts = await listConflicts(b.store);
 
     expect(conflicts).toEqual(
       expect.arrayContaining([
-        { id: gone.id, kind: "deleted-elsewhere", mine: gone },
-        { id: unread.id, kind: "unreadable", mine: unread },
+        { id: gone.id, revision: 5, kind: "deleted-elsewhere", mine: gone },
+        { id: unread.id, revision: 5, kind: "unreadable", mine: unread },
       ]),
     );
     expect(conflicts).toHaveLength(2);
-    for (const id of [gone.id, unread.id]) {
-      await expect(keepMine(deps, id)).rejects.toThrow(ConflictGoneError);
-      await expect(keepTheirs(deps, id)).rejects.toThrow(ConflictGoneError);
-    }
     await expect(
-      b.store.resolve("journal-entry", gone.id, "mine"),
+      b.store.resolve("journal-entry", gone.id, "mine", 5),
     ).rejects.toThrow(RecordDeletedError);
     expect(await b.store.get("journal-entry", gone.id)).toEqual(gone);
     expect(await b.store.parkedCount()).toBe(2);
@@ -383,10 +490,10 @@ describe("a version that is deleted or cannot be read (SYNC-005)", () => {
     })();
 
     expect(await listConflicts(b.store)).toEqual([
-      { id: fromA.id, kind: "deleted-here", theirs: fromA },
+      { id: fromA.id, revision: 2, kind: "deleted-here", theirs: fromA },
     ]);
     await expect(
-      b.store.resolve("journal-entry", fromA.id, "theirs"),
+      b.store.resolve("journal-entry", fromA.id, "theirs", 2),
     ).rejects.toThrow(RecordDeletedError);
     expect(await b.store.list("journal-entry")).toEqual([]);
     // Nothing was sent that could delete or restore anything meanwhile.
@@ -404,7 +511,7 @@ describe("the stores' side of a choice (ADR-0006, ADR-0014)", () => {
 
     expect(await b.store.conflicts("journal-entry")).toEqual([]);
     await expect(
-      b.store.resolve("journal-entry", fromB.id, "mine"),
+      b.store.resolve("journal-entry", fromB.id, "mine", 2),
     ).rejects.toThrow(StoreLockedError);
   });
 
@@ -414,8 +521,12 @@ describe("the stores' side of a choice (ADR-0006, ADR-0014)", () => {
     await b.store.put("journal-entry", written);
     const before = await readRows(b.name, RECORDS);
 
-    await b.store.resolve("journal-entry", written.id, "theirs");
-    await b.store.resolve("journal-entry", crypto.randomUUID(), "mine");
+    expect(
+      await b.store.resolve("journal-entry", written.id, "theirs", 1),
+    ).toBe(false);
+    expect(
+      await b.store.resolve("journal-entry", crypto.randomUUID(), "mine", 1),
+    ).toBe(false);
 
     expect(await readRows(b.name, RECORDS)).toEqual(before);
     expect(await readRows(b.name, OUTBOX)).toHaveLength(1);
@@ -428,7 +539,7 @@ describe("the stores' side of a choice (ADR-0006, ADR-0014)", () => {
     const restarted = await device(server, undefined, { name: b.name });
 
     expect(await listConflicts(restarted.store)).toEqual([
-      { id: fromB.id, kind: "edited", mine: fromB, theirs: fromA },
+      { id: fromB.id, revision: 2, kind: "edited", mine: fromB, theirs: fromA },
     ]);
   });
 
@@ -453,26 +564,38 @@ describe("the stores' side of a choice (ADR-0006, ADR-0014)", () => {
     const other = { ...theirs, id: mine.id };
     await store.put("journal-entry", mine);
 
-    await store.resolve("journal-entry", mine.id, "theirs");
+    expect(await store.resolve("journal-entry", mine.id, "theirs", 2)).toBe(
+      false,
+    );
     expect(await store.get("journal-entry", mine.id)).toEqual(mine);
 
     store.park(mine.id, other);
     expect(await store.conflicts("journal-entry")).toEqual([
-      { id: mine.id, mine, theirs: other, theirsDeleted: false },
+      { id: mine.id, mine, theirs: other, theirsDeleted: false, revision: 2 },
     ]);
-    await store.resolve("journal-entry", mine.id, "mine");
+    // A choice about a version that has since been replaced changes nothing.
+    await expect(
+      store.resolve("journal-entry", mine.id, "theirs", 1),
+    ).rejects.toThrow(ConflictChangedError);
+    expect(await store.get("journal-entry", mine.id)).toEqual(mine);
+    expect(await store.resolve("journal-entry", mine.id, "mine", 2)).toBe(true);
     expect(await store.get("journal-entry", mine.id)).toEqual(mine);
     expect(await store.conflicts("journal-entry")).toEqual([]);
 
-    store.park(mine.id, other);
-    await store.resolve("journal-entry", mine.id, "theirs");
+    store.park(mine.id, other, 7);
+    await store.resolve("journal-entry", mine.id, "theirs", 7);
     expect(await store.get("journal-entry", mine.id)).toEqual(other);
+
+    store.park(mine.id, mine);
+    const merged = { ...mine, updatedAt: "2026-12-01T00:00:00.000Z" };
+    await store.resolve("journal-entry", mine.id, "mine", 2, merged);
+    expect(await store.get("journal-entry", mine.id)).toEqual(merged);
 
     store.park(mine.id, undefined);
     await expect(
-      store.resolve("journal-entry", mine.id, "mine"),
+      store.resolve("journal-entry", mine.id, "mine", 2),
     ).rejects.toThrow(RecordDeletedError);
-    await store.resolve("journal-entry", mine.id, "theirs");
+    await store.resolve("journal-entry", mine.id, "theirs", 2);
     expect(await store.get("journal-entry", mine.id)).toBeUndefined();
 
     store.park(mine.id, other);

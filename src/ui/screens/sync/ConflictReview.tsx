@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
 import { Link } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
@@ -8,6 +8,7 @@ import type { EntryContent } from "../../../domain/journal/drafts";
 import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
 import { unanswered } from "../../../domain/journal/validation";
 import {
+  ConflictChangedError,
   ConflictGoneError,
   IncompleteMergeError,
   isEdited,
@@ -160,55 +161,106 @@ export function ConflictReview(): JSX.Element {
   const [merging, setMerging] = useState<EditedConflict | undefined>(undefined);
   const [content, setContent] = useState<EntryContent | undefined>(undefined);
   const [tried, setTried] = useState(false);
+  // Whether a choice was refused because the other version changed again.
+  const [changed, setChanged] = useState(false);
 
-  useEffect(() => {
-    let current = true;
-    const load = (): void => {
-      void listConflicts(records).then(
+  const mounted = useRef(true);
+  /**
+   * Read the list again.
+   *
+   * @param showNewer - Whether an open merge form should now show the
+   *   other version as it is stored. Only after the person has been told
+   *   it changed: it is never swapped under them unannounced.
+   */
+  const refresh = useCallback(
+    (showNewer = false) =>
+      listConflicts(records).then(
         (conflicts) => {
-          if (current) {
-            setFound({ kind: "list", conflicts });
+          if (!mounted.current) {
+            return;
+          }
+          setFound({ kind: "list", conflicts });
+          if (showNewer) {
+            // The form keeps what was typed; the version beside it is
+            // replaced by the one now stored.
+            setMerging((open) =>
+              conflicts.filter(isEdited).find((each) => each.id === open?.id),
+            );
           }
         },
         (error: unknown) => {
-          if (current) {
+          if (mounted.current) {
             setFound({ kind: "failed", message: describeOpenFailure(error) });
           }
         },
-      );
-    };
-    load();
-    const unsubscribe = records.subscribe(load);
+      ),
+    [records],
+  );
+
+  useEffect(() => {
+    mounted.current = true;
+    void refresh();
+    const unsubscribe = records.subscribe(() => {
+      void refresh();
+    });
     return () => {
-      current = false;
+      mounted.current = false;
       unsubscribe();
     };
-  }, [records]);
+  }, [records, refresh]);
 
   useEffect(() => {
     // The buttons that had focus have gone with the entry they settled, so
     // focus moves to the heading and the message under it says what happened.
-    if (done !== undefined || merging !== undefined) {
+    if (done !== undefined || merging !== undefined || changed) {
       document
         .querySelector<HTMLElement>(`[${PAGE_HEADING_ATTRIBUTE}]`)
         ?.focus();
     }
-  }, [done, merging]);
+    // Keyed on which entry is open, not on the object, so that reading the
+    // list again does not take focus from someone who is typing.
+  }, [done, merging?.id, changed]);
 
-  /** Settle one entry, then send the result. An entry already settled is not an error. */
-  const settle = (said: string, work: () => Promise<unknown>): Promise<void> =>
-    work().then(
-      () => {
-        setDone(said);
-        void sync.sync();
-      },
-      (error: unknown) => {
-        if (!(error instanceof ConflictGoneError)) {
-          throw error;
-        }
-        setDone("That entry had already been settled.");
-      },
-    );
+  /**
+   * Store one choice, then send the result.
+   *
+   * @returns Whether the entry is settled. `false` means the other version
+   *   changed again, nothing was stored, and the choice is still open.
+   */
+  const settle = async (
+    said: string,
+    work: () => Promise<unknown>,
+  ): Promise<boolean> => {
+    try {
+      await work();
+    } catch (error) {
+      if (error instanceof ConflictChangedError) {
+        setDone(undefined);
+        setChanged(true);
+        await refresh(true);
+        return false;
+      }
+      if (!(error instanceof ConflictGoneError)) {
+        throw error;
+      }
+      // Settled meanwhile, for example in another tab: not an error.
+      setChanged(false);
+      setDone("That entry had already been settled.");
+      return true;
+    }
+    setChanged(false);
+    setDone(said);
+    void sync.sync();
+    return true;
+  };
+
+  /** Said when a choice was not stored because the other version moved. */
+  const changedAgain = changed && (
+    <StatusBanner tone="warning" label="Changed again">
+      The other version was changed again while you were looking, so nothing was
+      stored. The newer version is shown now. Please choose again.
+    </StatusBanner>
+  );
 
   const back = (
     <p>
@@ -235,6 +287,7 @@ export function ConflictReview(): JSX.Element {
           it to read and copy from. Saving keeps what is in the form and removes
           both earlier versions. There is no undo.
         </p>
+        {changedAgain}
         {action.error !== undefined && (
           <StatusBanner tone="error" label="Couldn't save">
             {action.error}
@@ -247,9 +300,10 @@ export function ConflictReview(): JSX.Element {
             return !finished || unanswered(content.responses).length === 0;
           }}
           onValid={async () => {
+            let settled: boolean;
             try {
-              await settle(KEPT.merged, () =>
-                keepMerged({ records, events }, merging.id, content),
+              settled = await settle(KEPT.merged, () =>
+                keepMerged({ records, events }, merging, content),
               );
             } catch (error) {
               if (error instanceof IncompleteMergeError) {
@@ -257,7 +311,11 @@ export function ConflictReview(): JSX.Element {
               }
               throw error;
             }
-            stop();
+            // If the other version changed again, the form stays open with
+            // what was typed and the newer version beside it.
+            if (settled) {
+              stop();
+            }
           }}
         >
           <EntryFields
@@ -310,6 +368,7 @@ export function ConflictReview(): JSX.Element {
           {done}
         </StatusBanner>
       )}
+      {changedAgain}
       {action.error !== undefined && (
         <StatusBanner tone="error" label="Couldn't do that">
           {action.error}
@@ -328,14 +387,14 @@ export function ConflictReview(): JSX.Element {
             conflict={conflict}
             busy={action.busy}
             onKeep={(which) => {
-              action.run(() =>
-                settle(KEPT[which], () =>
+              action.run(async () => {
+                await settle(KEPT[which], () =>
                   (which === "mine" ? keepMine : keepTheirs)(
                     { records, events },
-                    conflict.id,
+                    conflict,
                   ),
-                ),
-              );
+                );
+              });
             }}
             onMerge={() => {
               setDone(undefined);

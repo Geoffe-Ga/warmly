@@ -44,6 +44,22 @@ export interface RecordConflict<T> {
   readonly theirs: T | undefined;
   /** Whether the record is deleted on the server. */
   readonly theirsDeleted: boolean;
+  /**
+   * The server's revision of `theirs`. Given back when the person chooses,
+   * so that a choice is never applied to a version they did not see.
+   */
+  readonly revision: number;
+}
+
+/**
+ * The server's version changed again after the person was shown it.
+ * Nothing was changed: they are shown the newer version and choose again.
+ */
+export class ConflictChangedError extends Error {
+  constructor() {
+    super("The other version changed again before the choice was stored");
+    this.name = "ConflictChangedError";
+  }
 }
 
 /** Which version of a record in conflict to keep. */
@@ -93,16 +109,32 @@ export interface RecordStore {
   /**
    * Settle a record that was changed in two places.
    *
-   * Keeping `mine` leaves this device's version as it is and queues it to
-   * be sent on top of the server's. Keeping `theirs` replaces this device's
-   * version with the server's and drops what was queued. Either way the
-   * version that was not kept is removed from this device. Settling a
-   * record that is not in conflict does nothing.
+   * Keeping `mine` leaves this device's version as it is, or replaces it
+   * with `merged` when one is given, and queues it to be sent on top of
+   * the server's. Keeping `theirs` replaces this device's version with the
+   * server's and drops what was queued. Either way the version that was
+   * not kept is removed from this device, in the same step: after a crash
+   * the choice is stored whole or not at all.
    *
+   * @param kind - The kind of record.
+   * @param id - The record's ID.
+   * @param keep - Which version to keep.
+   * @param seen - The `revision` of the conflict the person was shown.
+   * @param merged - With `mine`: what the person wrote from the two.
+   * @returns Whether anything was settled. `false` if the record is not in
+   *   conflict.
+   * @throws ConflictChangedError if the server's version is no longer the
+   *   one the person was shown. Nothing is changed.
    * @throws RecordDeletedError if keeping that version would bring a
    *   deleted record back.
    */
-  resolve(kind: RecordKind, id: string, keep: Keep): Promise<void>;
+  resolve<K extends RecordKind>(
+    kind: K,
+    id: string,
+    keep: Keep,
+    seen: number,
+    merged?: RecordKinds[K],
+  ): Promise<boolean>;
   /**
    * Be told after any record changes.
    *
@@ -135,7 +167,10 @@ export class MemoryRecordStore implements RecordStore {
     "journal-entry": new Map(),
   };
   /** The other version of each record in conflict, by ID. */
-  #parked = new Map<string, JournalEntry | undefined>();
+  #parked = new Map<
+    string,
+    { readonly theirs: JournalEntry | undefined; readonly revision: number }
+  >();
   readonly #listeners = new Set<() => void>();
 
   #kind<K extends RecordKind>(kind: K): Map<string, RecordKinds[K]> {
@@ -190,9 +225,10 @@ export class MemoryRecordStore implements RecordStore {
    *
    * @param id - The record's ID.
    * @param theirs - The server's version; `undefined` if deleted there.
+   * @param revision - The server's revision of it.
    */
-  park(id: string, theirs: JournalEntry | undefined): void {
-    this.#parked.set(id, theirs);
+  park(id: string, theirs: JournalEntry | undefined, revision = 2): void {
+    this.#parked.set(id, { theirs, revision });
     this.#changed();
   }
 
@@ -200,33 +236,47 @@ export class MemoryRecordStore implements RecordStore {
     kind: K,
   ): Promise<RecordConflict<RecordKinds[K]>[]> {
     return Promise.resolve(
-      [...this.#parked.entries()].map(([id, theirs]) => ({
+      [...this.#parked.entries()].map(([id, { theirs, revision }]) => ({
         id,
         mine: this.#kind(kind).get(id),
         theirs,
         theirsDeleted: theirs === undefined,
+        revision,
       })),
     );
   }
 
-  resolve(kind: RecordKind, id: string, keep: Keep): Promise<void> {
-    if (!this.#parked.has(id)) {
-      return Promise.resolve();
+  resolve<K extends RecordKind>(
+    kind: K,
+    id: string,
+    keep: Keep,
+    seen: number,
+    merged?: RecordKinds[K],
+  ): Promise<boolean> {
+    const parked = this.#parked.get(id);
+    if (parked === undefined) {
+      return Promise.resolve(false);
     }
-    const theirs = this.#parked.get(id);
-    if (keep === "mine" && theirs === undefined) {
+    if (parked.revision !== seen) {
+      return Promise.reject(new ConflictChangedError());
+    }
+    if (keep === "mine" && parked.theirs === undefined) {
       return Promise.reject(new RecordDeletedError());
     }
     if (keep === "theirs") {
-      if (theirs === undefined) {
+      // The real store keeps a tombstone for a deleted record; in memory a
+      // deleted record is simply absent.
+      if (parked.theirs === undefined) {
         this.#kind(kind).delete(id);
       } else {
-        this.#kind(kind).set(id, theirs);
+        this.#kind(kind).set(id, parked.theirs);
       }
+    } else if (merged !== undefined) {
+      this.#kind(kind).set(id, merged);
     }
     this.#parked.delete(id);
     this.#changed();
-    return Promise.resolve();
+    return Promise.resolve(true);
   }
 
   subscribe(listener: () => void): () => void {
