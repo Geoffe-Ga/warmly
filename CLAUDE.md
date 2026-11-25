@@ -20,7 +20,9 @@ searched, edited in place and deleted for good, with drafts saved as they
 are typed, stored encrypted in IndexedDB. The AI seam exists (gateway,
 consent dialog, checked answers, a stand-in provider outside production) but no screen calls
 it and no real provider is connected. A sync engine sends the outbox
-and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Other routes render accessible placeholders.
+and fetches changes on its own, with backoff, one tab at a time (ADR-0006). The Prepare screens (collections, a card, presentation, print) read
+cards from an in-memory store that is empty in production and holds
+invented cards in other builds; nothing about cards is saved yet. Other routes render accessible placeholders.
 
 ---
 
@@ -308,6 +310,15 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   matching, accept part of it or ask again. Answer text is shown as text,
   never as HTML, and never becomes a link or an image. Never edit
   `tests/frontend/ai/fixtures/adversarial-v1.json`: add a new file.
+- Screens read collections and cards only through `CardsStore`
+  (`src/domain/cards/store.ts`), reached as `services.cards`. A card never
+  holds text copied from a journal entry, only references (PRD DEP-004).
+  A collection's name and a card's text never go in a URL or the tab title.
+  Presentation always opens at the first card and its position lives in
+  component state only: never store it, put it in the address or report it,
+  and never record which cards were shown or for how long (PRD CC-012). The
+  print view shows card text only, and printing happens only when the
+  person presses Print.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

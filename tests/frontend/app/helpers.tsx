@@ -16,6 +16,7 @@ import { SyncEngine } from "../../../src/sync/engine";
 import { SyncScheduler } from "../../../src/sync/scheduler";
 import type { SyncSource } from "../../../src/sync/source";
 import { UNAVAILABLE_TRANSPORT } from "../../../src/sync/transport";
+import { seededCards } from "../../../src/testing/seed-cards";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import { FakeDeviceDirectory } from "../../../src/testing/fake-device-directory";
 import { FakeDevicePairing } from "../../../src/testing/fake-device-pairing";
@@ -87,6 +88,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     persistence: browserPersistence(undefined),
     updates: createUpdates(),
     ai: createGateway(),
+    cards: seededCards(),
     sync: new SyncScheduler(
       new SyncEngine(NOTHING_TO_SYNC, UNAVAILABLE_TRANSPORT),
     ),

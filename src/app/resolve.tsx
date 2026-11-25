@@ -27,6 +27,11 @@ import { Compose } from "../ui/screens/journal/Compose";
 import { EditEntry } from "../ui/screens/journal/EditEntry";
 import { Entry } from "../ui/screens/journal/Entry";
 import { Timeline } from "../ui/screens/journal/Timeline";
+import { CardScreen } from "../ui/screens/prepare/CardScreen";
+import { Collection } from "../ui/screens/prepare/Collection";
+import { Collections } from "../ui/screens/prepare/Collections";
+import { Present } from "../ui/screens/prepare/Present";
+import { Print } from "../ui/screens/prepare/Print";
 import { ConflictReview } from "../ui/screens/sync/ConflictReview";
 import { redirectFor } from "./access";
 import { matchRoute } from "./router";
@@ -58,6 +63,11 @@ const SCREENS: Readonly<
   "journal-entry": Entry,
   "journal-edit": EditEntry,
   "sync-conflicts": ConflictReview,
+  prepare: Collections,
+  collection: Collection,
+  card: CardScreen,
+  present: Present,
+  print: Print,
   settings: Settings,
   devices: ManageDevices,
   "approve-device": ApproveDevice,
