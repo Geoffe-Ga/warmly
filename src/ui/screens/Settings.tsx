@@ -8,6 +8,7 @@ import type { Persistence } from "../../storage/persistence";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { StatusBanner } from "../components/StatusBanner";
+import { AiProviderCard } from "./settings/AiProvider";
 
 /**
  * What Settings says about whether the browser will keep the data saved on
@@ -92,6 +93,7 @@ export function Settings(): JSX.Element {
           </p>
         </Card>
       )}
+      <AiProviderCard />
       {kept !== undefined && (
         <Card heading="Storage on this device">
           <p data-testid="storage-persistence">{STORAGE_KEPT[kept]}</p>

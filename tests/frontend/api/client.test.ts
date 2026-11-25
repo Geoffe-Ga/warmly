@@ -138,6 +138,58 @@ describe("the API client signs requests with the device key (D-06, SEC-006)", ()
     expect(api.calls[0]?.url).not.toContain(SESSION.accessToken);
   });
 
+  it("sends extra fixed headers beside its own", async () => {
+    const identity = await testIdentity();
+    const api = server(() => json(200, {}));
+    const client = new ApiClient("https://api.example/", api.fetch, () => NOW);
+
+    await client.send(SESSION, {
+      method: "GET",
+      path: "/v1/sync/changes",
+      signedBy: identity,
+      headers: { "Warmly-Sync-Version": "1" },
+    });
+
+    expect(api.calls[0]?.headers["Warmly-Sync-Version"]).toBe("1");
+    expect(api.calls[0]?.headers["Authorization"]).toBe(
+      `Bearer ${SESSION.accessToken}`,
+    );
+    expect(api.calls[0]?.headers["Warmly-Device"]).toBe(identity.deviceId);
+  });
+
+  it.each([
+    "Authorization",
+    "authorization",
+    "Accept",
+    "Content-Type",
+    "Cookie",
+    "Warmly-Device",
+    "warmly-timestamp",
+    "Warmly-Nonce",
+    "WARMLY-SIGNATURE",
+  ])(
+    "refuses an extra header named %s, and sends nothing (SEC-006)",
+    async (name) => {
+      const identity = await testIdentity();
+      const api = server(() => json(200, {}));
+      const client = new ApiClient(
+        "https://api.example/",
+        api.fetch,
+        () => NOW,
+      );
+
+      await expect(
+        client.send(SESSION, {
+          method: "GET",
+          path: "/v1/sync/changes",
+          signedBy: identity,
+          headers: { [name]: "forged" },
+        }),
+      ).rejects.toThrow(TypeError);
+      expect(api.calls).toEqual([]);
+    },
+  );
+
   it("uses the real clock by default", async () => {
     const identity = await testIdentity();
     const api = server(() => json(200, {}));
