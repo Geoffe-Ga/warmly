@@ -28,7 +28,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 
 | Threat (PRD SEC-001) | Control | Status |
 | --- | --- | --- |
-| Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003); sync planned: #32 |
+| Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003). The client sends envelopes only, and the sync protocol carries no content or content hash (ADR-0006); the server side is planned: #33, #34 |
 | Someone reading the browser's storage on a locked or stolen device | Records are stored only as envelopes; the database holds IDs, type numbers and revisions but no content, hash or index; decrypted records live in memory only while unlocked. Drafts are records like any other. The database name shows the account ID, and until sync exists the browser may evict the data (ADR-0014) | **In place** |
 | Backend or operator curiosity | Same, plus logs that cannot contain request content | Logging: **in place** (this issue) |
 | Cross-account access | Owner taken only from a verified token ([authentication](authentication.md)); owner-only database policies (ADR-0002) | **In place**; per-route ownership checks arrive with each route, rate limits: #38 |
@@ -37,7 +37,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Stolen locked device | Root key stored wrapped twice, by a non-extractable device key and by a device passphrase (ADR-0004); 30-minute inactivity lock. A weak device passphrase is the weak point: PBKDF2 slows guessing but does not stop it | **In place**; passkey unlock planned: #80 |
 | Server or token holder intercepting a new device's pairing | Commit-then-reveal exchange, a six-digit code the person types into the approving device, one guess per request, HPKE transfer bound to the transcript, re-authentication on the approving device (ADR-0005) | **In place** |
 | Server planting a key of its own on a new device | The approving device sends a random confirmation code inside the encrypted transfer and shows it; the new device keeps the key only when the person types that code (ADR-0005) | **In place** |
-| Offline edit conflicts | Compare-and-swap; both versions kept | Planned: #33, #36 |
+| Offline edit conflicts | Compare-and-swap on the record's revision; the server never picks a winner; a refused device keeps its own version and shows "Needs your attention" (ADR-0006) | Client **in place**; server: #33; resolving both versions: #36 |
 | Revoked device reconnecting | The device is looked up, and refused if revoked, on every signed request; a revocation is permanent and written to an append-only ledger; revoking needs a device signature and a freshly entered password (ADR-0005) | **In place** |
 | Replayed or altered request | The signature covers the method, path, body hash, a timestamp and a nonce; stale timestamps and reused nonces are refused (ADR-0005) | **In place** |
 | Stale data resurrecting deletions | Permanent tombstones and a deletion ledger | Planned: #37, #65 |

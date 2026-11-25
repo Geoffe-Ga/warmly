@@ -401,6 +401,8 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`offline-notice`** — One line under the header while the device is offline, in `{typography.small}` on `{colors.blush}` with a `{colors.border-strong}` bar: "Offline: your writing is saved on this device." It never shows private text, and it is gone while online.
 
+**`sync-status`** — In the header while unlocked: one line in `{typography.small}` and `{colors.ink-muted}` ("All changes saved", "3 changes waiting to sync", "Needs your attention") beside a `{component.button-secondary}` "Sync now". It is a state and a count, never private text.
+
 ### Status Banners
 
 **`banner-info`**, **`banner-success`**, **`banner-warning`**, **`banner-error`** — A tinted block with an 8px coloured leading edge and `{rounded.sm}` corners. Each starts with a bold word label ("Offline:", "Saved:") so the meaning never depends on colour. Errors use `role="alert"`; the others use `role="status"`. Banners carry status wording only, never journal or card text, because they can appear on a locked screen and are read aloud.

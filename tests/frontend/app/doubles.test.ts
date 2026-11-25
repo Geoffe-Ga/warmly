@@ -35,6 +35,7 @@ import {
   DeviceError,
   UnavailableDeviceDirectory,
 } from "../../../src/devices/this-device";
+import { UNAVAILABLE_TRANSPORT } from "../../../src/sync/transport";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import { FakePairingRelay } from "../../../src/testing/fake-pairing-relay";
 import {
@@ -484,6 +485,7 @@ describe("createKeyServices", () => {
       ),
       registry: new FakeDeviceRegistry(),
       relay: new FakePairingRelay(),
+      sync: UNAVAILABLE_TRANSPORT,
     };
   }
 

@@ -23,7 +23,9 @@ import {
   transact,
   type StoredRecord,
 } from "./db";
-import { queueOperation } from "./outbox";
+import type { PendingChange, RemoteOutcome, SyncSource } from "../sync/source";
+import type { RemoteChange } from "../sync/protocol";
+import { queueOperation, type OutboxOperation } from "./outbox";
 import {
   StaleRecordError,
   type RecordKind,
@@ -291,8 +293,54 @@ function writeChange(
   );
 }
 
+/** Read every row of the records and outbox stores in one transaction. */
+function readAll(
+  database: IDBDatabase,
+): Promise<{ rows: StoredRecord[]; operations: OutboxOperation[] }> {
+  return transact(
+    database,
+    [RECORDS, OUTBOX],
+    "readonly",
+    (transaction, result) => {
+      const rows = transaction.objectStore(RECORDS).getAll();
+      const operations = transaction.objectStore(OUTBOX).getAll();
+      operations.onsuccess = () => {
+        result({
+          rows: rows.result as StoredRecord[],
+          operations: operations.result as OutboxOperation[],
+        });
+      };
+    },
+  );
+}
+
+const keyOf = (row: Pick<StoredRecord, "type" | "id">): string =>
+  `${String(row.type)}:${row.id}`;
+
+/**
+ * Whether a change from the server may replace the local row, and if not,
+ * why not (ADR-0006).
+ */
+function meet(
+  row: StoredRecord | undefined,
+  change: RemoteChange,
+): RemoteOutcome {
+  if (row === undefined) {
+    return "applied";
+  }
+  if (row.dirty) {
+    // The server is still where this device's unsent change started.
+    return change.revision === row.baseRevision ? "unchanged" : "conflict";
+  }
+  if (change.revision <= row.baseRevision) {
+    return "unchanged";
+  }
+  // A record deleted here is never brought back, whatever a server says.
+  return row.tombstone && !change.tombstone ? "conflict" : "applied";
+}
+
 /** A {@link RecordStore} that keeps encrypted records in IndexedDB. */
-export class EncryptedRecordStore implements RecordStore {
+export class EncryptedRecordStore implements RecordStore, SyncSource {
   readonly #databaseName: (owner: string) => string;
   readonly #listeners = new Set<() => void>();
   #session: Unlocked | undefined;
@@ -490,6 +538,163 @@ export class EncryptedRecordStore implements RecordStore {
         opened.unreadable[kind].delete(id);
       },
     );
+  }
+
+  async pending(): Promise<PendingChange[]> {
+    const opened = await this.#read();
+    if (opened === undefined || opened.superseded) {
+      return [];
+    }
+    const { rows, operations } = await readAll(opened.database);
+    const byKey = new Map(rows.map((row) => [keyOf(row), row]));
+    // The newest queued change to each record stands for the older ones:
+    // only the record as it is now is worth sending.
+    const newest = new Map<string, OutboxOperation>();
+    for (const operation of operations) {
+      newest.set(keyOf(operation), operation);
+    }
+    return [...newest.values()]
+      .sort((left, right) => left.seq - right.seq)
+      .flatMap((queued) => {
+        const row = byKey.get(keyOf(queued));
+        return row === undefined
+          ? []
+          : [
+              {
+                operation: {
+                  opId: queued.opId,
+                  recordId: row.id,
+                  type: row.type,
+                  baseRevision: row.baseRevision,
+                  schemaVersion: row.schemaVersion,
+                  tombstone: row.tombstone,
+                  payload: row.envelope,
+                },
+                upTo: queued.seq,
+                localRevision: row.localRevision,
+              },
+            ];
+      });
+  }
+
+  async acknowledge(
+    change: PendingChange,
+    serverRevision: number,
+  ): Promise<void> {
+    const opened = await this.#read();
+    if (opened === undefined) {
+      throw new StoreLockedError();
+    }
+    const { type, recordId } = change.operation;
+    await transact<undefined>(
+      opened.database,
+      [RECORDS, OUTBOX],
+      "readwrite",
+      (transaction, result) => {
+        const records = transaction.objectStore(RECORDS);
+        const outbox = transaction.objectStore(OUTBOX);
+        const reading = records.get([type, recordId]);
+        reading.onsuccess = () => {
+          const row = reading.result as StoredRecord | undefined;
+          if (row !== undefined) {
+            records.put({
+              ...row,
+              baseRevision: serverRevision,
+              // Changed again since it was sent: still waiting, on the
+              // new base.
+              dirty: row.localRevision !== change.localRevision,
+            } satisfies StoredRecord);
+          }
+        };
+        const queued = outbox.getAll();
+        queued.onsuccess = () => {
+          for (const operation of queued.result as OutboxOperation[]) {
+            if (
+              operation.type === type &&
+              operation.id === recordId &&
+              operation.seq <= change.upTo
+            ) {
+              outbox.delete(operation.seq);
+            }
+          }
+          result(undefined);
+        };
+      },
+    );
+    this.#changed();
+  }
+
+  async applyRemote(change: RemoteChange): Promise<RemoteOutcome> {
+    const session = this.#session;
+    const opened = await this.#read();
+    if (session === undefined || opened === undefined) {
+      throw new StoreLockedError();
+    }
+    if (opened.superseded) {
+      throw new NewerDatabaseError();
+    }
+    const written = await transact<{
+      outcome: RemoteOutcome;
+      row?: StoredRecord;
+    }>(opened.database, [RECORDS], "readwrite", (transaction, result) => {
+      const records = transaction.objectStore(RECORDS);
+      const reading = records.get([change.type, change.recordId]);
+      reading.onsuccess = () => {
+        const existing = reading.result as StoredRecord | undefined;
+        const outcome = meet(existing, change);
+        if (outcome !== "applied") {
+          result({ outcome });
+          return;
+        }
+        const row: StoredRecord = {
+          type: change.type,
+          id: change.recordId,
+          envelope: change.payload,
+          schemaVersion: change.schemaVersion,
+          // A change from elsewhere is a change to this device's copy too,
+          // so another tab's out-of-date copy is noticed.
+          localRevision: (existing?.localRevision ?? 0) + 1,
+          baseRevision: change.revision,
+          tombstone: change.tombstone,
+          dirty: false,
+        };
+        records.put(row);
+        result({ outcome, row });
+      };
+    });
+    if (written.row !== undefined && this.#session === session) {
+      await this.#remember(opened, session, written.row);
+      this.#changed();
+    }
+    return written.outcome;
+  }
+
+  /** Put a row that was just stored into memory, decrypted. */
+  async #remember(
+    opened: Opened,
+    session: Unlocked,
+    row: StoredRecord,
+  ): Promise<void> {
+    const kind = KINDS.find((each) => FORMATS[each].type === row.type);
+    if (kind === undefined) {
+      // A kind this version does not know: kept on disk, not shown.
+      return;
+    }
+    opened.records[kind].delete(row.id);
+    opened.unreadable[kind].delete(row.id);
+    if (row.tombstone) {
+      return;
+    }
+    await loadKind(kind, [row], session, opened);
+  }
+
+  async pendingCount(): Promise<number> {
+    const opened = await this.#read();
+    if (opened === undefined || opened.superseded) {
+      return 0;
+    }
+    const { rows } = await readAll(opened.database);
+    return rows.filter((row) => row.dirty).length;
   }
 
   subscribe(listener: () => void): () => void {

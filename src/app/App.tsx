@@ -14,6 +14,7 @@ import {
 
 import { PAGE_HEADING_ATTRIBUTE } from "../ui/components/PageHeading";
 import { PageLayout } from "../ui/components/PageLayout";
+import { SyncStatus } from "../ui/components/SyncStatus";
 import {
   SessionControls,
   endRevokedDevice,
@@ -24,7 +25,12 @@ import { useOnline } from "./online";
 import { APP_NAME, resolve } from "./resolve";
 import { normalisePath } from "./router";
 import { SECONDARY_NAV } from "./routes";
-import { ServicesProvider, createServices, type Services } from "./services";
+import {
+  ServicesProvider,
+  createServices,
+  useServices,
+  type Services,
+} from "./services";
 import type { SessionState } from "./session";
 import { useSessionState } from "./use-session-state";
 
@@ -37,6 +43,7 @@ function Header(props: {
   readonly state: SessionState;
   readonly navigate: (path: string) => void;
 }): JSX.Element {
+  const { sync } = useServices();
   const unlocked = props.state === "unlocked";
   return (
     <header class="app-header">
@@ -58,6 +65,7 @@ function Header(props: {
         </nav>
       )}
       <SessionControls navigate={props.navigate} />
+      {unlocked && <SyncStatus sync={sync} />}
     </header>
   );
 }

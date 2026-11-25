@@ -16,8 +16,9 @@ stubs. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
 servers outside production) and a journal that can be written, listed, read,
 searched, edited in place and deleted for good, with drafts saved as they
-are typed, stored encrypted in IndexedDB with an outbox that nothing sends
-yet; other routes render accessible placeholders.
+are typed, stored encrypted in IndexedDB. A sync engine sends the outbox
+and fetches changes (ADR-0006); the server's sync routes are still stubs, so
+changes stay queued. Other routes render accessible placeholders.
 
 ---
 
@@ -217,6 +218,15 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - The offline notice in the app shell (`OfflineNotice`, `src/app/App.tsx`)
   is fixed text only. Never put private text, counts or sync details that
   could reveal content in it.
+- Sync follows ADR-0006 (`src/sync/`). The engine moves envelopes only and
+  never sees a decrypted record. The server never picks a winner: a
+  refused change stays on the device and shows as "Needs your attention".
+  Never resolve a conflict by overwriting, and never let a deleted record
+  come back. The status text is a state and a count, nothing private.
+  `tests/fixtures/sync/scenarios-v1.json` is the protocol's scenario table;
+  the in-memory server (`src/sync/testing/`, never in a production build)
+  and the backend must both pass it. Never edit it: a protocol change is a
+  new file. Retrying sync is always allowed; that never applies to AI.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only
