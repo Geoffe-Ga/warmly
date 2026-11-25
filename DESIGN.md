@@ -381,7 +381,7 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`card`** — A `<section>` on `{colors.surface}` with a 2px `{colors.soft-pink}` outline, `{rounded.md}` corners and `{spacing.lg}` padding. An optional `h2` in `{typography.title}` makes it a labelled group.
 
-**`action-link`** — The large tiles on the home screen. A full-width link on `{colors.blush}` with a `{colors.border-strong}` border, `{typography.label}` text in `{colors.ink}`, and no underline: the whole tile is the target.
+**`action-link`** — The large tiles on the home screen. A full-width link on `{colors.blush}` with a `{colors.border-strong}` border, `{typography.label}` text in `{colors.ink}`, and no underline: the whole tile is the target. A tile may carry a second line in `{typography.small}` and `{colors.ink-muted}`, such as the piece of an entry that matched a search.
 
 **`detail-list`** — Short label and value pairs inside a card, such as a device's "Added" date. A two-column `<dl>`: labels in `{colors.ink-muted}`, values in `{colors.ink}`, with `{spacing.xs}` between rows.
 

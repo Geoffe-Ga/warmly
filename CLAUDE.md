@@ -230,6 +230,12 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   trash and no undo. A completed entry's deletion announces
   `journal.deleted`. The confirmation text (`DELETE_WARNING`) must stay
   accurate about other devices and backups (PRD OPS-003).
+- Search is local and in memory (`src/domain/search/`, D-12). The index is
+  built from decrypted records by the screen that shows it, built again
+  when they change, and gone when the app locks. Never store an index, and
+  never put a query in a URL, in storage or in a log. Matching is plain:
+  NFKC and lower case, whole words, the last word a prefix, every word
+  required; no stemming, fuzzy matching or AI.
 - `contentHash` (`src/domain/journal/content-hash.ts`) covers the three
   answers only, never feelings (D-24). Changing its canonical form means a
   new `CONTENT_HASH_VERSION` and a new file beside

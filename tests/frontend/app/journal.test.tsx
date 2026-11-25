@@ -206,7 +206,7 @@ describe("the journal timeline (JR-001)", () => {
     );
   });
 
-  it("narrows the list as the search box is typed in, ignoring case, without changing the address", async () => {
+  it("finds entries by their words, ignoring case, with a snippet and a count, without changing the address (JR-010)", async () => {
     await renderApp(
       "/journal",
       await unlockedWith(
@@ -214,21 +214,130 @@ describe("the journal timeline (JR-001)", () => {
           responses: { good: "The WALK was lovely", improve: "x", loved: "y" },
         }),
         entry(2, "2026-11-10"),
+        entry(3, "2026-11-17", {
+          responses: { good: "g", improve: "Walking more", loved: "y" },
+        }),
+      ),
+    );
+    await screen.findByRole("navigation", { name: "Entries" });
+    const count = (): string | null =>
+      document.querySelector(".result-count")?.textContent ?? null;
+    expect(count()).toBe("");
+    expect(entryLinks()).toHaveLength(3);
+
+    await userEvent.type(screen.getByLabelText("Search your journal"), "wal");
+
+    // The unfinished word matches both "WALK" and "Walking", newest first.
+    expect(entryLinks()).toEqual([
+      `${formatEntryDate({ date: "2026-11-17", timeZone: "UTC" })}Walking more`,
+      `${formatEntryDate({ date: "2026-11-03", timeZone: "UTC" })}The WALK was lovely`,
+    ]);
+    expect(count()).toBe("2 entries found.");
+    const region = document.querySelector(".result-count");
+    expect(region?.getAttribute("role")).toBe("status");
+    expect(region?.getAttribute("aria-live")).toBe("polite");
+
+    await userEvent.type(screen.getByLabelText("Search your journal"), "k was");
+    expect(entryLinks()).toHaveLength(1);
+    expect(count()).toBe("1 entry found.");
+    expect(
+      within(screen.getByRole("navigation", { name: "Entries" }))
+        .getByRole("link")
+        .getAttribute("href"),
+    ).toBe("/journal/entries/00000000-0000-4000-8000-0000000000a1");
+
+    expect(window.location.pathname).toBe("/journal");
+    expect(window.location.search).toBe("");
+    expect(window.location.hash).toBe("");
+    expect(
+      JSON.stringify([{ ...localStorage }, { ...sessionStorage }]),
+    ).not.toContain("walk");
+
+    await userEvent.type(screen.getByLabelText("Search your journal"), " zzz");
+    expect(count()).toBe("No entry mentions that.");
+    expect(screen.queryByRole("navigation", { name: "Entries" })).toBeNull();
+  });
+
+  it("shows every entry, and no count, while the box has no words in it", async () => {
+    await renderApp(
+      "/journal",
+      await unlockedWith(entry(1, "2026-11-03"), entry(2, "2026-11-10")),
+    );
+    await screen.findByRole("navigation", { name: "Entries" });
+
+    await userEvent.type(screen.getByLabelText("Search your journal"), "  ?! ");
+
+    expect(entryLinks()).toEqual([
+      formatEntryDate({ date: "2026-11-10", timeZone: "UTC" }),
+      formatEntryDate({ date: "2026-11-03", timeZone: "UTC" }),
+    ]);
+    expect(document.querySelector(".result-count")?.textContent).toBe("");
+  });
+
+  it("does not find a word inside another word, and does not search the draft", async () => {
+    await renderApp(
+      "/journal",
+      await unlockedWith(
+        entry(1, "2026-11-03", {
+          responses: { good: "dinner", improve: "x", loved: "y" },
+        }),
+        entry(2, "2026-11-10", {
+          status: "draft",
+          responses: { good: "inner peace", improve: "", loved: "" },
+        }),
       ),
     );
     await screen.findByRole("navigation", { name: "Entries" });
 
-    await userEvent.type(screen.getByLabelText("Search your journal"), "walk");
+    await userEvent.type(screen.getByLabelText("Search your journal"), "inner");
 
-    expect(entryLinks()).toEqual([
-      formatEntryDate({ date: "2026-11-03", timeZone: "UTC" }),
-    ]);
-    expect(window.location.pathname).toBe("/journal");
-    expect(window.location.search).toBe("");
-
-    await userEvent.type(screen.getByLabelText("Search your journal"), "zzz");
-    expect(screen.getByText("No entry mentions that.")).toBeTruthy();
+    expect(document.querySelector(".result-count")?.textContent).toBe(
+      "No entry mentions that.",
+    );
     expect(screen.queryByRole("navigation", { name: "Entries" })).toBeNull();
+    // The draft is still offered, apart from the search.
+    expect(screen.getByRole("navigation", { name: "Draft" })).toBeTruthy();
+  });
+
+  it("searches what an entry says now: an edit or a deletion is reflected at once", async () => {
+    const services = await unlockedWith(
+      entry(1, "2026-11-03", {
+        responses: { good: "old wording", improve: "x", loved: "y" },
+      }),
+    );
+    await renderApp("/journal", services);
+    await screen.findByRole("navigation", { name: "Entries" });
+    await userEvent.type(
+      screen.getByLabelText("Search your journal"),
+      "wording",
+    );
+    expect(entryLinks()).toHaveLength(1);
+
+    await services.records.put(
+      "journal-entry",
+      entry(1, "2026-11-03", {
+        responses: { good: "new phrasing", improve: "x", loved: "y" },
+      }),
+    );
+    await waitFor(() => {
+      expect(document.querySelector(".result-count")?.textContent).toBe(
+        "No entry mentions that.",
+      );
+    });
+
+    await userEvent.clear(screen.getByLabelText("Search your journal"));
+    await userEvent.type(
+      screen.getByLabelText("Search your journal"),
+      "phrasing",
+    );
+    expect(entryLinks()).toHaveLength(1);
+    await services.records.delete(
+      "journal-entry",
+      "00000000-0000-4000-8000-0000000000a1",
+    );
+    await waitFor(() => {
+      expect(screen.queryByRole("navigation", { name: "Entries" })).toBeNull();
+    });
   });
 
   it("shows a new entry as soon as it is stored", async () => {
