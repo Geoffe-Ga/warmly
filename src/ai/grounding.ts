@@ -157,6 +157,8 @@ function groundCard(
     type: wire.type,
     theme: wire.theme,
     segments,
+    // Walked in the order the entries were sent, so the list is in that
+    // order and names each entry once.
     sourceEntryIds: manifest.sources
       .map((source) => source.entryId)
       .filter((entryId) => quoted.has(entryId)),
@@ -192,5 +194,7 @@ export function groundCards(
  * @throws MalformedResponseError if the answer is not in the agreed form.
  */
 export function groundAlternatives(raw: unknown): SegmentAlternatives {
+  // Nothing to tie to the journal; kept beside the other two so every kind
+  // of answer is checked through this module.
   return parseAlternatives(raw);
 }

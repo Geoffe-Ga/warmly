@@ -62,7 +62,9 @@ import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeDeviceRegistry } from "../testing/fake-device-registry";
 import { FakePairingRelay } from "../testing/fake-pairing-relay";
 import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
+import { MemoryCardsStore, type CardsStore } from "../domain/cards/store";
 import { createEventBus, type EventBus } from "../domain/events";
+import { seededCards } from "../testing/seed-cards";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
@@ -91,6 +93,8 @@ export interface Services {
   readonly sync: SyncControl;
   /** The only way to reach an AI provider (D-17). */
   readonly ai: AiGateway;
+  /** Collections of conversation cards. In memory only, for now. */
+  readonly cards: CardsStore;
   /** A new version of the app waiting to be used. */
   readonly updates: AppUpdates;
   /** Asks the browser to keep this device's data, and reports the answer. */
@@ -392,6 +396,11 @@ export function createServices(): Services {
     sync,
     updates: appUpdates,
     ai: createGateway(),
+    // Nothing real can be saved yet, so other builds show invented cards.
+    cards:
+      import.meta.env.MODE !== "production"
+        ? seededCards()
+        : new MemoryCardsStore(),
     persistence,
     session: createSession(),
     onboarding: createOnboarding(),

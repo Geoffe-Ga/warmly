@@ -12,13 +12,13 @@ test that silently does not run proves nothing.
 import os
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Protocol
 from urllib.parse import urlsplit, urlunsplit
 from uuid import uuid4
 
 import psycopg
 import pytest
 from psycopg import sql
-from psycopg.rows import TupleRow
 
 from warmly.db.migrate import apply_migrations, discover
 
@@ -40,12 +40,27 @@ def _with_database(url: str, name: str) -> str:
     return urlunsplit(parts._replace(path=f"/{name}"))
 
 
-def _ensure_browser_roles(conn: psycopg.Connection[TupleRow]) -> None:
-    """Create the browser roles if this cluster does not have them."""
+class RunsStatements(Protocol):
+    """Anything that can run one SQL statement, such as a connection."""
+
+    def execute(self, query: sql.Composed, /) -> object:
+        """Run a statement."""
+
+
+def ensure_browser_roles(conn: RunsStatements) -> None:
+    """Create the browser roles if this cluster does not have them.
+
+    Roles belong to the whole cluster and test workers run side by side, so
+    another worker may have created the role already (``DuplicateObject``)
+    or be creating it at this very moment, in which case PostgreSQL reports
+    a ``UniqueViolation`` on the role catalogue instead. Either way the role
+    exists afterwards, which is all that is needed. The baseline migration
+    tolerates the same two cases for ``warmly_api``.
+    """
     for role in BROWSER_ROLES:
         try:
             conn.execute(sql.SQL("CREATE ROLE {} NOLOGIN").format(sql.Identifier(role)))
-        except psycopg.errors.DuplicateObject:
+        except (psycopg.errors.DuplicateObject, psycopg.errors.UniqueViolation):
             continue
 
 
@@ -63,7 +78,7 @@ def throwaway_database(admin_url: str) -> Iterator[str]:
     """Create an empty database, yield its URL, and drop it afterwards."""
     name = f"warmly_t_{uuid4().hex[:12]}"
     with psycopg.connect(admin_url, autocommit=True) as conn:
-        _ensure_browser_roles(conn)
+        ensure_browser_roles(conn)
         conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
     try:
         yield _with_database(admin_url, name)

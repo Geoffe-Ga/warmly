@@ -407,6 +407,12 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`update-notice`** — One line under the header when a new version of the app has been downloaded, styled like `offline-notice`, with a `{component.button-secondary}` "Update now" beside it: "A new version of Warmly is ready." It never appears on its own schedule and never reloads the page by itself; pressing the button saves unsaved writing first.
 
+**`card-reading`** — A conversation card's words as they are meant to be said: `{typography.title}` size in `{colors.ink}`, inside a `{component.card}`. Under it, one **`hint`** line in `{colors.ink-muted}` says who wrote the card ("Written by you." or "Drafted by AI from your journal. You can rewrite all of it.").
+
+**`present-card`** — Presentation mode: one card at a time on a `{colors.surface}` panel with a `{colors.border-strong}` border and generous padding, text at `{typography.heading}` size so it can be read from across a table. Below it a `hint` ("Card 1 of 3") and two `{component.button-secondary}`s, "Previous card" and "Next card"; the one that leads nowhere is `{component.button-disabled}`. Nothing else is on the panel: no source notes, no timers, no marks for cards already shown.
+
+**`print-sheet`** — What the print screen will print: the collection's name as a heading and its cards as a numbered list at `{typography.title}` size, then a `{component.button-primary}` "Print". Card text only.
+
 **`sync-status`** — In the header while unlocked: one line in `{typography.small}` and `{colors.ink-muted}` ("All changes saved", "3 changes waiting to sync", "Couldn't sync. Your writing is saved on this device.", "Update Warmly to keep syncing. Your writing is saved on this device.", "Needs your attention") beside a `{component.button-secondary}` "Sync now". It is a state and a count, never private text.
 
 ### Status Banners
