@@ -5,6 +5,7 @@ from datetime import datetime
 from uuid import UUID
 
 import pytest
+from starlette.requests import Request
 
 from tests.auth.devices import (
     DEVICE_ID,
@@ -21,6 +22,7 @@ from warmly.auth.device import (
     decode_base64,
     enrollment_proof_is_valid,
     load_public_key,
+    read_signed_request,
     signature_is_valid,
 )
 from warmly.auth.verifier import Owner
@@ -220,3 +222,51 @@ async def test_the_enrollment_proof_binds_the_verifier_the_device_and_the_key() 
     )
     assert not enrollment_proof_is_valid(ENROLLMENT_VERIFIER, device_id, key, "AAAA")
     assert not enrollment_proof_is_valid("c2hvcnQ=", device_id, key, proof)
+
+
+def _request(raw_path: bytes, query: bytes) -> Request:
+    """Build a request with all four signature headers and the given target."""
+    headers = [
+        (b"warmly-device", DEVICE_ID.encode()),
+        (b"warmly-timestamp", b"1795651200"),
+        (b"warmly-nonce", b"n" * 24),
+        (b"warmly-signature", b"c2ln"),
+    ]
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {
+        "type": "http",
+        "method": "GET",
+        "path": "/v1/devices",
+        "raw_path": raw_path,
+        "query_string": query,
+        "headers": headers,
+    }
+    return Request(scope, receive)
+
+
+async def test_the_signed_target_is_the_raw_path_and_query_as_sent() -> None:
+    """Percent-encoding is kept as sent, so both sides sign the same text."""
+    signed = await read_signed_request(_request(b"/v1/devices/a%2Fb", b"x=%FF&y=1"))
+
+    assert signed.target == "/v1/devices/a%2Fb?x=%FF&y=1"
+    assert (await read_signed_request(_request(b"/v1/devices", b""))).target == (
+        "/v1/devices"
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw_path", "query"),
+    [(b"/v1/devices", b"x=\xff"), (b"/v1/devices/\xc3\xa9", b""), (b"/\xff", b"\xff")],
+    ids=["query", "path", "both"],
+)
+async def test_a_target_with_bytes_outside_ascii_is_refused_not_a_crash(
+    raw_path: bytes, query: bytes
+) -> None:
+    """A raw non-ASCII byte cannot come from the app, and must not be a 500."""
+    with pytest.raises(DeviceAuthorizationError) as refused:
+        await read_signed_request(_request(raw_path, query))
+
+    assert refused.value.code == "device.not_authorized"

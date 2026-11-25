@@ -58,6 +58,10 @@ encrypted on the user's device and the backend stores ciphertext only.
   be device-signed. What it returns is useless without the 256-bit recovery
   key. Replacing the envelope does need a registered device's signature
   (ADR-0005).
+- **The server holds the device-enrollment verifier.** Someone who can read
+  the database and also holds a valid session token could register a device
+  of their own. They would hold no decryption key (ADR-0005). Replacing the
+  verifier with a public key is tracked in #84.
 - **Same-origin script can ask the browser to sign.** The device key cannot
   be copied, but script running in the app's origin can use it while it runs
   there. The CSP is the control.

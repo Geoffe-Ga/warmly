@@ -164,6 +164,26 @@ on this list.
   is unlocked; that is the client's own rule (ADR-0004).
 - An account created before this change has no enrollment verifier, so its
   devices cannot register. No such account exists outside development.
+- **The enrollment verifier is a secret the server holds.** It is the HMAC
+  key for the registration proof, so someone who can read the database *and*
+  holds a valid session token for the account could register a device of
+  their own. They would still hold no key: every record stays ciphertext to
+  them, and they could not write a record the user's devices would accept as
+  decryptable. What they would gain is what a registered device can do
+  without the root key: read and submit ciphertext, and replace the recovery
+  envelope, which would stop the recovery key working. The design goal here
+  was the stolen-token case, which it meets. The stronger design is for the
+  server to hold only a public key derived from the root key and for the new
+  device to sign its registration with the matching private key, so the
+  server holds nothing that can make a proof. WebCrypto cannot derive an
+  ECDSA key from HKDF output directly, so that needs care; it is recorded
+  under "Revisit when".
+- **Creating the first recovery envelope is unsigned.** A session token
+  stolen in the short time between sign-up and the user confirming their
+  recovery key could create an envelope, and its verifier, first. The real
+  user's own attempt would then be refused ("already set up on another
+  device"), so it would be noticed at once, and nothing of theirs exists yet
+  to lose.
 - Both sides are held to one committed fixture
   (`tests/fixtures/signing/v1.json`): the browser tests and the server tests
   each check the same signed requests and enrollment proof.
@@ -173,6 +193,8 @@ on this list.
 - Revocation lands (#23): the revoked check already runs on every request;
   the route, the ledger and the client's handling are added there.
 - Sync lands (epic 04): `last_sync_at` starts to be filled in.
+- Before real users: replace the stored HMAC verifier with a public key
+  derived from the root key (see the limit above). Tracked in #84.
 - A passkey unlock is added (#80): it does not change the device identity.
 
 ## Pairing

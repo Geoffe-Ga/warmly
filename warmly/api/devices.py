@@ -124,6 +124,9 @@ async def register_device(
     """
     signed = await read_signed_request(http_request)
     verifier: DeviceVerifier = http_request.app.state.device_verifier
+    # No nonce is recorded here: the device has no row to record it against
+    # yet, and a replayed registration is refused anyway, because the device
+    # ID is then already registered.
     verifier.check_timestamp(signed.timestamp)
     if signed.device_id != str(request.device_id) or not signature_is_valid(
         request.public_key, signed.message(), signed.signature

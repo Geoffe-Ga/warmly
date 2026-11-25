@@ -301,9 +301,21 @@ class DeviceVerifier:
 
 
 def _target(request: Request) -> str:
-    """Return the path and query exactly as the client sent them."""
-    path = request.scope["raw_path"].decode("ascii")
-    query = request.scope["query_string"].decode("ascii")
+    """Return the path and query exactly as the client sent them.
+
+    The app only ever sends ASCII here: anything else is percent-encoded by
+    the browser. Raw bytes outside ASCII therefore cannot belong to a request
+    the app signed, and are refused rather than guessed at.
+
+    Raises:
+        DeviceAuthorizationError: ``device.not_authorized`` if the path or
+            query holds a byte that is not ASCII.
+    """
+    try:
+        path = request.scope["raw_path"].decode("ascii")
+        query = request.scope["query_string"].decode("ascii")
+    except UnicodeDecodeError:
+        raise DeviceAuthorizationError(NOT_AUTHORIZED) from None
     return f"{path}?{query}" if query else path
 
 
@@ -318,7 +330,8 @@ async def read_signed_request(request: Request) -> SignedRequest:
 
     Raises:
         DeviceAuthorizationError: ``device.missing_signature`` if any of the
-            four headers is absent.
+            four headers is absent, and ``device.not_authorized`` if the
+            path or query is not ASCII.
     """
     headers = request.headers
     values = [
