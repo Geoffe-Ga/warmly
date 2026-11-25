@@ -25,7 +25,7 @@ describe("the domain event bus (DEP-001)", () => {
   it("does nothing, and does not fail, with no listeners", async () => {
     await expect(
       createEventBus().emit("journal.changed", CHANGE),
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual([]);
   });
 
   it("stops calling a listener once it has been removed, and only that one", async () => {
@@ -56,7 +56,7 @@ describe("the domain event bus (DEP-001)", () => {
     expect(finished).toBe(true);
   });
 
-  it("runs every listener even when one fails, then reports the failures", async () => {
+  it("runs every listener even when one fails, never rejects, and hands back what failed", async () => {
     const bus = createEventBus();
     const after = vi.fn();
     bus.on("journal.changed", () => {
@@ -67,17 +67,34 @@ describe("the domain event bus (DEP-001)", () => {
     );
     bus.on("journal.changed", after);
 
-    const emitting = bus.emit("journal.changed", CHANGE);
+    const failures = await bus.emit("journal.changed", CHANGE);
 
-    await expect(emitting).rejects.toBeInstanceOf(AggregateError);
-    await expect(emitting).rejects.toMatchObject({
-      message: "A listener to journal.changed failed",
-      errors: [
-        new Error("synthetic, thrown at once"),
-        new Error("synthetic, later"),
-      ],
-    });
+    expect(failures).toEqual([
+      new Error("synthetic, thrown at once"),
+      new Error("synthetic, later"),
+    ]);
     expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands back nothing when every listener succeeded", async () => {
+    const bus = createEventBus();
+    bus.on("journal.changed", () => undefined);
+
+    expect(await bus.emit("journal.changed", CHANGE)).toEqual([]);
+  });
+
+  it("gives each kind of event only to its own listeners", async () => {
+    const bus = createEventBus();
+    const changed = vi.fn();
+    const deleted = vi.fn();
+    bus.on("journal.changed", changed);
+    bus.on("journal.deleted", deleted);
+    const gone = { entryId: "entry-1", oldHash: "a".repeat(64) };
+
+    await bus.emit("journal.deleted", gone);
+
+    expect(deleted).toHaveBeenCalledExactlyOnceWith(gone);
+    expect(changed).not.toHaveBeenCalled();
   });
 
   it("keeps separate buses apart", async () => {

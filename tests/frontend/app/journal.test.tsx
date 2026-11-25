@@ -675,6 +675,39 @@ describe("drafts (JR-004)", () => {
     expect(screen.getByRole("status").textContent).toBe("");
   });
 
+  it("never saves onto a discarded draft's ID, even when deleting it failed", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+    services.records.delete = () => Promise.reject(new Error("synthetic"));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard draft" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Discard draft",
+      }),
+    );
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Couldn't continue",
+    );
+    await userEvent.type(first(), " and more");
+    hidePage();
+
+    await waitFor(async () => {
+      expect(await drafts(services)).toHaveLength(2);
+    });
+    const all = await drafts(services);
+    // The old draft is untouched; what was typed went to a new one.
+    expect(all.find((each) => each.id === stored.id)).toEqual(stored);
+    expect(all.find((each) => each.id !== stored.id)?.responses.good).toBe(
+      "half a thought and more",
+    );
+  });
+
   it("does not bring back text that was typed just before discarding", async () => {
     const services = await openCompose();
     await userEvent.type(first(), "soon gone");
@@ -785,6 +818,13 @@ describe("drafts (JR-004)", () => {
     });
     expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
     expect(screen.queryByText(/carrying on with the draft/)).toBeNull();
+    // The form does not empty without saying why.
+    const why = screen.getByText(/finished or discarded in another tab/);
+    expect(why.textContent).toContain("this form has been emptied");
+    await userEvent.type(first(), "a new start");
+    expect(
+      screen.queryByText(/finished or discarded in another tab/),
+    ).toBeNull();
   });
 
   it("shows that it is saving without reading that out", async () => {

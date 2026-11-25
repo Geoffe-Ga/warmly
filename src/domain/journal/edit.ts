@@ -50,6 +50,11 @@ function sameContent(entry: JournalEntry, content: EntryContent): boolean {
  * the old text can be dealt with. Changing only the feelings stores the
  * entry but announces nothing, because the hash does not cover feelings.
  *
+ * Once the entry is stored the edit has succeeded, whatever a listener
+ * does. A listener that fails is not reported as a failed edit: whatever
+ * depends on the entry also checks its stored hash when the app is next
+ * unlocked (see `events.ts`).
+ *
  * @param deps - The record store and the event bus.
  * @param id - The entry's ID.
  * @param content - The new answers and feelings.

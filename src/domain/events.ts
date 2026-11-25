@@ -5,6 +5,12 @@
  *
  * Events stay on this device and in memory. An event carries IDs and
  * hashes, never what a record says.
+ *
+ * An event is announced after the change it describes has been stored, and
+ * at most once: if the app stops in between, or a listener fails, it is not
+ * announced again. So a listener must not be the only thing that keeps
+ * dependent records right. Whatever depends on an entry stores that entry's
+ * content hash and checks it again when the app is unlocked.
  */
 
 /** Every event, and what it carries. */
@@ -16,6 +22,12 @@ export interface DomainEvents {
     readonly oldHash: string;
     /** The content hash after it. Never equal to `oldHash`. */
     readonly newHash: string;
+  };
+  /** A completed journal entry has been deleted for good. */
+  readonly "journal.deleted": {
+    readonly entryId: string;
+    /** The content hash the entry had when it was deleted. */
+    readonly oldHash: string;
   };
 }
 
@@ -43,15 +55,19 @@ export interface EventBus {
   /**
    * Announce an event and wait for every listener to finish.
    *
+   * It never rejects. By the time an event is announced the change it
+   * describes is already stored, so a listener that fails must not make the
+   * change look as if it failed. Every listener is run, whatever the others
+   * do, and what failed is handed back.
+   *
    * @param type - The event's name.
    * @param event - What happened.
-   * @throws AggregateError if any listener failed. Every listener is still
-   *   run: one that fails does not stop the others.
+   * @returns What each failed listener threw; empty when all succeeded.
    */
   emit<K extends DomainEventType>(
     type: K,
     event: DomainEvents[K],
-  ): Promise<void>;
+  ): Promise<readonly unknown[]>;
 }
 
 /**
@@ -62,7 +78,7 @@ export interface EventBus {
 export function createEventBus(): EventBus {
   const listeners: {
     [K in DomainEventType]: Set<DomainEventListener<K>>;
-  } = { "journal.changed": new Set() };
+  } = { "journal.changed": new Set(), "journal.deleted": new Set() };
 
   return {
     on(type, listener) {
@@ -79,12 +95,9 @@ export function createEventBus(): EventBus {
           Promise.resolve().then(() => listener(event)),
         ),
       );
-      const failures = outcomes
+      return outcomes
         .filter((outcome) => outcome.status === "rejected")
         .map((outcome) => outcome.reason as unknown);
-      if (failures.length > 0) {
-        throw new AggregateError(failures, `A listener to ${type} failed`);
-      }
     },
   };
 }

@@ -5,9 +5,14 @@ import { Link } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
+import { deleteEntry } from "../../../domain/journal/delete";
+import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
+import { useAction } from "../account/shared";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
 
 /** What the screen has found out about the entry. */
@@ -15,7 +20,20 @@ type Found =
   | { readonly kind: "loading" }
   | { readonly kind: "missing" }
   | { readonly kind: "failed" }
+  | { readonly kind: "deleted" }
   | { readonly kind: "entry"; readonly entry: JournalEntry };
+
+/**
+ * What the screen shows once the store has answered. Once the entry has
+ * been deleted here the screen keeps saying so, whatever the store reports
+ * afterwards.
+ */
+function afterLoading(was: Found, entry: JournalEntry | undefined): Found {
+  if (was.kind === "deleted") {
+    return was;
+  }
+  return entry === undefined ? { kind: "missing" } : { kind: "entry", entry };
+}
 
 /** What is said when there is no entry to show. */
 const NOTICES = {
@@ -30,7 +48,16 @@ const NOTICES = {
     label: "Couldn't open your journal",
     text: CANNOT_OPEN,
   },
+  deleted: {
+    tone: "success",
+    label: "Deleted",
+    text: "It has been removed from this device.",
+  },
 } as const;
+
+/** What deleting does, said before the person confirms (JR-007, OPS-003). */
+export const DELETE_WARNING =
+  "This deletes it from this device now, and from your other devices the next time they sync. There is no trash and no undo. Encrypted copies held in backups cannot be read by anyone but you, and are removed as those backups expire, within 30 days.";
 
 function Answer(props: { readonly text: string }): JSX.Element {
   if (props.text.trim() === "") {
@@ -49,15 +76,29 @@ function Answer(props: { readonly text: string }): JSX.Element {
 /**
  * One journal entry: its date, the three answers under their questions,
  * and the way to edit it (PRD JR-001, JR-005, JR-006). Opening an entry
- * never calls AI. Deleting arrives with later work.
+ * never calls AI. The entry can be deleted for good after a confirmation
+ * that says what deleting does and does not remove (JR-007, OPS-003).
  *
  * @param props - The route's parameters; `id` names the entry.
  * @returns The entry screen.
  */
 export function Entry(props: { readonly params: RouteParams }): JSX.Element {
-  const { records } = useServices();
+  const { records, events } = useServices();
+  const action = useAction();
   const id = props.params["id"];
   const [found, setFound] = useState<Found>({ kind: "loading" });
+  const [confirming, setConfirming] = useState(false);
+  const deleted = found.kind === "deleted";
+
+  useEffect(() => {
+    // The button that had focus has gone with the entry, so focus moves to
+    // the heading, which now says what happened.
+    if (deleted) {
+      document
+        .querySelector<HTMLElement>(`[${PAGE_HEADING_ATTRIBUTE}]`)
+        ?.focus();
+    }
+  }, [deleted]);
 
   useEffect(() => {
     let current = true;
@@ -69,16 +110,14 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
       ).then(
         (entry) => {
           if (current) {
-            setFound(
-              entry === undefined
-                ? { kind: "missing" }
-                : { kind: "entry", entry },
-            );
+            setFound((was) => afterLoading(was, entry));
           }
         },
         () => {
           if (current) {
-            setFound({ kind: "failed" });
+            setFound((was) =>
+              was.kind === "deleted" ? was : { kind: "failed" },
+            );
           }
         },
       );
@@ -100,7 +139,7 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
   if (found.kind !== "entry") {
     const notice = NOTICES[found.kind];
     return (
-      <PageLayout title="Journal entry">
+      <PageLayout title={deleted ? "Entry deleted" : "Journal entry"}>
         <StatusBanner tone={notice.tone} label={notice.label}>
           {notice.text}
         </StatusBanner>
@@ -110,6 +149,7 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
   }
 
   const { entry } = found;
+  const what = entry.status === "draft" ? "draft" : "entry";
   return (
     <PageLayout
       title={formatEntryDate(entry.entryDate)}
@@ -138,6 +178,41 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
           </Link>
         )}
       </p>
+      {action.error !== undefined && (
+        <StatusBanner tone="error" label="Couldn't delete">
+          {action.error}
+        </StatusBanner>
+      )}
+      <div class="button-row">
+        <Button
+          variant="danger"
+          disabled={action.busy}
+          onClick={() => {
+            setConfirming(true);
+          }}
+        >
+          Delete this {what}
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={confirming}
+        title={`Delete this ${what} for good?`}
+        confirmLabel={`Delete ${what}`}
+        cancelLabel={`Keep this ${what}`}
+        destructive
+        onCancel={() => {
+          setConfirming(false);
+        }}
+        onConfirm={() => {
+          setConfirming(false);
+          action.run(async () => {
+            await deleteEntry({ records, events }, entry.id);
+            setFound({ kind: "deleted" });
+          });
+        }}
+      >
+        {DELETE_WARNING}
+      </ConfirmDialog>
       {back}
     </PageLayout>
   );

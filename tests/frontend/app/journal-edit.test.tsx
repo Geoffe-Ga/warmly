@@ -6,6 +6,7 @@ import type { DomainEvents } from "../../../src/domain/events";
 import { PROMPTS, type JournalEntry } from "../../../src/domain/journal/types";
 import { ANSWER_NEEDED } from "../../../src/domain/journal/validation";
 import { StaleRecordError } from "../../../src/storage/record-store";
+import { DELETE_WARNING } from "../../../src/ui/screens/journal/Entry";
 import {
   CANNOT_OPEN,
   formatEntryDate,
@@ -136,6 +137,24 @@ describe("editing a saved entry (JR-006, AC-06)", () => {
     expect(heading().textContent).toBe(
       formatEntryDate({ date: "2026-11-03", timeZone: "UTC" }),
     );
+  });
+
+  it("shows the saved entry, not an error, when only a listener to the event fails", async () => {
+    const { services } = await openEdit();
+    services.events.on("journal.changed", () => {
+      throw new Error("synthetic listener failure");
+    });
+
+    await userEvent.type(box(0), " and more");
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(`/journal/entries/${ID}`);
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      (await services.records.get("journal-entry", ID))?.responses.good,
+    ).toBe("Good one and more");
   });
 
   it("saves nothing while an answer is blank, and says so on that field (JR-002)", async () => {
@@ -296,5 +315,195 @@ describe("the timeline's order (JR-005)", () => {
       "b",
       "c",
     ]);
+  });
+});
+
+describe("deleting an entry (JR-007, OPS-003)", () => {
+  async function openEntry(entry: JournalEntry = stored()): Promise<{
+    services: TestServices;
+    heard: DomainEvents["journal.deleted"][];
+  }> {
+    const services = testServices("unlocked");
+    await services.records.put("journal-entry", entry);
+    await services.records.put(
+      "journal-entry",
+      stored({
+        id: "00000000-0000-4000-8000-0000000000e2",
+        entryDate: { date: "2026-10-01", timeZone: "UTC" },
+        responses: { good: "Kept one", improve: "k", loved: "k" },
+      }),
+    );
+    const heard: DomainEvents["journal.deleted"][] = [];
+    services.events.on("journal.deleted", (event) => {
+      heard.push(event);
+    });
+    await renderApp(`/journal/entries/${entry.id}`, services);
+    await screen.findByText("Good one");
+    return { services, heard };
+  }
+
+  it("asks first, saying exactly what deleting does and does not remove", async () => {
+    const { services, heard } = await openEntry();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete this entry" }),
+    );
+
+    const dialog = screen.getByRole("alertdialog", {
+      name: "Delete this entry for good?",
+    });
+    expect(dialog.textContent).toContain(DELETE_WARNING);
+    expect(DELETE_WARNING).toContain("from this device now");
+    expect(DELETE_WARNING).toContain("the next time they sync");
+    expect(DELETE_WARNING).toContain("no trash and no undo");
+    expect(DELETE_WARNING).toContain("within 30 days");
+    // Nothing has happened yet.
+    expect(await services.records.get("journal-entry", ID)).toEqual(stored());
+    expect(heard).toEqual([]);
+  });
+
+  it("keeps the entry when the person backs out, by the button or by Escape", async () => {
+    const { services, heard } = await openEntry();
+    const open = screen.getByRole("button", { name: "Delete this entry" });
+
+    await userEvent.click(open);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Keep this entry" }),
+    );
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(document.activeElement).toBe(open);
+
+    await userEvent.click(open);
+    await userEvent.keyboard("{Escape}");
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+
+    expect(await services.records.get("journal-entry", ID)).toEqual(stored());
+    expect(heard).toEqual([]);
+    expect(screen.getByText("Good one")).toBeTruthy();
+  });
+
+  it("deletes after confirmation, says so without blame, moves focus to the heading and announces it", async () => {
+    const { services, heard } = await openEntry();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete this entry" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete entry",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(heading().textContent).toBe("Entry deleted");
+    });
+    expect(document.activeElement).toBe(heading());
+    const status = screen.getByRole("status");
+    expect(status.textContent).toContain("Deleted");
+    expect(status.textContent).toContain(
+      "It has been removed from this device.",
+    );
+    expect(screen.queryByText("Good one")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Delete/ })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Edit this entry" })).toBeNull();
+    expect(await services.records.get("journal-entry", ID)).toBeUndefined();
+    expect(heard).toEqual([{ entryId: ID, oldHash: "0".repeat(64) }]);
+    expect(window.location.pathname).toBe(`/journal/entries/${ID}`);
+  });
+
+  it("says the entry was deleted, not that deleting failed, when only a listener to the event fails", async () => {
+    const { services } = await openEntry();
+    services.events.on("journal.deleted", () => {
+      throw new Error("synthetic listener failure");
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete this entry" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete entry",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(heading().textContent).toBe("Entry deleted");
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("Good one")).toBeNull();
+    expect(await services.records.get("journal-entry", ID)).toBeUndefined();
+  });
+
+  it("never shows a deleted entry in the timeline or in search", async () => {
+    await openEntry();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete this entry" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete entry",
+      }),
+    );
+    await screen.findByText("It has been removed from this device.");
+
+    await userEvent.click(
+      screen.getByRole("link", { name: "Back to your journal" }),
+    );
+
+    const links = within(
+      await screen.findByRole("navigation", { name: "Entries" }),
+    ).getAllByRole("link");
+    expect(links.map((link) => link.textContent)).toEqual([
+      formatEntryDate({ date: "2026-10-01", timeZone: "UTC" }),
+    ]);
+    await userEvent.type(
+      screen.getByLabelText("Search your journal"),
+      "Good one",
+    );
+    expect(await screen.findByText("No entry mentions that.")).toBeTruthy();
+  });
+
+  it("says so and keeps the entry when deleting fails", async () => {
+    const { services, heard } = await openEntry();
+    services.records.delete = () => Promise.reject(new Error("synthetic"));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete this entry" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete entry",
+      }),
+    );
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Couldn't delete",
+    );
+    expect(screen.getByText("Good one")).toBeTruthy();
+    expect(heading().textContent).not.toBe("Entry deleted");
+    expect(heard).toEqual([]);
+  });
+
+  it("deletes a draft the same way, in the draft's own words, announcing nothing", async () => {
+    const { services, heard } = await openEntry(stored({ status: "draft" }));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete this draft" }),
+    );
+    const dialog = screen.getByRole("alertdialog", {
+      name: "Delete this draft for good?",
+    });
+    expect(
+      within(dialog).getByRole("button", { name: "Keep this draft" }),
+    ).toBeTruthy();
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Delete draft" }),
+    );
+
+    await waitFor(() => {
+      expect(heading().textContent).toBe("Entry deleted");
+    });
+    expect(await services.records.get("journal-entry", ID)).toBeUndefined();
+    expect(heard).toEqual([]);
   });
 });

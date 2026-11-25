@@ -296,6 +296,99 @@ test.describe("the journal", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(created);
   });
 
+  test("offline: an entry is deleted for good after confirmation, stays gone after a reload, and one delete is queued (AC-17, JR-007)", async ({
+    page,
+    context,
+  }) => {
+    await onboard(page);
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    await page.getByRole("link", { name: "Journal", exact: true }).click();
+    await page.getByRole("link", { name: "Write a new entry" }).click();
+    for (const prompt of PROMPTS) {
+      await page.getByLabel(prompt).fill("Synthetic entry to delete");
+    }
+    await page.getByRole("button", { name: "Save entry" }).click();
+    await expect(page.getByText("A journal entry.")).toBeVisible();
+
+    await context.setOffline(true);
+    await page.getByRole("button", { name: "Delete this entry" }).click();
+    const dialog = page.getByRole("alertdialog", {
+      name: "Delete this entry for good?",
+    });
+    await expect(dialog).toContainText("There is no trash and no undo.");
+    await expect(dialog).toContainText("within 30 days");
+    await expectNoViolations(page);
+
+    // Backing out keeps the entry.
+    await dialog.getByRole("button", { name: "Keep this entry" }).click();
+    await expect(
+      page.getByText("Synthetic entry to delete").first(),
+    ).toBeVisible();
+
+    await page.getByRole("button", { name: "Delete this entry" }).click();
+    await dialog.getByRole("button", { name: "Delete entry" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Entry deleted",
+    );
+    await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+    await expect(page.getByText("Synthetic entry to delete")).toHaveCount(0);
+    await expectNoViolations(page);
+
+    // Still offline: reload and unlock. The entry stays gone.
+    await page.reload();
+    await unlockThisDevice(page);
+    await page.getByRole("link", { name: "Journal", exact: true }).click();
+    await expect(
+      page.getByText("You haven't written anything yet."),
+    ).toBeVisible();
+    await page.getByLabel("Search your journal").fill("Synthetic entry");
+    await expect(entries(page)).toHaveCount(0);
+
+    // What is stored: a tombstone with no ciphertext, and one queued delete.
+    const stored = await page.evaluate(async () => {
+      const name = (await indexedDB.databases())
+        .map((database) => database.name ?? "")
+        .find((each) => each.includes("-records-"));
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const opening = indexedDB.open(name ?? "");
+        opening.onsuccess = () => {
+          resolve(opening.result);
+        };
+        opening.onerror = () => {
+          reject(new Error("could not open the records database"));
+        };
+      });
+      const read = (store: string): Promise<Record<string, unknown>[]> =>
+        new Promise((resolve, reject) => {
+          const reading = database
+            .transaction(store)
+            .objectStore(store)
+            .getAll();
+          reading.onsuccess = () => {
+            resolve(reading.result as Record<string, unknown>[]);
+          };
+          reading.onerror = () => {
+            reject(new Error("could not read a store"));
+          };
+        });
+      const records = await read("records");
+      const outbox = await read("outbox");
+      database.close();
+      return {
+        records: records.map((row) => ({
+          tombstone: row["tombstone"],
+          hasCiphertext: row["envelope"] !== null,
+        })),
+        deletes: outbox.filter((operation) => operation["tombstone"] === true)
+          .length,
+      };
+    });
+    expect(stored.records).toEqual([{ tombstone: true, hasCiphertext: false }]);
+    expect(stored.deletes).toBe(1);
+  });
+
   test("an entry that is not on this device says so", async ({ page }) => {
     await onboard(page);
     await page.evaluate(() => {

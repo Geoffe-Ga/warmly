@@ -17,6 +17,7 @@ import {
   type SaveState,
 } from "../../../domain/journal/drafts";
 import type { EntryDate, JournalEntry } from "../../../domain/journal/types";
+import { deleteEntry } from "../../../domain/journal/delete";
 import { StaleRecordError } from "../../../storage/record-store";
 
 /** The compose form, as the screen sees it. */
@@ -40,6 +41,11 @@ export interface DraftForm {
    * emptied.
    */
   readonly loadLatest: () => Promise<void>;
+  /**
+   * Whether loading the latest version found the draft gone: finished or
+   * discarded somewhere else. The form was emptied.
+   */
+  readonly draftGone: boolean;
   /** Take new content from the form and save it shortly. */
   readonly change: (content: EntryContent) => void;
   /**
@@ -62,13 +68,14 @@ export interface DraftForm {
  * @returns The form.
  */
 export function useDraft(): DraftForm {
-  const { records, session, lockHooks } = useServices();
+  const { records, events, session, lockHooks } = useServices();
   const [status, setStatus] = useState<DraftForm["status"]>("loading");
   const [content, setContent] = useState<EntryContent>(BLANK);
   const [resumed, setResumed] = useState<EntryDate | undefined>(undefined);
   const [hasDraft, setHasDraft] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [outOfDate, setOutOfDate] = useState(false);
+  const [draftGone, setDraftGone] = useState(false);
   const draft = useRef<JournalEntry | undefined>(undefined);
   const autosave = useRef<Autosave<EntryContent> | undefined>(undefined);
   // True from the moment the entry starts being finished. Nothing typed
@@ -176,6 +183,7 @@ export function useDraft(): DraftForm {
     saveState,
     change: (next) => {
       setContent(next);
+      setDraftGone(false);
       if (!finishing.current) {
         autosave.current?.changed(next);
       }
@@ -218,12 +226,17 @@ export function useDraft(): DraftForm {
       setHasDraft(found !== undefined);
       setSaveState("idle");
       setOutOfDate(false);
+      setDraftGone(found === undefined);
     },
+    draftGone,
     discard: async () => {
       await settle();
-      if (draft.current !== undefined) {
-        await records.delete("journal-entry", draft.current.id);
+      const discarded = draft.current;
+      if (discarded !== undefined) {
+        // Forgotten first: whatever happens next, nothing may be saved onto
+        // the deleted draft's ID.
         draft.current = undefined;
+        await deleteEntry({ records, events }, discarded.id);
       }
       setContent(BLANK);
       setResumed(undefined);

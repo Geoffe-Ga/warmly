@@ -66,6 +66,8 @@ export function EditEntry(props: {
   const [tried, setTried] = useState(false);
   const [outOfDate, setOutOfDate] = useState(false);
 
+  // Uses only state setters, which never change, so it is safe to call from
+  // the effect below although it is made again on every render.
   const show = (entry: JournalEntry | undefined): void => {
     if (entry?.status === "complete") {
       setFound({ kind: "entry", entry });

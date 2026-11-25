@@ -204,6 +204,24 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
     expect(heard).toEqual([]);
   });
 
+  it("succeeds once the entry is stored, even when a listener fails", async () => {
+    const { records, events, heard, entry } = await setUp();
+    events.on("journal.changed", () => {
+      throw new Error("synthetic listener failure");
+    });
+    const rewritten = {
+      responses: { ...ORIGINAL.responses, good: "rewritten" },
+      feelings: ORIGINAL.feelings,
+    };
+
+    const edited = await editEntry({ records, events }, entry.id, rewritten);
+
+    expect(edited.responses.good).toBe("rewritten");
+    expect(await records.get("journal-entry", entry.id)).toEqual(edited);
+    // The other listener still heard it.
+    expect(heard).toHaveLength(1);
+  });
+
   it("keeps no trace of the old text: not in memory, and not in IndexedDB", async () => {
     const name = `edit-test-${crypto.randomUUID()}`;
     const store = new EncryptedRecordStore(() => name);
