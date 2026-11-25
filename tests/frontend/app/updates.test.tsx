@@ -2,7 +2,7 @@ import { cleanup, screen, waitFor } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { UPDATE_NOT_APPLIED } from "../../../src/app/App";
+import { UPDATE_FAILED, UPDATE_NOT_APPLIED } from "../../../src/app/App";
 import { appUpdates, createUpdates } from "../../../src/app/updates";
 
 import { renderApp, testServices } from "./helpers";
@@ -132,7 +132,9 @@ describe("the update notice (REL-004, AC-28)", () => {
       .setup()
       .click(await screen.findByRole("button", { name: "Update now" }));
 
-    await screen.findByText(UPDATE_NOT_APPLIED);
+    // The writing was saved; it is the switch that failed, and it says so.
+    await screen.findByText(UPDATE_FAILED);
+    expect(screen.queryByText(UPDATE_NOT_APPLIED)).toBeNull();
     expect(screen.queryByText("synthetic")).toBeNull();
   });
 

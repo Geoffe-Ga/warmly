@@ -106,6 +106,10 @@ function OfflineNotice(props: { readonly state: SessionState }): JSX.Element {
 export const UPDATE_NOT_APPLIED =
   "Couldn't save what you're writing, so Warmly was not updated. Nothing was lost. Try again in a moment.";
 
+/** Said when the writing was saved but the new version could not start. */
+export const UPDATE_FAILED =
+  "Couldn't switch to the new version. Nothing was lost. Try again in a moment.";
+
 /**
  * Says when a new version of the app is ready and lets the person switch to
  * it (PRD §8, REL-004; AC-28).
@@ -119,7 +123,7 @@ function UpdateNotice(): JSX.Element {
   const { updates, lockHooks } = useServices();
   const [ready, setReady] = useState(() => updates.available());
   const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState(false);
+  const [problem, setProblem] = useState<string>();
 
   useEffect(() => {
     const update = (): void => {
@@ -131,18 +135,22 @@ function UpdateNotice(): JSX.Element {
 
   const apply = (): void => {
     setBusy(true);
-    setProblem(false);
+    setProblem(undefined);
     void lockHooks
       .flush()
-      .then(async (unsaved) => {
-        if (unsaved > 0) {
-          setProblem(true);
+      .then(
+        (unsaved) => unsaved === 0,
+        () => false,
+      )
+      .then(async (saved) => {
+        if (!saved) {
+          setProblem(UPDATE_NOT_APPLIED);
           return;
         }
         await updates.apply();
       })
       .catch(() => {
-        setProblem(true);
+        setProblem(UPDATE_FAILED);
       })
       .finally(() => {
         setBusy(false);
@@ -152,8 +160,7 @@ function UpdateNotice(): JSX.Element {
   return (
     <div class="update-notice">
       <p role="status">
-        {ready && !problem ? "A new version of Warmly is ready." : ""}
-        {ready && problem ? UPDATE_NOT_APPLIED : ""}
+        {ready ? (problem ?? "A new version of Warmly is ready.") : ""}
       </p>
       {ready && (
         <Button disabled={busy} onClick={apply}>

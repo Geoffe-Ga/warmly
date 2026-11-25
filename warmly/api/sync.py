@@ -5,6 +5,7 @@
 only on the verified caller's own records, and neither reads a payload.
 """
 
+import re
 from http import HTTPStatus
 from typing import Annotated, Any
 
@@ -64,6 +65,9 @@ SyncVersion = Annotated[
 ]
 
 
+_VERSION = re.compile(r"[0-9]{1,9}")
+
+
 def require_supported_version(request: Request, version: SyncVersion = None) -> None:
     """Refuse a client that speaks a sync version this server does not.
 
@@ -81,9 +85,11 @@ def require_supported_version(request: Request, version: SyncVersion = None) -> 
             outside the supported range.
     """
     oldest, newest = request.app.state.sync_versions
+    # A short run of digits and nothing else. The length is limited so that
+    # no header, however long, can be anything but a refusal.
     spoken = (
         int(version)
-        if version is not None and version.isascii() and version.isdigit()
+        if version is not None and _VERSION.fullmatch(version) is not None
         else None
     )
     if spoken is None or not oldest <= spoken <= newest:

@@ -246,6 +246,9 @@ export class SyncEngine {
       status === "failed" ||
       status === "outdated"
     ) {
+      // What the last cycle found still holds until another cycle says
+      // otherwise. `outdated` ends when the app is updated, which reloads
+      // the page.
       this.#set({ status, waiting });
     } else {
       this.#set({ status: waiting > 0 ? "pending" : "synced", waiting });

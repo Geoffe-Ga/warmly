@@ -86,8 +86,24 @@ def test_a_client_that_speaks_a_supported_version_syncs(
 
 @pytest.mark.parametrize(
     "version",
-    [None, "0", "2", "999", "", "abc", "1.0", "-1", " 1", "1 ", "+1", "0x1"],
-    ids=repr,
+    [
+        None,
+        "0",
+        "2",
+        "999",
+        "",
+        "abc",
+        "1.0",
+        "-1",
+        " 1",
+        "1 ",
+        "+1",
+        "0x1",
+        "1\n",
+        "0000000001",
+        "9" * 5000,
+    ],
+    ids=lambda version: repr(version)[:16],
 )
 def test_a_client_that_speaks_no_supported_version_is_told_to_update(
     session_only: TestClient, device: TestDevice, version: str | None
