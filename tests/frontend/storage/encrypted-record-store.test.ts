@@ -122,7 +122,7 @@ describe("the encrypted record store", () => {
     });
 
     await store.put("journal-entry", written);
-    await store.put("journal-entry", { ...written, feelings: [canary] });
+    await store.put("journal-entry", { ...written, feelings: ["overwhelmed"] });
     await store.delete("journal-entry", (await entryIn(store)).id);
 
     const database = await openRaw(name);
@@ -132,6 +132,7 @@ describe("the encrypted record store", () => {
     for (const storeName of storeNames) {
       const stored = everythingIn(await readRows(name, storeName));
       expect(stored).not.toContain("CANARY");
+      expect(stored).not.toContain("overwhelmed");
       expect(stored).not.toContain(written.contentHash);
     }
   });

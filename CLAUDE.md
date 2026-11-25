@@ -202,6 +202,14 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   in one transaction. A schema change is a new step in `MIGRATIONS`
   (`src/storage/db.ts`) and a new dump under `tests/fixtures/idb/`; never
   edit a released step or an existing dump. Never write over a tombstone.
+- An entry is complete only when `canComplete` says so
+  (`src/domain/journal/validation.ts`): some non-space text in all three
+  answers, with no minimum length and no Skip control. Feelings come only
+  from what the person ticks (`feelings.ts`); never infer one from text.
+- `contentHash` (`src/domain/journal/content-hash.ts`) covers the three
+  answers only, never feelings (D-24). Changing its canonical form means a
+  new `CONTENT_HASH_VERSION` and a new file beside
+  `tests/fixtures/journal/content-hash-v1.json`; never edit that file.
 - External services (auth, key vault, device directory) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.

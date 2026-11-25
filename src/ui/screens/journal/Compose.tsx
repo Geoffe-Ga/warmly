@@ -4,12 +4,19 @@ import { useContext, useState } from "preact/hooks";
 import { Link, NavigationContext } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
 import { useServices } from "../../../app/services";
+import { FEELINGS, type Feeling } from "../../../domain/journal/feelings";
 import {
   PROMPTS,
   type PromptKey,
   type Responses,
 } from "../../../domain/journal/types";
+import {
+  ANSWER_NEEDED,
+  canComplete,
+  unanswered,
+} from "../../../domain/journal/validation";
 import { Button } from "../../components/Button";
+import { CheckboxGroup } from "../../components/CheckboxGroup";
 import { TextArea } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { AccountForm, useAction } from "../account/shared";
@@ -19,8 +26,11 @@ const EMPTY: Responses = { good: "", improve: "", loved: "" };
 
 /**
  * Write a new journal entry: the three prompts, in order, each with a text
- * box (PRD JR-001). Saving never calls AI. Checking the answers, drafts and
- * the feelings check-in arrive with later work.
+ * box, then an optional feelings check-in (PRD JR-001 to JR-003).
+ *
+ * The entry is saved only when every answer has some text (JR-002; AC-02).
+ * There is no control that skips a question. Saving makes no network
+ * request and never calls AI. Drafts arrive with later work.
  *
  * @returns The compose screen.
  */
@@ -29,6 +39,11 @@ export function Compose(): JSX.Element {
   const { navigate } = useContext(NavigationContext);
   const action = useAction();
   const [responses, setResponses] = useState<Responses>(EMPTY);
+  const [feelings, setFeelings] = useState<readonly Feeling[]>([]);
+  // Errors appear only once the person has tried to save, and then follow
+  // what they type, so a message goes as soon as its answer has text.
+  const [tried, setTried] = useState(false);
+  const missing = tried ? unanswered(responses) : [];
 
   const answer = (key: PromptKey, value: string): void => {
     setResponses((current) => ({ ...current, [key]: value }));
@@ -41,34 +56,50 @@ export function Compose(): JSX.Element {
     >
       <AccountForm
         action={action}
-        validate={() => true}
+        validate={() => {
+          setTried(true);
+          return canComplete(responses);
+        }}
         onValid={async () => {
-          const entry = await saveNewEntry(services, responses);
+          const entry = await saveNewEntry(services, responses, feelings);
           if (entry === undefined) {
             // The app locked while the entry was being prepared. The locked
             // screen is already showing; there is nothing more to do here.
             return;
           }
           setResponses(EMPTY);
+          setFeelings([]);
+          setTried(false);
           navigate(pathFor("journal-entry", { id: entry.id }));
         }}
       >
+        <p>
+          Each question needs an answer before the entry is saved. If nothing
+          comes to mind for one, say so in your own words. That is a real
+          answer.
+        </p>
         {PROMPTS.map((prompt) => (
           <TextArea
             key={prompt.key}
             label={prompt.label}
             name={`journal-${prompt.key}`}
             rows={5}
+            required
             value={responses[prompt.key]}
+            error={missing.includes(prompt.key) ? ANSWER_NEEDED : undefined}
             onInput={(value) => {
               answer(prompt.key, value);
             }}
           />
         ))}
-        <p>
-          If nothing comes to mind for a question, you can say so in your own
-          words. That is a real answer.
-        </p>
+        <CheckboxGroup
+          legend="How are you feeling? (optional)"
+          hint="Choose any that fit, or none. Only what you choose is noted."
+          name="journal-feelings"
+          options={FEELINGS}
+          selected={feelings}
+          onChange={setFeelings}
+        />
         <div class="button-row">
           <Button type="submit" variant="primary" disabled={action.busy}>
             Save entry

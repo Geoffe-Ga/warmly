@@ -3,6 +3,7 @@ import { useState } from "preact/hooks";
 
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
+import { CheckboxGroup } from "../components/CheckboxGroup";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { TextArea, TextField } from "../components/Field";
 import { PageLayout } from "../components/PageLayout";
@@ -21,6 +22,7 @@ export const GALLERY_PATH = "/dev/components";
 export function Gallery(): JSX.Element {
   const [name, setName] = useState("");
   const [note, setNote] = useState("");
+  const [feelings, setFeelings] = useState<string[]>(["calm"]);
   const [open, setOpen] = useState(false);
   const [outcome, setOutcome] = useState("Nothing chosen yet.");
 
@@ -56,6 +58,13 @@ export function Gallery(): JSX.Element {
             hint="Write as much or as little as you like."
             value={note}
             onInput={setNote}
+          />
+          <CheckboxGroup
+            legend="How are you feeling?"
+            hint="Choose any that fit, or none."
+            options={["calm", "tired", "hopeful"]}
+            selected={feelings}
+            onChange={setFeelings}
           />
         </div>
       </Card>

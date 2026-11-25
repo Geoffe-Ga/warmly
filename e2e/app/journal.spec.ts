@@ -167,6 +167,65 @@ test.describe("the journal", () => {
     await expectNoViolations(page);
   });
 
+  test("a blank or whitespace-only answer blocks saving; 'nothing to report' and chosen feelings pass (AC-02, JR-002, JR-003)", async ({
+    page,
+  }) => {
+    await onboard(page);
+    await page.getByRole("link", { name: "Journal", exact: true }).click();
+    await page.getByRole("link", { name: "Write a new entry" }).click();
+    const [good, improve, loved] = PROMPTS.map((prompt) =>
+      page.getByLabel(prompt),
+    );
+    if (good === undefined || improve === undefined || loved === undefined) {
+      throw new Error("three prompts are expected");
+    }
+
+    await good.fill("Synthetic: nothing to report this week.");
+    await improve.fill("   \n\t ");
+    await page.getByRole("button", { name: "Save entry" }).click();
+
+    // Nothing is saved; the two unanswered fields say what to do.
+    await expect(page).toHaveURL(/\/journal\/new$/);
+    await expect(good).not.toHaveAttribute("aria-invalid", "true");
+    await expect(improve).toHaveAttribute("aria-invalid", "true");
+    await expect(loved).toHaveAttribute("aria-invalid", "true");
+    await expect(improve).toBeFocused();
+    await expect(improve).toHaveAccessibleDescription(
+      /Write something here to finish the entry/,
+    );
+    await expectNoViolations(page);
+
+    await improve.fill("Nothing comes to mind this week");
+    await expect(improve).not.toHaveAttribute("aria-invalid", "true");
+    await loved.fill("Synthetic: nothing to report.");
+
+    // The feelings check-in works from the keyboard alone.
+    const feelings = page.getByRole("group", {
+      name: "How are you feeling? (optional)",
+    });
+    await expect(feelings.getByRole("checkbox")).toHaveCount(11);
+    await feelings.getByRole("checkbox", { name: "calm" }).focus();
+    await page.keyboard.press("Space");
+    await feelings.getByRole("checkbox", { name: "tired" }).check();
+    await expect(
+      feelings.getByRole("checkbox", { name: "calm" }),
+    ).toBeChecked();
+    await expectNoViolations(page);
+    await page.getByRole("button", { name: "Save entry" }).click();
+
+    await expect(page).toHaveURL(/\/journal\/entries\/[0-9a-f-]{36}$/);
+    await expect(page.getByText("A journal entry.")).toBeVisible();
+    await expect(
+      page
+        .locator("section.card")
+        .filter({
+          has: page.getByRole("heading", { name: "Feelings you noted" }),
+        })
+        .getByText("calm, tired"),
+    ).toBeVisible();
+    await expectNoViolations(page);
+  });
+
   test("an entry that is not on this device says so", async ({ page }) => {
     await onboard(page);
     await page.evaluate(() => {

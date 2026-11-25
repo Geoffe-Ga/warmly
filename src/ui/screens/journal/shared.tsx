@@ -5,6 +5,7 @@
 import { useEffect, useState } from "preact/hooks";
 
 import { useServices, type Services } from "../../../app/services";
+import type { Feeling } from "../../../domain/journal/feelings";
 import {
   newEntry,
   type EntryDate,
@@ -28,13 +29,15 @@ export const CANNOT_OPEN =
  *
  * @param services - The app's services.
  * @param responses - The three answers, as typed.
+ * @param feelings - Feelings the person chose to note, if any.
  * @returns The stored entry, or `undefined` if the app locked first.
  */
 export async function saveNewEntry(
   services: Pick<Services, "records" | "session">,
   responses: Responses,
+  feelings: readonly Feeling[] = [],
 ): Promise<JournalEntry | undefined> {
-  const entry = await newEntry(responses);
+  const entry = await newEntry(responses, new Date(), feelings);
   if (services.session.state !== "unlocked") {
     return undefined;
   }

@@ -1,12 +1,28 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CONTENT_HASH_VERSION,
+  canonicalContent,
+  contentHash,
+} from "../../../src/domain/journal/content-hash";
+import {
+  FEELINGS,
+  inListOrder,
+  isFeeling,
+} from "../../../src/domain/journal/feelings";
+import {
   isJournalEntry,
   PROMPTS,
-  contentHash,
   entryDateFor,
   newEntry,
 } from "../../../src/domain/journal/types";
+import {
+  ANSWER_NEEDED,
+  canComplete,
+  hasText,
+  unanswered,
+} from "../../../src/domain/journal/validation";
+import known from "../../fixtures/journal/content-hash-v1.json";
 
 const ANSWERS = {
   good: "We cooked together.",
@@ -93,30 +109,157 @@ describe("the entry date", () => {
   });
 });
 
-describe("the content hash", () => {
-  it("is 64 lower-case hex characters and the same for the same content", async () => {
-    const hash = await contentHash(ANSWERS, ["calm"]);
-
-    expect(hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(
-      await contentHash(
-        { loved: ANSWERS.loved, improve: ANSWERS.improve, good: ANSWERS.good },
-        ["calm"],
-      ),
-    ).toBe(hash);
+describe("the content hash (D-24)", () => {
+  it("is 64 lower-case hex characters", async () => {
+    expect(await contentHash(ANSWERS)).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("changes with any answer, with the feelings, and with which answer holds the text", async () => {
+  it.each(known.cases)(
+    "matches the independently computed answer for $name",
+    async (example) => {
+      expect(known.version).toBe(CONTENT_HASH_VERSION);
+      expect(canonicalContent(example.responses)).toBe(example.canonical);
+      expect(await contentHash(example.responses)).toBe(example.hash);
+    },
+  );
+
+  it("does not depend on the order the answers were put in the object", async () => {
+    expect(
+      await contentHash({
+        loved: ANSWERS.loved,
+        improve: ANSWERS.improve,
+        good: ANSWERS.good,
+      }),
+    ).toBe(await contentHash(ANSWERS));
+  });
+
+  it("is the same however the accents were composed (Unicode NFC)", async () => {
+    const composed = { ...ANSWERS, good: "Caf\u00e9" };
+    const decomposed = { ...ANSWERS, good: "Cafe\u0301" };
+
+    expect(decomposed.good).not.toBe(composed.good);
+    expect(await contentHash(decomposed)).toBe(await contentHash(composed));
+    expect(canonicalContent(decomposed)).toBe(canonicalContent(composed));
+  });
+
+  it("changes with any answer, and with which answer holds the text", async () => {
     const base = await contentHash(ANSWERS);
 
     expect(await contentHash({ ...ANSWERS, good: "x" })).not.toBe(base);
     expect(await contentHash({ ...ANSWERS, improve: "x" })).not.toBe(base);
     expect(await contentHash({ ...ANSWERS, loved: "x" })).not.toBe(base);
-    expect(await contentHash(ANSWERS, ["calm"])).not.toBe(base);
-    expect(await contentHash(ANSWERS, [])).toBe(base);
+    expect(
+      await contentHash({ ...ANSWERS, loved: `${ANSWERS.loved} ` }),
+    ).not.toBe(base);
     expect(await contentHash({ good: "a", improve: "", loved: "" })).not.toBe(
       await contentHash({ good: "", improve: "a", loved: "" }),
     );
+  });
+
+  it("is not changed by feelings, so changing one invalidates nothing", async () => {
+    const now = new Date("2026-11-25T10:00:00Z");
+
+    expect((await newEntry(ANSWERS, now, ["calm", "sad"])).contentHash).toBe(
+      (await newEntry(ANSWERS, now)).contentHash,
+    );
+  });
+
+  it("carries its version inside what is hashed", () => {
+    expect(canonicalContent(ANSWERS).startsWith('{"v":1,"good":')).toBe(true);
+  });
+});
+
+describe("completing an entry (JR-002; AC-02)", () => {
+  it.each(["", "   ", "\n\t", "\u00a0\u2003"])(
+    "blocks completion when an answer is %j",
+    (blank) => {
+      for (const key of ["good", "improve", "loved"] as const) {
+        const responses = {
+          good: "ok",
+          improve: "ok",
+          loved: "ok",
+          [key]: blank,
+        };
+        expect(canComplete(responses)).toBe(false);
+        expect(unanswered(responses)).toEqual([key]);
+      }
+    },
+  );
+
+  it("accepts an explicit 'nothing' answer, and has no minimum length", () => {
+    expect(
+      canComplete({
+        good: "Nothing comes to mind this week",
+        improve: "x",
+        loved: " y ",
+      }),
+    ).toBe(true);
+    expect(hasText("no")).toBe(true);
+  });
+
+  it("lists every missing answer in prompt order", () => {
+    expect(unanswered({ loved: "", good: " ", improve: "x" })).toEqual([
+      "good",
+      "loved",
+    ]);
+    expect(unanswered(ANSWERS)).toEqual([]);
+  });
+
+  it("tells the person what to do, and that 'nothing' is allowed", () => {
+    expect(ANSWER_NEEDED).toMatch(/^Write something here/);
+    expect(ANSWER_NEEDED).toContain("nothing comes to mind");
+  });
+});
+
+describe("the feelings check-in (JR-003, D-21)", () => {
+  it("offers exactly the eleven plain words, in order", () => {
+    expect(FEELINGS).toEqual([
+      "calm",
+      "happy",
+      "grateful",
+      "hopeful",
+      "loved",
+      "tired",
+      "sad",
+      "anxious",
+      "frustrated",
+      "lonely",
+      "overwhelmed",
+    ]);
+  });
+
+  it("knows a listed feeling from anything else", () => {
+    expect(isFeeling("calm")).toBe(true);
+    expect(isFeeling("depressed")).toBe(false);
+    expect(isFeeling("Calm")).toBe(false);
+    expect(isFeeling(3)).toBe(false);
+    expect(isFeeling(undefined)).toBe(false);
+  });
+
+  it("keeps each chosen feeling once, in list order", () => {
+    expect(inListOrder(["sad", "calm", "sad"])).toEqual(["calm", "sad"]);
+    expect(inListOrder([])).toEqual([]);
+  });
+
+  it("is stored on a new entry only when something was chosen", async () => {
+    const now = new Date("2026-11-25T10:00:00Z");
+
+    expect((await newEntry(ANSWERS, now, ["tired", "calm"])).feelings).toEqual([
+      "calm",
+      "tired",
+    ]);
+    expect("feelings" in (await newEntry(ANSWERS, now, []))).toBe(false);
+    expect("feelings" in (await newEntry(ANSWERS, now))).toBe(false);
+  });
+
+  it("is never worked out from what was written", async () => {
+    const entry = await newEntry({
+      good: "I feel calm and happy and grateful",
+      improve: "I am sad, anxious and overwhelmed",
+      loved: "loved",
+    });
+
+    expect(entry.feelings).toBeUndefined();
   });
 });
 
@@ -177,6 +320,7 @@ describe("checking the shape of a stored entry", () => {
     ],
     ["feelings that are not a list", { ...valid, feelings: "calm" }],
     ["a feeling that is not text", { ...valid, feelings: ["calm", 3] }],
+    ["a feeling that is not on the list", { ...valid, feelings: ["furious"] }],
   ])("refuses %s", (_name, value) => {
     expect(isJournalEntry(value)).toBe(false);
   });

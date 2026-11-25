@@ -1,11 +1,12 @@
 /**
  * The journal entry and its three prompts (PRD JR-001, §7).
  *
- * Everything here is private content. It exists in memory and, once storage
- * arrives, on disk only as ciphertext. It never goes in a URL, a log or an
- * error message.
+ * Everything here is private content. It exists in memory and, on disk,
+ * only as ciphertext. It never goes in a URL, a log or an error message.
  */
-import { utf8 } from "../../crypto/encoding";
+import { contentHash } from "./content-hash";
+import { inListOrder, isFeeling, type Feeling } from "./feelings";
+import { canComplete } from "./validation";
 
 /** Which of the three prompts a response answers. */
 export type PromptKey = "good" | "improve" | "loved";
@@ -52,8 +53,8 @@ export interface JournalEntry {
   readonly status: "draft" | "complete";
   readonly responses: Responses;
   /** Feelings the person chose to note. Never inferred from the text. */
-  readonly feelings?: readonly string[];
-  /** SHA-256 of the responses and feelings, lower-case hex. */
+  readonly feelings?: readonly Feeling[];
+  /** Hash of the three answers; see `content-hash.ts`. */
   readonly contentHash: string;
 }
 
@@ -107,34 +108,8 @@ export function isJournalEntry(value: unknown): value is JournalEntry {
     isEntryDate(entry["entryDate"]) &&
     isResponses(entry["responses"]) &&
     (entry["feelings"] === undefined ||
-      (Array.isArray(entry["feelings"]) && entry["feelings"].every(isText)))
+      (Array.isArray(entry["feelings"]) && entry["feelings"].every(isFeeling)))
   );
-}
-
-/**
- * Hash what an entry says, so that later a quotation can be checked against
- * the exact text it came from.
- *
- * @param responses - The three answers.
- * @param feelings - The noted feelings, if any.
- * @returns SHA-256 over a fixed JSON form of both, lower-case hex.
- */
-export async function contentHash(
-  responses: Responses,
-  feelings: readonly string[] = [],
-): Promise<string> {
-  // Keys are written in a fixed order, so the same content always hashes
-  // the same whatever order the object was built in.
-  const canonical = JSON.stringify([
-    responses.good,
-    responses.improve,
-    responses.loved,
-    [...feelings],
-  ]);
-  const digest = await crypto.subtle.digest("SHA-256", utf8(canonical));
-  return [...new Uint8Array(digest)]
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 /**
@@ -167,23 +142,26 @@ export function entryDateFor(
  *
  * @param responses - The three answers, as typed.
  * @param now - The current time.
+ * @param feelings - Feelings the person chose to note, if any.
  * @returns The entry, with a fresh random ID.
  */
 export async function newEntry(
   responses: Responses,
   now: Date = new Date(),
+  feelings: readonly Feeling[] = [],
 ): Promise<JournalEntry> {
   const instant = now.toISOString();
-  const answered = PROMPTS.every(
-    (prompt) => responses[prompt.key].trim() !== "",
-  );
+  const noted = inListOrder(feelings);
   return {
     id: crypto.randomUUID(),
     createdAt: instant,
     entryDate: entryDateFor(now),
     updatedAt: instant,
-    status: answered ? "complete" : "draft",
+    status: canComplete(responses) ? "complete" : "draft",
     responses,
+    // Left out entirely when none were chosen: no check-in is not the same
+    // as a check-in that found nothing.
+    ...(noted.length > 0 ? { feelings: noted } : {}),
     contentHash: await contentHash(responses),
   };
 }

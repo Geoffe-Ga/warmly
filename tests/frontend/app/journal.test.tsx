@@ -3,7 +3,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { lockNow } from "../../../src/app/SessionControls";
+import { FEELINGS } from "../../../src/domain/journal/feelings";
 import { PROMPTS, type JournalEntry } from "../../../src/domain/journal/types";
+import { ANSWER_NEEDED } from "../../../src/domain/journal/validation";
 import { CANNOT_OPEN } from "../../../src/ui/screens/journal/shared";
 import {
   formatEntryDate,
@@ -225,12 +227,27 @@ describe("writing an entry (JR-001)", () => {
     expect(boxes.every((box) => box.tagName === "TEXTAREA")).toBe(true);
   });
 
-  it("has no skip control, and says an honest 'nothing' is a real answer", async () => {
+  it("has no skip control, and says before the questions that an honest 'nothing' is a real answer (JR-002)", async () => {
     await renderApp("/journal/new", await unlockedWith());
 
     expect(screen.queryByRole("button", { name: /skip/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /skip/i })).toBeNull();
-    expect(screen.getByText(/That is a real answer\./)).toBeTruthy();
+    const help = screen.getByText(/That is a real answer\./);
+    expect(help.textContent).toContain("Each question needs an answer");
+    expect(
+      help.compareDocumentPosition(
+        screen.getByLabelText(PROMPTS[0]?.label ?? ""),
+      ) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    for (const prompt of PROMPTS) {
+      expect(screen.getByLabelText(prompt.label)).toHaveProperty(
+        "required",
+        true,
+      );
+      expect(
+        screen.getByLabelText(prompt.label).hasAttribute("aria-invalid"),
+      ).toBe(false);
+    }
   });
 
   it("saves what was typed and opens the new entry", async () => {
@@ -263,19 +280,109 @@ describe("writing an entry (JR-001)", () => {
     expect(await screen.findByText("Answer 2")).toBeTruthy();
   });
 
-  it("keeps an unfinished entry as a draft", async () => {
+  it("saves nothing while an answer is blank or only spaces, and says so on each such field (AC-02)", async () => {
     const services = await renderApp("/journal/new", await unlockedWith());
+    const [good, improve, loved] = PROMPTS.map((prompt) =>
+      screen.getByLabelText(prompt.label),
+    );
 
-    await userEvent.type(screen.getByLabelText(PROMPTS[0]?.label ?? ""), "One");
+    await userEvent.type(good as HTMLElement, "One");
+    await userEvent.type(improve as HTMLElement, "  {Enter} ");
     await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
 
-    await waitFor(async () => {
-      expect((await services.records.list("journal-entry"))[0]?.status).toBe(
-        "draft",
-      );
+    await waitFor(() => {
+      expect(improve?.getAttribute("aria-invalid")).toBe("true");
     });
-    expect(await screen.findByText(/A draft:/)).toBeTruthy();
-    expect(screen.getAllByText("Not answered yet.")).toHaveLength(2);
+    expect(loved?.getAttribute("aria-invalid")).toBe("true");
+    expect(good?.hasAttribute("aria-invalid")).toBe(false);
+    for (const field of [improve, loved]) {
+      const described = (field?.getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .map((id) => document.getElementById(id)?.textContent);
+      expect(described).toContain(ANSWER_NEEDED);
+    }
+    // Focus goes to the first field that needs an answer.
+    await waitFor(() => {
+      expect(document.activeElement).toBe(improve);
+    });
+    expect(await services.records.list("journal-entry")).toEqual([]);
+    expect(window.location.pathname).toBe("/journal/new");
+    // What was typed is still there.
+    expect(good).toHaveProperty("value", "One");
+  });
+
+  it("drops a field's message as soon as it has text, and then saves", async () => {
+    const services = await renderApp("/journal/new", await unlockedWith());
+    const [good, improve, loved] = PROMPTS.map((prompt) =>
+      screen.getByLabelText(prompt.label),
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
+    await waitFor(() => {
+      expect(screen.getAllByText(ANSWER_NEEDED)).toHaveLength(3);
+    });
+    expect(document.activeElement).toBe(good);
+
+    await userEvent.type(
+      good as HTMLElement,
+      "Nothing comes to mind this week",
+    );
+    expect(screen.getAllByText(ANSWER_NEEDED)).toHaveLength(2);
+    await userEvent.type(improve as HTMLElement, "no");
+    await userEvent.type(loved as HTMLElement, "x");
+    expect(screen.queryByText(ANSWER_NEEDED)).toBeNull();
+    await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
+
+    const [saved] = await waitFor(async () => {
+      const all = await services.records.list("journal-entry");
+      expect(all).toHaveLength(1);
+      return all;
+    });
+    expect(saved?.status).toBe("complete");
+    expect(saved?.responses.good).toBe("Nothing comes to mind this week");
+    expect(saved?.feelings).toBeUndefined();
+  });
+
+  it("offers the feelings check-in as optional checkboxes, none chosen (JR-003)", async () => {
+    await renderApp("/journal/new", await unlockedWith());
+
+    const group = screen.getByRole("group", {
+      name: "How are you feeling? (optional)",
+    });
+    const boxes = within(group).getAllByRole("checkbox");
+    expect(boxes.map((box) => box.getAttribute("value"))).toEqual([
+      ...FEELINGS,
+    ]);
+    expect(boxes.some((box) => (box as HTMLInputElement).checked)).toBe(false);
+    expect(boxes.some((box) => (box as HTMLInputElement).required)).toBe(false);
+  });
+
+  it("stores the feelings that were chosen, and never guesses any from the text", async () => {
+    const services = await renderApp("/journal/new", await unlockedWith());
+    for (const prompt of PROMPTS) {
+      await userEvent.type(
+        screen.getByLabelText(prompt.label),
+        "I felt sad and anxious",
+      );
+    }
+    await userEvent.click(screen.getByLabelText("hopeful"));
+    await userEvent.click(screen.getByLabelText("calm"));
+    await userEvent.click(screen.getByLabelText("tired"));
+    await userEvent.click(screen.getByLabelText("tired"));
+    await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
+
+    const [saved] = await waitFor(async () => {
+      const all = await services.records.list("journal-entry");
+      expect(all).toHaveLength(1);
+      return all;
+    });
+    expect(saved?.feelings).toEqual(["calm", "hopeful"]);
+    const noted = (
+      await screen.findByRole("heading", {
+        level: 2,
+        name: "Feelings you noted",
+      })
+    ).closest("section");
+    expect(noted?.textContent).toContain("calm, hopeful");
   });
 });
 

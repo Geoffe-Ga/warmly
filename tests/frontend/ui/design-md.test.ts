@@ -141,6 +141,8 @@ describe("DESIGN.md front matter", () => {
         "text-input",
         "text-input-invalid",
         "text-area",
+        "choice",
+        "choice-selected",
         "card",
         "action-link",
         "banner-info",

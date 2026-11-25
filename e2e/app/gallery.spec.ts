@@ -65,7 +65,17 @@ test.describe("component kit (UI-001..008, AC-23)", () => {
   }) => {
     await openGallery(page);
 
-    const controls = page.locator("main button, main input, main textarea");
+    // A checkbox is tapped through the label that wraps it, so the label is
+    // the target that is measured.
+    const controls = page.locator(
+      "main button, main input:not([type=checkbox]), main textarea, main label:has(input[type=checkbox])",
+    );
+    await expect(
+      page.locator("main input[type=checkbox]:not(label input)"),
+    ).toHaveCount(0);
+    expect(
+      await page.locator("main label:has(input[type=checkbox])").count(),
+    ).toBeGreaterThan(0);
     const count = await controls.count();
     expect(count).toBeGreaterThan(0);
     for (let index = 0; index < count; index += 1) {
