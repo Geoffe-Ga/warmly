@@ -66,9 +66,18 @@ const OWN_HEADERS: ReadonlySet<string> = new Set([
 ]);
 
 /** Refuse extra headers that would stand in for the client's own. */
-function checkExtraHeaders(headers: ApiRequest["headers"]): void {
+function checkExtraHeaders(
+  headers: ApiRequest["headers"],
+  signature: Readonly<Record<string, string>>,
+): void {
+  // The signing headers are read from the signature itself, so a header
+  // added to it later is covered without anyone remembering this list.
+  const own = new Set([
+    ...OWN_HEADERS,
+    ...Object.keys(signature).map((name) => name.toLowerCase()),
+  ]);
   for (const name of Object.keys(headers ?? {})) {
-    if (OWN_HEADERS.has(name.toLowerCase())) {
+    if (own.has(name.toLowerCase())) {
       throw new TypeError("A request may not set the API client's own headers");
     }
   }
@@ -165,11 +174,14 @@ export class ApiClient {
    *   `clock_wrong` for a 401.
    */
   async send(session: AuthSession, request: ApiRequest): Promise<Response> {
-    checkExtraHeaders(request.headers);
+    // Checked before anything is signed, against the fixed names.
+    checkExtraHeaders(request.headers, {});
     const hasBody = request.body !== undefined;
     // Serialised once: the bytes that are signed are the bytes that are sent.
     const body = utf8(hasBody ? JSON.stringify(request.body) : "");
     const signature = await this.#signature(request, body);
+    // And again against whatever this request's signature turned out to use.
+    checkExtraHeaders(request.headers, signature);
     let response: Response;
     try {
       response = await this.#fetch(this.#baseUrl + request.path, {

@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { useMemo } from "preact/hooks";
+import { useEffect, useMemo, useRef } from "preact/hooks";
 
 import { grantConsent, type ConsentToken } from "../../ai/consent";
 import type { Disclosure } from "../../ai/gateway";
@@ -58,13 +58,17 @@ export function describeSent(disclosure: Disclosure): string {
  * and it sends nothing.
  *
  * What it says comes from the gateway's own description of the very
- * request the token is made for.
+ * request the token is made for, worked out once each time it is shown. If
+ * the request cannot be described (no provider is connected, or the
+ * provider cannot size it), it says so and offers nothing to agree to. If
+ * the provider goes away while the dialog is open, agreeing still makes a
+ * token, and the gateway refuses the call when it is made.
+ *
+ * Each showing makes at most one token, however many times Send is
+ * pressed.
  *
  * @param props - See {@link AiDisclosureDialogProps}.
  * @returns The dialog, or `null` when closed.
- * If the request cannot be described (no provider is connected, or the
- * provider cannot size it), it says so and offers nothing to agree to.
- *
  */
 export function AiDisclosureDialog(
   props: AiDisclosureDialogProps,
@@ -85,6 +89,12 @@ export function AiDisclosureDialog(
       return "failed" as const;
     }
   }, [ai, request, open]);
+
+  const agreed = useRef(false);
+  useEffect(() => {
+    // A new showing, or a different request, may be agreed to afresh.
+    agreed.current = false;
+  }, [request, open]);
 
   if (disclosure === undefined) {
     return null;
@@ -110,7 +120,12 @@ export function AiDisclosureDialog(
       cancelLabel="Don't send"
       onCancel={props.onCancel}
       onConfirm={() => {
-        props.onConfirm(grantConsent(request));
+        // One agreement, one token: a second press before the dialog has
+        // closed does nothing.
+        if (!agreed.current) {
+          agreed.current = true;
+          props.onConfirm(grantConsent(request));
+        }
       }}
     >
       <p>

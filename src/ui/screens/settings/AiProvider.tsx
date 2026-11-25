@@ -24,8 +24,8 @@ export function AiProviderCard(): JSX.Element {
             <strong>{NO_PROVIDER}</strong>
           </p>
           <p>
-            Warmly works without one. Journaling, search and everything you have
-            written stay on your devices, encrypted.
+            Warmly works without one. Journaling and search use no AI, and what
+            you write stays encrypted so that only you can read it.
           </p>
         </>
       ) : (

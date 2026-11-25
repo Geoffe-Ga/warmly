@@ -202,6 +202,42 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
     expect(confirmed).not.toHaveBeenCalled();
   });
 
+  it("makes one consent however many times Send is pressed, and a fresh one the next time it is shown", async () => {
+    const services = {
+      ...testServices("unlocked"),
+      ai: new AiGateway(exampleAi()),
+    };
+    const asked = request(2);
+    const confirmed = vi.fn();
+    const view = (shown: boolean) => (
+      <ServicesProvider value={services}>
+        <AiDisclosureDialog
+          open={shown}
+          request={asked}
+          onConfirm={confirmed}
+          onCancel={vi.fn()}
+        />
+      </ServicesProvider>
+    );
+    const user = userEvent.setup();
+    // The screen is slow to close the dialog: it stays open after Send.
+    const { rerender } = render(view(true));
+    const send = screen.getByRole("button", { name: "Send to Example AI" });
+
+    await user.click(send);
+    await user.click(send);
+    await user.dblClick(send);
+    expect(confirmed).toHaveBeenCalledTimes(1);
+
+    rerender(view(false));
+    rerender(view(true));
+    await user.click(
+      screen.getByRole("button", { name: "Send to Example AI" }),
+    );
+    expect(confirmed).toHaveBeenCalledTimes(2);
+    expect(confirmed.mock.calls[1]?.[0]).not.toBe(confirmed.mock.calls[0]?.[0]);
+  });
+
   it("sizes a request once while it is shown, not on every render", () => {
     const provider = exampleAi();
     const estimate = vi.spyOn(provider, "estimateTokens");
@@ -312,6 +348,10 @@ describe("the AI provider on the Settings screen (AI-001, AC-23)", () => {
     );
     expect(card.getByText(NO_PROVIDER)).toBeTruthy();
     expect(card.getByText(/Warmly works without one/)).toBeTruthy();
+    // Encrypted copies are also kept on the server, so it does not say
+    // that writing stays on the device.
+    expect(card.getByText(/only you can read it/)).toBeTruthy();
+    expect(screen.queryByText(/stays? on your devices?/)).toBeNull();
     expect(card.getByText(/only ever happens when you ask/)).toBeTruthy();
   });
 
