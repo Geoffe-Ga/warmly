@@ -135,8 +135,8 @@ python -m warmly.main          # serves http://127.0.0.1:8000
 curl http://127.0.0.1:8000/v1/health
 ```
 
-Every route except health and readiness needs `Authorization: Bearer <access token>`
-and is still a stub: it returns fixed data, stores nothing, and says so with a
+Every route except health and readiness needs `Authorization: Bearer <access token>`.
+A route that is still a stub returns fixed data, stores nothing, and says so with a
 `Warmly-Stub: true` response header. The contract lives in
 `openapi/warmly.v1.json` and is served at `/v1/openapi.json`.
 

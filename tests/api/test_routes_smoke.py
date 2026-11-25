@@ -11,8 +11,6 @@ from tests.api.cases import (
     CASES,
     DEVICE_ID,
     ENROLLMENT_ID,
-    OP_ID,
-    OPERATION,
     Case,
 )
 from tests.auth.devices import DEVICE_ID as REGISTERED_DEVICE_ID
@@ -75,29 +73,3 @@ def test_changes_echo_the_cursor_and_default_to_zero(client: TestClient) -> None
         "has_more": False,
     }
     assert client.get("/v1/sync/changes").json()["next_cursor"] == "0"
-
-
-def test_stub_operations_never_claim_to_have_applied(client: TestClient) -> None:
-    """A stub persists nothing, so it must not report ``applied``."""
-    second = OPERATION | {"op_id": "55555555-5555-4555-8555-555555555555"}
-
-    response = client.post(
-        "/v1/sync/operations", json={"operations": [OPERATION, second]}
-    )
-
-    assert response.json() == {
-        "results": [
-            {
-                "op_id": OP_ID,
-                "status": "rejected",
-                "revision": None,
-                "current_revision": None,
-            },
-            {
-                "op_id": second["op_id"],
-                "status": "rejected",
-                "revision": None,
-                "current_revision": None,
-            },
-        ]
-    }

@@ -25,6 +25,7 @@ from warmly.auth.verifier import TokenVerifier
 from warmly.schemas.devices import Device, RegisterDeviceRequest
 from warmly.schemas.enrollment import Enrollment, StartEnrollmentRequest
 from warmly.schemas.recovery import PutRecoveryEnvelopeRequest, RecoveryEnvelope
+from warmly.schemas.sync import OperationResult, SyncOperation, refusal_for
 
 
 class FakeDatabase:
@@ -384,6 +385,43 @@ class InMemoryEnrollmentStore:
         return self._advance(stored, {"claimed", "revealed"}, status="rejected")
 
 
+class InMemorySyncStore:
+    """Synced records in memory, following ADR-0006 like the real store."""
+
+    def __init__(self) -> None:
+        """Start with no records."""
+        # (owner, record) -> (type, revision, tombstone, payload)
+        self.records: dict[tuple[UUID, UUID], tuple[int, int, bool, str | None]] = {}
+        self.receipts: dict[tuple[UUID, UUID], int] = {}
+
+    async def apply(self, owner_id: UUID, operation: SyncOperation) -> OperationResult:
+        """Apply one operation, or say why it was not applied."""
+        op_id = operation.op_id
+        earlier = self.receipts.get((owner_id, op_id))
+        if earlier is not None:
+            return OperationResult(op_id=op_id, status="duplicate", revision=earlier)
+        key = (owner_id, operation.record_id)
+        stored = self.records.get(key)
+        refusal = refusal_for(operation, None if stored is None else stored[:3])
+        if refusal is not None:
+            return refusal
+        revision = operation.base_revision + 1
+        self.records[key] = (
+            operation.type,
+            revision,
+            operation.tombstone,
+            operation.payload,
+        )
+        self.receipts[(owner_id, op_id)] = revision
+        return OperationResult(op_id=op_id, status="applied", revision=revision)
+
+
+@pytest.fixture
+def sync_store() -> InMemorySyncStore:
+    """Return an empty sync store."""
+    return InMemorySyncStore()
+
+
 @pytest.fixture
 def enrollment_store() -> InMemoryEnrollmentStore:
     """Return a store in which the test owner has one request waiting."""
@@ -432,6 +470,7 @@ def app(
     recovery_store: InMemoryRecoveryStore,
     device_store: InMemoryDeviceStore,
     enrollment_store: InMemoryEnrollmentStore,
+    sync_store: InMemorySyncStore,
 ) -> FastAPI:
     """Return a fresh application with a ready database and a local key."""
     verifier = TokenVerifier(
@@ -443,6 +482,7 @@ def app(
         recovery_store=recovery_store,
         device_store=device_store,
         enrollment_store=enrollment_store,
+        sync_store=sync_store,
     )
 
 

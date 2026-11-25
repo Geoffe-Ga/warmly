@@ -2059,7 +2059,7 @@
     },
     "/v1/sync/operations": {
       "post": {
-        "description": "Apply an idempotent batch of record operations.\n\nStub: reports every operation as rejected, because nothing is persisted.\nThe payloads are validated for shape only and are otherwise untouched.\n\nArgs:\n    request: The batch to apply.\n\nReturns:\n    One ``rejected`` result per operation, in request order.",
+        "description": "Apply an idempotent batch of record operations.\n\nEach operation is applied on its own, in request order: one that is\nrefused does not stop the others. A change is stored only when it was\nmade on top of the record's current revision. The server never merges\nand never lets the latest writer win. Sending an operation that was\nalready applied again changes nothing and reports ``duplicate``.\n\nThe payloads are opaque: they are stored as sent and never decoded.\n\nArgs:\n    request: The batch to apply.\n    caller: The verified account and device.\n    store: Where records are kept.\n\nReturns:\n    One result per operation, in request order.",
         "operationId": "post_operations_v1_sync_operations_post",
         "requestBody": {
           "content": {

@@ -11,13 +11,14 @@ Human-facing overview: [README.md](README.md).
 
 **Status:** walking skeleton in progress. `warmly/` (Python) verifies access
 tokens and device signatures on every `/v1` route but health, stores recovery
-envelopes and device identities, and serves the remaining routes as typed
+envelopes and device identities, accepts sync operations (compare-and-swap
+on the revision, applied once), and serves the remaining routes as typed
 stubs. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
 servers outside production) and a journal that can be written, listed, read,
 searched, edited in place and deleted for good, with drafts saved as they
 are typed, stored encrypted in IndexedDB. A sync engine sends the outbox
-and fetches changes (ADR-0006); the server's sync routes are still stubs, so
+and fetches changes (ADR-0006); the server's change feed is still a stub, so
 changes stay queued. Other routes render accessible placeholders.
 
 ---
@@ -147,6 +148,15 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   (`warmly.auth.device.require_device` or `CurrentCaller`; ADR-0005). The
   only exceptions are listed in the ADR, and a test fails if a new route is
   neither signed nor listed. Never accept an unsigned request "for now".
+- Synced records are written only by `PostgresSyncStore.apply`
+  (`warmly/db/sync_store.py`, ADR-0006): one transaction per operation,
+  which locks the account's counter row, checks the receipt, then writes
+  only if the record is still at the operation's base revision. Never
+  decode a payload, compare timestamps or pick a winner. The refusal rules
+  live in `refusal_for` (`warmly/schemas/sync.py`). A refused operation
+  stores nothing. The API role cannot delete a record, and a trigger keeps
+  a tombstone deleted. The store and the in-memory test store must both
+  pass `tests/fixtures/sync/scenarios-v1.json`.
 - Database tests need `WARMLY_TEST_DATABASE_URL` (see README). They fail when it is
   missing; never mark them to skip.
 

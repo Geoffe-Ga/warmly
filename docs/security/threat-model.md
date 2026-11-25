@@ -28,7 +28,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 
 | Threat (PRD SEC-001) | Control | Status |
 | --- | --- | --- |
-| Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003). The client sends envelopes only, and the sync protocol carries no content or content hash (ADR-0006); the server side is planned: #33, #34 |
+| Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003). The client sends envelopes only, and the sync protocol carries no content or content hash (ADR-0006); the server stores the payload text as sent and never decodes it (#33); the change feed is planned: #34 |
 | Someone reading the browser's storage on a locked or stolen device | Records are stored only as envelopes; the database holds IDs, type numbers and revisions but no content, hash or index; decrypted records live in memory only while unlocked. Drafts are records like any other. The database name shows the account ID, and until sync exists the browser may evict the data (ADR-0014) | **In place** |
 | Backend or operator curiosity | Same, plus logs that cannot contain request content | Logging: **in place** (this issue) |
 | Cross-account access | Owner taken only from a verified token ([authentication](authentication.md)); owner-only database policies (ADR-0002) | **In place**; per-route ownership checks arrive with each route, rate limits: #38 |

@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from warmly import __version__
 from warmly.api import API_PREFIX, build_api_router
 from warmly.api.errors import install_error_handlers
-from warmly.api.ports import DeviceStore, EnrollmentStore, RecoveryStore
+from warmly.api.ports import DeviceStore, EnrollmentStore, RecoveryStore, SyncStore
 from warmly.auth.device import DeviceVerifier
 from warmly.auth.keys import remote_key_source
 from warmly.auth.verifier import TokenVerifier
@@ -19,6 +19,7 @@ from warmly.db.database import Database
 from warmly.db.device_store import PostgresDeviceStore
 from warmly.db.enrollment_store import PostgresEnrollmentStore
 from warmly.db.recovery_store import OwnerTransactions, PostgresRecoveryStore
+from warmly.db.sync_store import PostgresSyncStore
 from warmly.middleware.body_limit import BodyLimitMiddleware
 from warmly.middleware.request_log import RequestLogMiddleware
 from warmly.middleware.security_headers import SecurityHeadersMiddleware
@@ -63,6 +64,7 @@ def create_app(
     recovery_store: RecoveryStore | None = None,
     device_store: DeviceStore | None = None,
     enrollment_store: EnrollmentStore | None = None,
+    sync_store: SyncStore | None = None,
     clock: Callable[[], float] = time.time,
 ) -> FastAPI:
     """Build the FastAPI application.
@@ -83,6 +85,8 @@ def create_app(
             database tables.
         enrollment_store: Where device pairing requests are kept, instead of
             the database table.
+        sync_store: Where synced records are kept, instead of the database
+            tables.
         clock: Seconds since the epoch, for judging request timestamps.
 
     Returns:
@@ -117,6 +121,7 @@ def create_app(
     app.state.recovery_store = recovery_store or PostgresRecoveryStore(database)
     app.state.device_store = device_store or PostgresDeviceStore(database)
     app.state.enrollment_store = enrollment_store or PostgresEnrollmentStore(database)
+    app.state.sync_store = sync_store or PostgresSyncStore(database)
     app.state.clock = clock
     app.state.device_verifier = DeviceVerifier(app.state.device_store, clock=clock)
     install_error_handlers(app)
