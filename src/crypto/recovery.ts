@@ -117,6 +117,8 @@ function toBase32(bytes: Uint8Array): string {
   return text;
 }
 
+// The caller has already checked the length, so the text holds a whole
+// number of bytes: 56 characters are exactly 35 bytes.
 function fromBase32(text: string): Uint8Array<ArrayBuffer> | undefined {
   const bytes = new Uint8Array((text.length * 5) / 8);
   let bits = 0;

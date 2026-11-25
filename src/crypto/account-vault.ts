@@ -95,7 +95,10 @@ export class AccountVault implements KeyVault {
     rootKeyBytes: Uint8Array<ArrayBuffer>,
   ): Promise<void> {
     this.#root = await importRootKey(rootKeyBytes);
-    await this.#device?.save(userId, rootKeyBytes);
+    // Remembering the key on this device is a convenience. If it cannot be
+    // saved, the journal is still open, and the device simply needs the
+    // recovery key next time.
+    await this.#device?.save(userId, rootKeyBytes).catch(() => undefined);
   }
 
   /** Open the stored envelope with a typed recovery key. */
@@ -191,11 +194,13 @@ export class AccountVault implements KeyVault {
 
   async beginRecoveryKeyRotation(currentRecoveryKey: string): Promise<string> {
     const session = await this.#session();
+    // Starting a rotation abandons anything prepared earlier, whether or not
+    // the current key turns out to be right.
+    this.#dropPending();
     const { stored, rootKeyBytes } = await this.#open(
       session,
       currentRecoveryKey,
     );
-    this.#dropPending();
     const secret = generateRecoverySecret();
     this.#pending = {
       kind: "rotate",
@@ -238,8 +243,14 @@ export class AccountVault implements KeyVault {
       this.#dropPending();
       throw new VaultError(conflict);
     }
-    await this.#adopt(session.userId, pending.rootKeyBytes);
-    this.#dropPending();
+    // The change is now on the server, so it is no longer pending whatever
+    // happens next. Trying it again would be refused as a conflict with
+    // itself, and would wrongly report that another device got there first.
+    try {
+      await this.#adopt(session.userId, pending.rootKeyBytes);
+    } finally {
+      this.#dropPending();
+    }
   }
 
   async fingerprint(): Promise<string | undefined> {

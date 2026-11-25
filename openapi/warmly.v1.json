@@ -458,6 +458,7 @@
             "type": "integer"
           },
           "format_version": {
+            "maximum": 1.0,
             "minimum": 1.0,
             "title": "Format Version",
             "type": "integer"

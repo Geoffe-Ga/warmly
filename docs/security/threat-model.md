@@ -46,6 +46,16 @@ encrypted on the user's device and the backend stores ciphertext only.
 
 ## Known windows
 
+- **The recovery envelope routes check the session, not the device.** Until
+  every request is signed by a device key (#21, #23), a stolen access token
+  can read the envelope, which is useless without the 256-bit recovery key,
+  and can replace it at the current version, which would stop the recovery
+  key working. Trusted devices would be unaffected, and nothing would be
+  disclosed.
+- **Replacing the recovery key does not rotate the root key.** An old
+  recovery key together with an old copy of the envelope still opens the
+  root key (ADR-0003).
+
 - **A signed-out or revoked session's access token** stays valid until it
   expires, because the API verifies tokens without calling the auth provider.
   The token decrypts nothing by itself. Binding each request to a device key

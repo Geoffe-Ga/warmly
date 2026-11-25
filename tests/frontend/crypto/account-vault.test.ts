@@ -42,6 +42,11 @@ function device(envelopes: RecoveryEnvelopeStore = server): AccountVault {
   return new AccountVault(auth, envelopes);
 }
 
+async function signUpSecondAccount(): Promise<void> {
+  await auth.signOut();
+  await signUp(OTHER_EMAIL);
+}
+
 async function code(work: Promise<unknown>): Promise<string> {
   try {
     await work;
@@ -302,6 +307,22 @@ describe("a trusted device", () => {
     expect(await code(vault.unlock())).toBe("no_keys_on_device");
   });
 
+  it("still finishes setting up when the device cannot remember the key", async () => {
+    await signUp();
+    const store = new FakeDeviceKeyStore();
+    store.save = () => Promise.reject(new Error("storage full"));
+    const vault = new AccountVault(auth, server, store);
+    const key = await vault.createAccountKeys();
+
+    await expect(vault.confirmRecoveryKey()).resolves.toBeUndefined();
+
+    expect(await vault.fingerprint()).toMatch(/^[0-9a-f]{16}$/);
+    expect(await vault.hasKeysOnThisDevice()).toBe(false);
+    // The change is not pending any more, and is not reported as a conflict.
+    expect(await code(vault.confirmRecoveryKey())).toBe("nothing_to_confirm");
+    await expect(device().unlockWithRecoveryKey(key)).resolves.toBeUndefined();
+  });
+
   it("without a device store, always needs the recovery key", async () => {
     const { vault } = await onboarded();
     vault.lock();
@@ -409,6 +430,27 @@ describe("replacing the recovery key (SEC-003)", () => {
     await vault.beginRecoveryKeyRotation(key);
 
     expect(await code(vault.confirmRecoveryKey())).toBe("nothing_to_confirm");
+
+    await signUpSecondAccount();
+    const fresh = device();
+    await fresh.createAccountKeys();
+    expect(await code(fresh.confirmRecoveryKeyRotation())).toBe(
+      "nothing_to_confirm",
+    );
+    expect(await fresh.accountHasKeys()).toBe(false);
+  });
+
+  it("a wrong current key abandons anything prepared earlier", async () => {
+    const { vault, key } = await onboarded();
+    await vault.beginRecoveryKeyRotation(key);
+
+    expect(await code(vault.beginRecoveryKeyRotation("nope"))).toBe(
+      "recovery_key_malformed",
+    );
+
+    expect(await code(vault.confirmRecoveryKeyRotation())).toBe(
+      "nothing_to_confirm",
+    );
   });
 
   it("never stores the same wrapped value twice", async () => {

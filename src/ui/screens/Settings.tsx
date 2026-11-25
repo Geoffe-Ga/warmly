@@ -41,7 +41,9 @@ export function Settings(): JSX.Element {
         <p>
           Your recovery key opens your journal on a new device. If you think
           someone else has seen it, replace it. You'll need the current key to
-          do that.
+          do that. Replacing it stops the old key working from now on. It cannot
+          undo anything already copied by someone who had the old key and access
+          to our servers.
         </p>
         <p>
           <Link href={pathFor("rotate-recovery-key")}>

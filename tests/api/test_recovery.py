@@ -165,6 +165,7 @@ def test_an_owner_named_in_the_request_is_rejected_not_obeyed(
     [
         {"expected_version": -1, "format_version": 1, "wrapped_key": WRAPPED_A},
         {"expected_version": 0, "format_version": 0, "wrapped_key": WRAPPED_A},
+        {"expected_version": 0, "format_version": 2, "wrapped_key": WRAPPED_A},
         {"expected_version": 0, "format_version": 1, "wrapped_key": ""},
         {"expected_version": 0, "format_version": 1, "wrapped_key": "not base64!"},
         {"expected_version": 0, "format_version": 1, "wrapped_key": "A" * 4097},

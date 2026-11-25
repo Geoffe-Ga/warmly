@@ -141,6 +141,12 @@ add nothing (PRD §4.2 allows this for a high-entropy secret).
   old key still works; if two devices race, exactly one wins and the other is
   told. Rotation asks for the current recovery key, because the root key
   cannot be exported from memory to be wrapped again.
+- **What rotation does not do.** It does not change the root key. Someone
+  who holds the old recovery key *and* a copy of the old envelope, for example
+  from a database backup, can still unwrap the root key. Rotation stops the
+  old key working against the live service; it is not revocation of a
+  compromised root key. That would need re-encrypting every record under a
+  new root key, which is outside the MVP and is noted in the threat model.
 - **The password is not involved.** Resetting it changes no key material and
   opens nothing (AC-18).
 - **What the server could do.** It can withhold or roll back the envelope,
