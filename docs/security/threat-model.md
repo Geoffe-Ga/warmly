@@ -31,7 +31,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003). The client sends envelopes only, and the sync protocol carries no content or content hash (ADR-0006); the server stores the payload text as sent and never decodes it, and returns it only to a signed request from one of the owner's devices |
 | Someone reading the browser's storage on a locked or stolen device | Records are stored only as envelopes; the database holds IDs, type numbers and revisions but no content, hash or index; decrypted records live in memory only while unlocked. Drafts are records like any other. The database name shows the account ID, and until sync exists the browser may evict the data (ADR-0014) | **In place** |
 | Backend or operator curiosity | Same, plus logs that cannot contain request content | Logging: **in place** (this issue) |
-| Cross-account access | Owner taken only from a verified token ([authentication](authentication.md)); owner-only database policies (ADR-0002) | **In place**; per-route ownership checks arrive with each route, rate limits: #38 |
+| Cross-account access | Owner taken only from a verified token ([authentication](authentication.md)); owner-only database policies (ADR-0002); every signed-in route attacked by a second account in seven ways against a real database ([isolation test matrix](isolation-test-matrix.md)) | **In place**. A new route with no row in the matrix fails the suite. What the suite does not prove is listed in the matrix |
 | Stolen session token | The auth library keeps the session in `localStorage`; strict CSP limits what script could read it; the token decrypts nothing by itself. Every request behind the token is also signed by a device key that cannot be copied off the device, and a new device can register only by proving it holds the root key (ADR-0005) | **In place** |
 | Lost devices, or a forgotten password | Personal recovery key wraps the root key; the server holds only the wrapped copy; a password reset changes no keys (ADR-0003) | **In place** |
 | Stolen locked device | Root key stored wrapped twice, by a non-extractable device key and by a device passphrase (ADR-0004); 30-minute inactivity lock. A weak device passphrase is the weak point: PBKDF2 slows guessing but does not stop it | **In place**; passkey unlock planned: #80 |
@@ -45,7 +45,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Cross-site scripting | Framework escapes text; CSP forbids inline and evaluated code | **In place** (this issue) |
 | Logs leaking secrets | Closed log schema; no bodies, headers, paths or query strings | **In place** (this issue) |
 | Data sent to unexpected hosts | CSP `connect-src` allowlist; test egress guards | **In place** (this issue) |
-| Oversized or abusive requests | Request body cap | **In place**; rate limits planned: #38 |
+| Oversized or abusive requests | Request body cap; per-account and per-device request limits, counted in the database so they hold across instances (`warmly/api/rate_limit.py`) | **In place** for signed-in requests. Requests with no valid token are refused before they are counted and must be limited at the hosting edge (#61) |
 | Prompt injection in journal text | Evidence framing; citation grounding | Planned: #43, #52 |
 
 ## Known windows

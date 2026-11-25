@@ -9,6 +9,7 @@ revision.
 """
 
 import hashlib
+from typing import NamedTuple
 from uuid import UUID
 
 from psycopg import AsyncConnection
@@ -102,6 +103,11 @@ _READ_LAST_SEQUENCE = """
 # page holds, without reading their payloads. The middle one counts them and
 # adds up the payload sizes before each. The outer one keeps the records
 # that fit and only then reads their payloads.
+#
+# For a page of 2 and a size mark of 10, with three records of 8 characters
+# waiting: the innermost returns all three (2 + 1), so `candidates` is 3;
+# the sizes before each are 0, 8 and 16; the first two are kept (0 and 8
+# are under 10); the caller takes two and, as 3 > 2, says there is more.
 _READ_CHANGES = """
     SELECT record_id, type, revision, sequence, schema_version, tombstone,
            etag, payload, candidates
@@ -123,6 +129,30 @@ _READ_CHANGES = """
      WHERE characters_before < %s
   ORDER BY sequence
 """
+
+
+class SyncInvariantError(RuntimeError):
+    """A write did not do what the checks before it said it would.
+
+    The account's lock and the read before the write make this impossible.
+    If it ever happens, failing is better than telling a device its change
+    was stored when it was not.
+    """
+
+
+class _FeedRow(NamedTuple):
+    """One row of ``_READ_CHANGES``, in the order it selects."""
+
+    record_id: UUID
+    type: int
+    revision: int
+    sequence: int
+    schema_version: int
+    tombstone: bool
+    etag: str
+    payload: str | None
+    # How many records the innermost query found, on every row.
+    candidates: int
 
 
 def etag_of(payload: str | None) -> str:
@@ -186,6 +216,9 @@ class PostgresSyncStore:
             account has ever been given.
         """
         async with self._database.as_owner(owner_id) as tx:
+            # Two statements, each seeing what is committed when it runs.
+            # That is safe: writes commit in sequence order, so the page can
+            # only hold more than `last` promised, never skip below it.
             last = await _one(tx, _READ_LAST_SEQUENCE, (owner_id,))
             if after > (0 if last is None else last[0]):
                 return None
@@ -193,24 +226,24 @@ class PostgresSyncStore:
                 _READ_CHANGES,
                 (owner_id, after, self._page_size + 1, self._page_characters),
             )
-            rows = await cursor.fetchall()
+            rows = [_FeedRow(*row) for row in await cursor.fetchall()]
         page = rows[: self._page_size]
-        candidates = rows[0][8] if rows else 0
+        candidates = rows[0].candidates if rows else 0
         return ChangesResponse(
             changes=[
                 Change(
-                    record_id=row[0],
-                    type=row[1],
-                    revision=row[2],
-                    sequence=row[3],
-                    schema_version=row[4],
-                    tombstone=row[5],
-                    etag=row[6],
-                    payload=row[7],
+                    record_id=row.record_id,
+                    type=row.type,
+                    revision=row.revision,
+                    sequence=row.sequence,
+                    schema_version=row.schema_version,
+                    tombstone=row.tombstone,
+                    etag=row.etag,
+                    payload=row.payload,
                 )
                 for row in page
             ],
-            next_cursor=str(page[-1][3] if page else after),
+            next_cursor=str(page[-1].sequence if page else after),
             has_more=candidates > len(page),
         )
 
@@ -270,7 +303,7 @@ class PostgresSyncStore:
                 ),
             )
             return 1
-        await tx.execute(
+        replaced = await tx.execute(
             _REPLACE_RECORD,
             (
                 operation.schema_version,
@@ -283,4 +316,8 @@ class PostgresSyncStore:
                 operation.base_revision,
             ),
         )
+        if replaced.rowcount != 1:
+            # Raising rolls the transaction back: no sequence number is
+            # used and no receipt is kept.
+            raise SyncInvariantError
         return operation.base_revision + 1

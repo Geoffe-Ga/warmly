@@ -835,6 +835,16 @@
             },
             "description": "Invalid request"
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -909,6 +919,16 @@
               }
             },
             "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
           },
           "503": {
             "content": {
@@ -999,6 +1019,16 @@
             },
             "description": "Invalid request"
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1088,6 +1118,16 @@
             },
             "description": "Invalid request"
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1155,6 +1195,16 @@
             },
             "description": "Invalid request"
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1221,6 +1271,16 @@
               }
             },
             "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
           },
           "503": {
             "content": {
@@ -1300,6 +1360,16 @@
               }
             },
             "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
           },
           "503": {
             "content": {
@@ -1400,6 +1470,16 @@
             },
             "description": "Invalid request"
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1478,6 +1558,16 @@
               }
             },
             "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
           },
           "503": {
             "content": {
@@ -1578,6 +1668,16 @@
             },
             "description": "Invalid request"
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1666,6 +1766,16 @@
               }
             },
             "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
           },
           "503": {
             "content": {
@@ -1765,6 +1875,16 @@
               }
             },
             "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
           },
           "503": {
             "content": {
@@ -1887,6 +2007,16 @@
             },
             "description": "Invalid request"
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -1961,6 +2091,16 @@
               }
             },
             "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
           },
           "503": {
             "content": {
@@ -2045,6 +2185,16 @@
             },
             "description": "Invalid request"
           },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
+          },
           "503": {
             "content": {
               "application/json": {
@@ -2111,6 +2261,16 @@
               }
             },
             "description": "Invalid request"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Too many requests from this account or device; try again after the number of seconds in Retry-After"
           },
           "503": {
             "content": {

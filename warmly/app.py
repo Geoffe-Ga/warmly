@@ -11,6 +11,7 @@ from warmly import __version__
 from warmly.api import API_PREFIX, build_api_router
 from warmly.api.errors import install_error_handlers
 from warmly.api.ports import DeviceStore, EnrollmentStore, RecoveryStore, SyncStore
+from warmly.api.rate_limit import RateLimiter, RateLimits, RequestCounters
 from warmly.auth.device import DeviceVerifier
 from warmly.auth.keys import remote_key_source
 from warmly.auth.verifier import TokenVerifier
@@ -18,6 +19,7 @@ from warmly.config import Settings, load_settings
 from warmly.db.database import Database
 from warmly.db.device_store import PostgresDeviceStore
 from warmly.db.enrollment_store import PostgresEnrollmentStore
+from warmly.db.rate_limit_store import PostgresRateLimitStore
 from warmly.db.recovery_store import OwnerTransactions, PostgresRecoveryStore
 from warmly.db.sync_store import PostgresSyncStore
 from warmly.middleware.body_limit import BodyLimitMiddleware
@@ -56,6 +58,31 @@ def _verifier_from(settings: Settings) -> TokenVerifier:
     )
 
 
+def _attach_stores(
+    app: FastAPI,
+    database: DatabaseLike,
+    *,
+    recovery_store: RecoveryStore | None,
+    device_store: DeviceStore | None,
+    enrollment_store: EnrollmentStore | None,
+    sync_store: SyncStore | None,
+) -> None:
+    """Give the application its stores: the ones passed in, or the database's.
+
+    Args:
+        app: The application being built.
+        database: Where the default stores keep their data.
+        recovery_store: Used instead of the recovery-envelope table.
+        device_store: Used instead of the device tables.
+        enrollment_store: Used instead of the pairing-request table.
+        sync_store: Used instead of the synced-record tables.
+    """
+    app.state.recovery_store = recovery_store or PostgresRecoveryStore(database)
+    app.state.device_store = device_store or PostgresDeviceStore(database)
+    app.state.enrollment_store = enrollment_store or PostgresEnrollmentStore(database)
+    app.state.sync_store = sync_store or PostgresSyncStore(database)
+
+
 def create_app(
     settings: Settings | None = None,
     *,
@@ -65,6 +92,8 @@ def create_app(
     device_store: DeviceStore | None = None,
     enrollment_store: EnrollmentStore | None = None,
     sync_store: SyncStore | None = None,
+    request_counters: RequestCounters | None = None,
+    rate_limits: RateLimits | None = None,
     clock: Callable[[], float] = time.time,
 ) -> FastAPI:
     """Build the FastAPI application.
@@ -87,7 +116,11 @@ def create_app(
             the database table.
         sync_store: Where synced records are kept, instead of the database
             tables.
-        clock: Seconds since the epoch, for judging request timestamps.
+        request_counters: Where requests are counted for rate limiting,
+            instead of the database table.
+        rate_limits: How many requests an account and a device may make.
+        clock: Seconds since the epoch, for judging request timestamps and
+            rate-limit windows.
 
     Returns:
         The configured application.
@@ -118,11 +151,20 @@ def create_app(
         lifespan=lifespan,
     )
     app.state.token_verifier = token_verifier
-    app.state.recovery_store = recovery_store or PostgresRecoveryStore(database)
-    app.state.device_store = device_store or PostgresDeviceStore(database)
-    app.state.enrollment_store = enrollment_store or PostgresEnrollmentStore(database)
-    app.state.sync_store = sync_store or PostgresSyncStore(database)
+    _attach_stores(
+        app,
+        database,
+        recovery_store=recovery_store,
+        device_store=device_store,
+        enrollment_store=enrollment_store,
+        sync_store=sync_store,
+    )
     app.state.clock = clock
+    app.state.rate_limiter = RateLimiter(
+        request_counters or PostgresRateLimitStore(database),
+        rate_limits or RateLimits(),
+        clock,
+    )
     app.state.device_verifier = DeviceVerifier(app.state.device_store, clock=clock)
     install_error_handlers(app)
     app.include_router(build_api_router({"database": database.ping}))

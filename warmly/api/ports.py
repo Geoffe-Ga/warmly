@@ -46,8 +46,11 @@ class DeviceStore(DeviceKeys, Protocol):
     ) -> Device | None:
         """Replace a device's encrypted name; ``None`` if it is not the owner's."""
 
-    async def mark_synced(self, owner_id: UUID, device_id: UUID) -> None:
-        """Record that a device has just caught up with the change feed."""
+    async def mark_synced(self, owner_id: UUID, device_id: UUID) -> bool:
+        """Record that a device has just caught up with the change feed.
+
+        Returns ``False``, without raising, if that could not be stored.
+        """
 
     async def revoke(
         self, owner_id: UUID, device_id: UUID, current: UUID

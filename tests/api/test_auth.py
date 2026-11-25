@@ -11,7 +11,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tests.api.cases import CASES, ENROLLMENT_ID, Case
-from tests.api.conftest import FakeDatabase, InMemoryEnrollmentStore
+from tests.api.conftest import (
+    FakeDatabase,
+    InMemoryEnrollmentStore,
+    InMemoryRequestCounters,
+)
 from tests.auth.tokens import AUDIENCE, ISSUER, OTHER_OWNER_ID, OWNER_ID, Signer
 from warmly.api.errors import PROBLEM_MEDIA_TYPE
 from warmly.app import create_app
@@ -214,10 +218,13 @@ def test_a_given_verifier_is_used_with_a_database_built_from_settings(
         issuer=ISSUER, audience=AUDIENCE, keys=StaticKeySource([signer.jwk()])
     )
     app = create_app(
-        load_settings({}), token_verifier=verifier, enrollment_store=enrollment_store
+        load_settings({}),
+        token_verifier=verifier,
+        enrollment_store=enrollment_store,
+        request_counters=InMemoryRequestCounters(),
     )
 
-    # No lifespan is started, and the one store this route reads is in
+    # No lifespan is started, and everything this route touches is in
     # memory, so the database is never contacted.
     response = TestClient(app).get(
         f"/v1/enrollments/{ENROLLMENT_ID}", headers=_bearer(signer.token())

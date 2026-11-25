@@ -132,6 +132,8 @@ class InMemoryDeviceStore:
         self.nonces: set[tuple[UUID, str]] = set()
         # (revoked device, device that asked), in order. Never shortened.
         self.ledger: list[tuple[UUID, UUID]] = []
+        # Set to make storing a last-sync time fail, as a database fault would.
+        self.cannot_mark = False
 
     def _own(self, owner_id: UUID, device_id: UUID) -> _StoredDevice | None:
         """Return the device only if it belongs to the owner."""
@@ -188,11 +190,14 @@ class InMemoryDeviceStore:
         )
         return stored.device.model_copy(update={"is_current": device_id == current})
 
-    async def mark_synced(self, owner_id: UUID, device_id: UUID) -> None:
+    async def mark_synced(self, owner_id: UUID, device_id: UUID) -> bool:
         """Record that a device has just caught up with the change feed."""
+        if self.cannot_mark:
+            return False
         stored = self._own(owner_id, device_id)
         if stored is not None and not stored.revoked:
             stored.device = stored.device.model_copy(update={"last_sync_at": SYNCED_AT})
+        return True
 
     async def revoke(
         self, owner_id: UUID, device_id: UUID, current: UUID
@@ -463,6 +468,33 @@ class InMemorySyncStore:
         return OperationResult(op_id=op_id, status="applied", revision=revision)
 
 
+class InMemoryRequestCounters:
+    """Request counters in memory, counting like the real table."""
+
+    def __init__(self) -> None:
+        """Start with nothing counted."""
+        # (owner, scope) -> (window start, count)
+        self.counts: dict[tuple[UUID, str], tuple[datetime, int]] = {}
+
+    async def count(
+        self, owner_id: UUID, scopes: tuple[str, ...], window_start: datetime
+    ) -> tuple[int, ...]:
+        """Count one request against each scope and return the new totals."""
+        totals = []
+        for scope in scopes:
+            started, count = self.counts.get((owner_id, scope), (window_start, 0))
+            count = count + 1 if started == window_start else 1
+            self.counts[(owner_id, scope)] = (window_start, count)
+            totals.append(count)
+        return tuple(totals)
+
+
+@pytest.fixture
+def request_counters() -> InMemoryRequestCounters:
+    """Return counters with nothing counted."""
+    return InMemoryRequestCounters()
+
+
 @pytest.fixture
 def sync_store() -> InMemorySyncStore:
     """Return an empty sync store."""
@@ -518,6 +550,7 @@ def app(
     device_store: InMemoryDeviceStore,
     enrollment_store: InMemoryEnrollmentStore,
     sync_store: InMemorySyncStore,
+    request_counters: InMemoryRequestCounters,
 ) -> FastAPI:
     """Return a fresh application with a ready database and a local key."""
     verifier = TokenVerifier(
@@ -530,6 +563,7 @@ def app(
         device_store=device_store,
         enrollment_store=enrollment_store,
         sync_store=sync_store,
+        request_counters=request_counters,
     )
 
 

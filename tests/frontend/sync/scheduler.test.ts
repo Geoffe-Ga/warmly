@@ -239,7 +239,7 @@ describe("when sync runs on its own (SYNC-008, SYNC-010)", () => {
     expect(browser.planned()).toEqual([1_000]);
   });
 
-  it("tries at once when the network comes back, and starts the waits over", async () => {
+  it("tries at once when the network comes back, and keeps backing off if that fails too", async () => {
     const { sync, browser } = await started("offline", "offline", "offline");
     await browser.fire();
     expect(browser.planned()).toEqual([2_000]);
@@ -247,7 +247,17 @@ describe("when sync runs on its own (SYNC-008, SYNC-010)", () => {
     await browser.online();
 
     expect(sync.runs).toBe(3);
-    // One retry planned, counted from the beginning again.
+    // A connection that comes and goes does not reset the waits.
+    expect(browser.planned()).toEqual([4_000]);
+  });
+
+  it("goes back to the idle wait when the network comes back and the cycle works", async () => {
+    const { browser } = await started("offline", "done", "offline");
+
+    await browser.online();
+    expect(browser.planned()).toEqual([TIMINGS.idle]);
+    await browser.fire();
+
     expect(browser.planned()).toEqual([1_000]);
   });
 

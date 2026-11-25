@@ -199,7 +199,9 @@ export class SyncScheduler implements SyncControl {
         this.#noticed();
       }),
       this.#environment.onOnline(() => {
-        void this.sync();
+        // Try at once, but keep counting failures: a connection that comes
+        // and goes must not turn the backoff into a rapid retry.
+        void this.#run();
       }),
       this.#environment.onVisible(() => {
         void this.#run();

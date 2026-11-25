@@ -1033,6 +1033,15 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Sign-in cannot be checked right now */
       503: {
         headers: {
@@ -1086,6 +1095,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -1148,6 +1166,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -1222,6 +1249,15 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Sign-in cannot be checked right now */
       503: {
         headers: {
@@ -1266,6 +1302,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -1329,6 +1374,15 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Sign-in cannot be checked right now */
       503: {
         headers: {
@@ -1380,6 +1434,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -1458,6 +1521,15 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Sign-in cannot be checked right now */
       503: {
         headers: {
@@ -1509,6 +1581,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -1587,6 +1668,15 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Sign-in cannot be checked right now */
       503: {
         headers: {
@@ -1647,6 +1737,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -1718,6 +1817,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -1830,6 +1938,15 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Sign-in cannot be checked right now */
       503: {
         headers: {
@@ -1883,6 +2000,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
         headers: {
           [name: string]: unknown;
         };
@@ -1949,6 +2075,15 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Sign-in cannot be checked right now */
       503: {
         headers: {
@@ -1993,6 +2128,15 @@ export interface operations {
       };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Too many requests from this account or device; try again after the number of seconds in Retry-After */
+      429: {
         headers: {
           [name: string]: unknown;
         };

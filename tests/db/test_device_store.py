@@ -477,3 +477,38 @@ async def test_a_revoked_device_is_never_marked_synced(
 
     devices = {device.id: device for device in await store.list(OWNER_A, DEVICE_1)}
     assert devices[DEVICE_2].last_sync_at is None
+
+
+async def test_a_recent_last_sync_time_is_not_rewritten(
+    db: Database, store: PostgresDeviceStore
+) -> None:
+    """A device that polls often does not write to the table every time."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    assert await store.mark_synced(OWNER_A, DEVICE_1)
+    (first,) = await store.list(OWNER_A, DEVICE_1)
+
+    assert await store.mark_synced(OWNER_A, DEVICE_1)
+
+    (second,) = await store.list(OWNER_A, DEVICE_1)
+    assert second.last_sync_at == first.last_sync_at
+
+
+async def test_an_old_last_sync_time_is_brought_up_to_date(
+    database_url: str, store: PostgresDeviceStore
+) -> None:
+    """After five minutes the next sync is recorded again."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    await store.mark_synced(OWNER_A, DEVICE_1)
+    with psycopg.connect(database_url) as conn:
+        conn.execute(
+            "UPDATE warmly_private.devices"
+            " SET last_sync_at = now() - interval '6 minutes'"
+        )
+    (old,) = await store.list(OWNER_A, DEVICE_1)
+
+    await store.mark_synced(OWNER_A, DEVICE_1)
+
+    (new,) = await store.list(OWNER_A, DEVICE_1)
+    assert old.last_sync_at is not None
+    assert new.last_sync_at is not None
+    assert new.last_sync_at > old.last_sync_at
