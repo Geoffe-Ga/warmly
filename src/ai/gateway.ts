@@ -14,11 +14,24 @@
  *   journal, or on opening a screen. It runs when a screen calls it with a
  *   token, and a token only exists because the person pressed a button.
  *
+ * - **Nothing unchecked comes back.** A provider is given the entries under
+ *   names made for that one request, never their IDs. Its answer is checked
+ *   against the agreed form and against what was sent before anything is
+ *   returned (`contracts.ts`, `grounding.ts`; ADR-0008). An answer that
+ *   fails is refused whole, and is not asked for again.
+ *
  * Journal text passes through this module on its way to the provider and is
  * never logged, stored or sent anywhere else.
  */
 import { consumeConsent, sealRequest, type ConsentToken } from "./consent";
+import type {
+  GeneratedCard,
+  ReflectionAnswer,
+  SegmentAlternatives,
+} from "./contracts";
 import { FakeProvider } from "./fake-provider";
+import { groundAlternatives, groundCards, groundReflection } from "./grounding";
+import { buildManifest, promptFor, type Manifest } from "./manifest";
 import type {
   AIProvider,
   AiRequest,
@@ -140,7 +153,9 @@ export class AiGateway {
   disclose(request: AiRequest): Disclosure {
     const provider = this.#need();
     sealRequest(request);
-    const estimatedTokens = provider.estimateTokens(request);
+    const estimatedTokens = provider.estimateTokens(
+      promptFor(request, buildManifest(request.entries)),
+    );
     return {
       provider: provider.name,
       entries: request.entries.length,
@@ -164,17 +179,22 @@ export class AiGateway {
    * If the provider throws while sizing the request, the call is refused
    * with that error after the token has been used, and nothing is sent.
    */
-  #admit(request: AiRequest, consent: ConsentToken): AIProvider {
+  #admit(
+    request: AiRequest,
+    consent: ConsentToken,
+  ): { provider: AIProvider; manifest: Manifest } {
     const provider = this.#need();
     if (!consumeConsent(consent, request)) {
       throw new ConsentRequiredError();
     }
+    const manifest = buildManifest(request.entries);
     if (
-      provider.estimateTokens(request) > provider.capabilities().maxInputTokens
+      provider.estimateTokens(promptFor(request, manifest)) >
+      provider.capabilities().maxInputTokens
     ) {
       throw new RequestTooLargeError();
     }
-    return provider;
+    return { provider, manifest };
   }
 
   /**
@@ -183,20 +203,21 @@ export class AiGateway {
    * @param request - The request the person agreed to send.
    * @param consent - Their agreement, from the disclosure dialog.
    * @param signal - Cancels the request.
-   * @returns The provider's answer, unchecked. It must be validated before
-   *   anything is done with it.
-   * @throws NoProviderError, ConsentRequiredError or RequestTooLargeError
-   *   before anything is sent; whatever the provider throws afterwards. It
-   *   is never tried again.
+   * @returns The answer, checked: every citation points at an entry that
+   *   was sent and at words that are in it.
+   * @throws NoProviderError, ConsentRequiredError, RequestTooLargeError or
+   *   DuplicateSourceError before anything is sent; whatever the provider
+   *   throws afterwards; MalformedResponseError or UngroundedCitationError
+   *   if the answer fails its checks. It is never tried again.
    */
-  reflect(
+  async reflect(
     request: ReflectRequest,
     consent: ConsentToken,
     signal: AbortSignal = new AbortController().signal,
-  ): Promise<unknown> {
-    return this.#once(request, consent, (provider) =>
-      provider.reflect(request, signal),
-    );
+  ): Promise<ReflectionAnswer> {
+    const { provider, manifest } = this.#admit(request, consent);
+    const raw = await provider.reflect(promptFor(request, manifest), signal);
+    return groundReflection(raw, manifest, request.coverage);
   }
 
   /**
@@ -205,17 +226,20 @@ export class AiGateway {
    * @param request - The request the person agreed to send.
    * @param consent - Their agreement, from the disclosure dialog.
    * @param signal - Cancels the request.
-   * @returns The provider's answer, unchecked.
+   * @returns One to three checked cards.
    * @throws As {@link AiGateway.reflect}.
    */
-  generateCards(
+  async generateCards(
     request: CardsRequest,
     consent: ConsentToken,
     signal: AbortSignal = new AbortController().signal,
-  ): Promise<unknown> {
-    return this.#once(request, consent, (provider) =>
-      provider.generateCards(request, signal),
+  ): Promise<readonly GeneratedCard[]> {
+    const { provider, manifest } = this.#admit(request, consent);
+    const raw = await provider.generateCards(
+      promptFor(request, manifest),
+      signal,
     );
+    return groundCards(raw, manifest);
   }
 
   /**
@@ -224,26 +248,20 @@ export class AiGateway {
    * @param request - The request the person agreed to send.
    * @param consent - Their agreement, from the disclosure dialog.
    * @param signal - Cancels the request.
-   * @returns The provider's answer, unchecked.
+   * @returns The checked wordings.
    * @throws As {@link AiGateway.reflect}.
    */
-  generateSegmentAlternatives(
+  async generateSegmentAlternatives(
     request: SegmentAlternativesRequest,
     consent: ConsentToken,
     signal: AbortSignal = new AbortController().signal,
-  ): Promise<unknown> {
-    return this.#once(request, consent, (provider) =>
-      provider.generateSegmentAlternatives(request, signal),
+  ): Promise<SegmentAlternatives> {
+    const { provider, manifest } = this.#admit(request, consent);
+    const raw = await provider.generateSegmentAlternatives(
+      promptFor(request, manifest),
+      signal,
     );
-  }
-
-  /** Admit a call and make it, exactly once. */
-  async #once(
-    request: AiRequest,
-    consent: ConsentToken,
-    call: (provider: AIProvider) => Promise<unknown>,
-  ): Promise<unknown> {
-    return call(this.#admit(request, consent));
+    return groundAlternatives(raw);
   }
 }
 

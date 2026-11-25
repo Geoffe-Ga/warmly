@@ -13,10 +13,22 @@ import {
   RequestTooLargeError,
   createGateway,
 } from "../../../src/ai/gateway";
+import { MalformedResponseError } from "../../../src/ai/contracts";
+import { UngroundedCitationError } from "../../../src/ai/grounding";
+import {
+  DuplicateSourceError,
+  buildManifest,
+  promptFor,
+} from "../../../src/ai/manifest";
 import type {
   AIProvider,
+  AiPrompt,
+  AiRequest,
+  CardsPrompt,
   CardsRequest,
+  ReflectPrompt,
   ReflectRequest,
+  SegmentAlternativesPrompt,
   SegmentAlternativesRequest,
   SourceEntry,
 } from "../../../src/ai/provider";
@@ -50,6 +62,22 @@ const SEGMENT: SegmentAlternativesRequest = {
   entries: [ENTRY],
 };
 
+/** What a provider is given for a request: names and text only. */
+function sent(request: ReflectRequest): ReflectPrompt;
+function sent(request: CardsRequest): CardsPrompt;
+function sent(request: SegmentAlternativesRequest): SegmentAlternativesPrompt;
+function sent(request: AiRequest): AiPrompt {
+  return promptFor(request, buildManifest(request.entries));
+}
+
+/** That many different entries with the same text. */
+function many(count: number): SourceEntry[] {
+  return Array.from({ length: count }, (_, index) => ({
+    ...ENTRY,
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+  }));
+}
+
 function connected(): { gateway: AiGateway; provider: FakeProvider } {
   const provider = new FakeProvider();
   return { gateway: new AiGateway(provider), provider };
@@ -70,7 +98,7 @@ describe("no consent, no call (SEC-009, invariant 2)", () => {
     );
 
     // The provider was reached exactly once.
-    expect(provider.calls).toEqual([request]);
+    expect(provider.calls).toEqual([sent(request)]);
   });
 
   it("a token for one request cannot authorise another, even one that looks the same", async () => {
@@ -132,7 +160,7 @@ describe("no consent, no call (SEC-009, invariant 2)", () => {
 
     await gateway.generateCards(CARDS, grantConsent(CARDS));
     await gateway.generateSegmentAlternatives(SEGMENT, grantConsent(SEGMENT));
-    expect(provider.calls).toEqual([CARDS, SEGMENT]);
+    expect(provider.calls).toEqual([sent(CARDS), sent(SEGMENT)]);
   });
 
   it("a token for one kind of call does not work for another", async () => {
@@ -162,7 +190,7 @@ describe("one attempt, no retry, no other provider (AI-014, invariant 2)", () =>
       attempts: 0,
       capabilities: () => base.capabilities(),
       validateConfig: () => base.validateConfig(),
-      estimateTokens: (request: ReflectRequest) => base.estimateTokens(request),
+      estimateTokens: (prompt: AiPrompt) => base.estimateTokens(prompt),
       reflect: () => {
         made.attempts += 1;
         return Promise.reject(new Error("synthetic provider failure"));
@@ -190,16 +218,190 @@ describe("one attempt, no retry, no other provider (AI-014, invariant 2)", () =>
     expect(provider.attempts).toBe(1);
   });
 
-  it("passes the provider's answer back unchanged, to be checked by the caller", async () => {
+  it("returns only a checked answer, tied to the entries that were sent (AI-012)", async () => {
     const { gateway } = connected();
     const request = reflect();
 
     const answer = await gateway.reflect(request, grantConsent(request));
 
     expect(answer).toEqual({
-      answer: "A test answer about 1 entries.",
-      sources: [{ entryId: ENTRY.id, sourceHash: ENTRY.contentHash }],
+      markdown: "A test answer about 1 entries. [c1]",
+      citations: [
+        {
+          claimId: "c1",
+          evidence: [
+            {
+              entryId: ENTRY.id,
+              responseKey: "good",
+              start: 0,
+              end: ENTRY.responses.good.length,
+              sourceHash: ENTRY.contentHash,
+            },
+          ],
+        },
+      ],
+      coverage: {
+        includedEntryIds: [ENTRY.id],
+        omittedEntryCount: 0,
+        truncated: false,
+      },
     });
+  });
+
+  it("reports what the request said it left out", async () => {
+    const { gateway } = connected();
+    const request: ReflectRequest = {
+      ...reflect(),
+      coverage: { omittedEntryCount: 7, truncated: true },
+    };
+
+    const answer = await gateway.reflect(request, grantConsent(request));
+
+    expect(answer.coverage).toEqual({
+      includedEntryIds: [ENTRY.id],
+      omittedEntryCount: 7,
+      truncated: true,
+    });
+  });
+
+  it("returns checked cards and checked wordings", async () => {
+    const { gateway } = connected();
+
+    const cards = await gateway.generateCards(CARDS, grantConsent(CARDS));
+    const wordings = await gateway.generateSegmentAlternatives(
+      SEGMENT,
+      grantConsent(SEGMENT),
+    );
+
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({
+      type: "appreciation",
+      sourceEntryIds: [ENTRY.id],
+    });
+    expect(cards[0]?.segments[0]?.evidence).toEqual([
+      {
+        entryId: ENTRY.id,
+        responseKey: "good",
+        start: 0,
+        end: ENTRY.responses.good.length,
+        sourceHash: ENTRY.contentHash,
+      },
+    ]);
+    expect(wordings).toEqual({
+      alternatives: ["A test alternative.", "Another test alternative."],
+    });
+  });
+
+  /** A provider that returns whatever it is told to, and counts the calls. */
+  function answering(raw: unknown): AIProvider & { attempts: number } {
+    const base = new FakeProvider();
+    const answer = () => {
+      made.attempts += 1;
+      return Promise.resolve(raw);
+    };
+    const made = {
+      id: base.id,
+      name: base.name,
+      attempts: 0,
+      capabilities: () => base.capabilities(),
+      validateConfig: () => base.validateConfig(),
+      estimateTokens: (prompt: AiPrompt) => base.estimateTokens(prompt),
+      reflect: answer,
+      generateCards: answer,
+      generateSegmentAlternatives: answer,
+    };
+    return made;
+  }
+
+  it.each([
+    [
+      "cites an entry that was not sent",
+      {
+        markdown: "[c1]",
+        citations: [
+          {
+            claimId: "c1",
+            evidence: [{ alias: "E2", key: "good", quote: "CANARY good" }],
+          },
+        ],
+      },
+      UngroundedCitationError,
+    ],
+    [
+      "quotes words that are not in the entry",
+      {
+        markdown: "[c1]",
+        citations: [
+          {
+            claimId: "c1",
+            evidence: [{ alias: "E1", key: "good", quote: "never written" }],
+          },
+        ],
+      },
+      UngroundedCitationError,
+    ],
+    [
+      "is in the form the stand-in used before the contract",
+      { answer: "Text", sources: [{ entryId: ENTRY.id }] },
+      MalformedResponseError,
+    ],
+  ])(
+    "refuses an answer that %s, whole, and does not ask again (AC-07)",
+    async (_name, raw, expected) => {
+      const provider = answering(raw);
+      const gateway = new AiGateway(provider);
+      const request = reflect();
+      const token = grantConsent(request);
+
+      await expect(gateway.reflect(request, token)).rejects.toThrow(expected);
+      expect(provider.attempts).toBe(1);
+
+      // The refusal used the consent up, like any other attempt.
+      await expect(gateway.reflect(request, token)).rejects.toThrow(
+        ConsentRequiredError,
+      );
+      expect(provider.attempts).toBe(1);
+    },
+  );
+
+  it("checks cards and wordings the same way", async () => {
+    const gateway = new AiGateway(answering({ cards: [], alternatives: [] }));
+
+    await expect(
+      gateway.generateCards(CARDS, grantConsent(CARDS)),
+    ).rejects.toThrow(MalformedResponseError);
+    await expect(
+      gateway.generateSegmentAlternatives(SEGMENT, grantConsent(SEGMENT)),
+    ).rejects.toThrow(MalformedResponseError);
+  });
+
+  it("never gives a provider an entry's ID or content hash (D-16)", async () => {
+    const { gateway, provider } = connected();
+    const request = reflect();
+
+    await gateway.reflect(request, grantConsent(request));
+    await gateway.generateCards(CARDS, grantConsent(CARDS));
+    await gateway.generateSegmentAlternatives(SEGMENT, grantConsent(SEGMENT));
+
+    const given = JSON.stringify(provider.calls);
+    expect(provider.calls).toHaveLength(3);
+    expect(given).toContain("CANARY good");
+    expect(given).not.toContain(ENTRY.id);
+    expect(given).not.toContain(ENTRY.contentHash);
+  });
+
+  it("refuses a request that lists an entry twice, before sending anything", async () => {
+    const { gateway, provider } = connected();
+    const twice: ReflectRequest = {
+      kind: "reflect",
+      question: "Synthetic",
+      entries: [ENTRY, ENTRY],
+    };
+
+    await expect(gateway.reflect(twice, grantConsent(twice))).rejects.toThrow(
+      DuplicateSourceError,
+    );
+    expect(provider.calls).toEqual([]);
   });
 
   it("passes a cancellation on to the provider", async () => {
@@ -214,12 +416,30 @@ describe("one attempt, no retry, no other provider (AI-014, invariant 2)", () =>
     expect(provider.calls).toEqual([]);
   });
 
+  it("a token spent on a request that was too large cannot be used again", async () => {
+    const { gateway, provider } = connected();
+    const huge: ReflectRequest = {
+      kind: "reflect",
+      question: "Synthetic",
+      entries: many(400),
+    };
+    const token = grantConsent(huge);
+
+    await expect(gateway.reflect(huge, token)).rejects.toThrow(
+      RequestTooLargeError,
+    );
+    await expect(gateway.reflect(huge, token)).rejects.toThrow(
+      ConsentRequiredError,
+    );
+    expect(provider.calls).toEqual([]);
+  });
+
   it("refuses a request larger than the provider accepts, before sending anything", async () => {
     const { gateway, provider } = connected();
     const huge: ReflectRequest = {
       kind: "reflect",
       question: "Synthetic",
-      entries: Array.from({ length: 400 }, () => ENTRY),
+      entries: many(400),
     };
 
     await expect(gateway.reflect(huge, grantConsent(huge))).rejects.toThrow(
@@ -284,7 +504,7 @@ describe("what the person is shown before agreeing (AI-015, AI-016)", () => {
     const large: ReflectRequest = {
       kind: "reflect",
       question: "Synthetic",
-      entries: Array.from({ length: 80 }, () => ENTRY),
+      entries: many(160),
     };
 
     const disclosure = gateway.disclose(large);
@@ -369,7 +589,7 @@ describe("what the person is shown before agreeing (AI-015, AI-016)", () => {
     }).toThrow(TypeError);
     await gateway.reflect(request, token);
 
-    expect(provider.calls).toEqual([before]);
+    expect(provider.calls).toEqual([sent(before)]);
   });
 
   it("describing a request sends nothing and uses no consent", () => {
@@ -403,14 +623,15 @@ describe("the stand-in provider (AI-001)", () => {
     });
   });
 
-  it("answers the same way every time, citing only what it was sent", async () => {
+  it("answers the same way every time, quoting only what it was sent", async () => {
     const provider = new FakeProvider();
     const signal = new AbortController().signal;
+    const quote = { alias: "E1", key: "good", quote: "CANARY good" };
 
-    const first = await provider.generateCards(CARDS, signal);
-    const second = await provider.generateCards(CARDS, signal);
+    const first = await provider.generateCards(sent(CARDS), signal);
+    const second = await provider.generateCards(sent(CARDS), signal);
     const alternatives = await provider.generateSegmentAlternatives(
-      SEGMENT,
+      sent(SEGMENT),
       signal,
     );
 
@@ -418,15 +639,73 @@ describe("the stand-in provider (AI-001)", () => {
     expect(first).toEqual({
       cards: [
         {
-          text: "A test card.",
-          sources: [{ entryId: ENTRY.id, sourceHash: ENTRY.contentHash }],
+          type: "appreciation",
+          theme: "A test theme",
+          segments: [
+            {
+              category: "appreciation",
+              text: "A test card.",
+              evidenceKind: "paraphrase",
+              teachingExplanation: "A test explanation.",
+              evidence: [quote],
+            },
+          ],
         },
       ],
+    });
+    expect(await provider.reflect(sent(reflect()), signal)).toEqual({
+      markdown: "A test answer about 1 entries. [c1]",
+      citations: [{ claimId: "c1", evidence: [quote] }],
     });
     expect(alternatives).toEqual({
       alternatives: ["A test alternative.", "Another test alternative."],
     });
-    expect(JSON.stringify([first, alternatives])).not.toContain("CANARY");
+  });
+
+  it("quotes the first answer that has any text, at most forty characters and three entries", async () => {
+    const provider = new FakeProvider();
+    const signal = new AbortController().signal;
+    const long =
+      "A synthetic sentence that runs on well past forty characters.";
+    const entries = [
+      { ...ENTRY, responses: { good: "  ", improve: ` ${long}`, loved: "x" } },
+      { ...ENTRY, responses: { good: "", improve: "", loved: "" } },
+      ...many(4),
+    ].map((entry, index) => ({ ...entry, id: `entry-${String(index)}` }));
+    const request: ReflectRequest = {
+      kind: "reflect",
+      question: "Synthetic",
+      entries,
+    };
+
+    const raw = (await provider.reflect(sent(request), signal)) as {
+      citations: { evidence: unknown[] }[];
+    };
+
+    expect(raw.citations.map((citation) => citation.evidence[0])).toEqual([
+      { alias: "E1", key: "improve", quote: long.slice(0, 40).trim() },
+      { alias: "E3", key: "good", quote: "CANARY good" },
+      { alias: "E4", key: "good", quote: "CANARY good" },
+    ]);
+    // And the gateway accepts it: the stand-in follows the contract.
+    const answer = await new AiGateway(provider).reflect(
+      request,
+      grantConsent(request),
+    );
+    expect(answer.citations).toHaveLength(3);
+  });
+
+  it("with nothing to quote, says so and cites nothing", async () => {
+    const provider = new FakeProvider();
+    const empty: ReflectRequest = {
+      kind: "reflect",
+      question: "",
+      entries: [],
+    };
+
+    expect(
+      await provider.reflect(sent(empty), new AbortController().signal),
+    ).toEqual({ markdown: "A test answer about 0 entries.", citations: [] });
   });
 
   it("estimates more tokens for more text, and never none", () => {
@@ -434,9 +713,9 @@ describe("the stand-in provider (AI-001)", () => {
     const small = provider.estimateTokens({
       kind: "reflect",
       question: "",
-      entries: [],
+      sources: [],
     });
-    const larger = provider.estimateTokens(reflect());
+    const larger = provider.estimateTokens(sent(reflect()));
 
     expect(small).toBeGreaterThan(0);
     expect(larger).toBeGreaterThan(small);
@@ -448,13 +727,13 @@ describe("the stand-in provider (AI-001)", () => {
     cancel.abort();
 
     await expect(
-      provider.reflect(reflect(), cancel.signal),
+      provider.reflect(sent(reflect()), cancel.signal),
     ).rejects.toMatchObject({ name: "AbortError" });
     await expect(
-      provider.generateCards(CARDS, cancel.signal),
+      provider.generateCards(sent(CARDS), cancel.signal),
     ).rejects.toMatchObject({ name: "AbortError" });
     await expect(
-      provider.generateSegmentAlternatives(SEGMENT, cancel.signal),
+      provider.generateSegmentAlternatives(sent(SEGMENT), cancel.signal),
     ).rejects.toMatchObject({ name: "AbortError" });
     expect(provider.calls).toEqual([]);
   });

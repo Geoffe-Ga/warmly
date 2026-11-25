@@ -18,7 +18,7 @@ Manage Devices, device-pairing and device-removal flows (real cryptography; in-m
 servers outside production) and a journal that can be written, listed, read,
 searched, edited in place and deleted for good, with drafts saved as they
 are typed, stored encrypted in IndexedDB. The AI seam exists (gateway,
-consent dialog, a stand-in provider outside production) but no screen calls
+consent dialog, checked answers, a stand-in provider outside production) but no screen calls
 it and no real provider is connected. A sync engine sends the outbox
 and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Other routes render accessible placeholders.
 
@@ -298,8 +298,16 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   get around the seal. Never make,
   store or reuse a token anywhere else, never call a provider directly, and
   never add a retry or a second provider. A lint rule and
-  `tests/frontend/ai/dependencies.test.ts` enforce the imports. A provider's
-  answer is `unknown` until it has been validated.
+  `tests/frontend/ai/dependencies.test.ts` enforce the imports.
+- A provider's answer is `unknown` until the gateway has checked it
+  (ADR-0008): its form (`src/ai/contracts.ts`) and every citation against
+  what that request sent (`src/ai/grounding.ts`). A provider is given
+  entries under per-request names (`E1`), never an ID or hash, and cites a
+  name and an exact quote; the app works out IDs, hashes and ranges itself.
+  One failure refuses the whole answer: never repair it, loosen the
+  matching, accept part of it or ask again. Answer text is shown as text,
+  never as HTML, and never becomes a link or an image. Never edit
+  `tests/frontend/ai/fixtures/adversarial-v1.json`: add a new file.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

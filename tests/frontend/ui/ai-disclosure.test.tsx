@@ -330,7 +330,18 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
       ConsentRequiredError,
     );
 
-    expect(provider.calls).toEqual([shown]);
+    // The provider gets the question and the entries under request-only
+    // names, with no entry ID or hash (ADR-0008).
+    expect(provider.calls).toEqual([
+      {
+        kind: "reflect",
+        question: shown.question,
+        sources: shown.entries.map((entry, index) => ({
+          alias: `E${String(index + 1)}`,
+          responses: entry.responses,
+        })),
+      },
+    ]);
   });
 });
 
