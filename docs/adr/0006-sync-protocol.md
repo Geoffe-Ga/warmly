@@ -143,9 +143,10 @@ attention". It is a count and a state, never anything private (SYNC-010).
 
 ### What is deliberately left to later issues
 
-- The server implementation, with atomic revisions (#33) and the feed
-  (#34). Until then the routes are stubs marked `Warmly-Stub: true`; the
-  client treats a stub as "sync is not available" and keeps changes queued.
+- The server's change feed (#34). Until then `GET /v1/sync/changes` is a
+  stub marked `Warmly-Stub: true`; the client treats a stub as "sync is not
+  available" and keeps changes queued. `POST /v1/sync/operations` is real
+  (see "The server's side" below).
 - A persisted cursor, retry with backoff, and partial-failure handling (#35).
 - Keeping and resolving both versions of a conflict (#36).
 - Tombstone retention, compaction and a deletion ledger (#37, #65).
@@ -163,3 +164,31 @@ attention". It is a count and a state, never anything private (SYNC-010).
   could still hold the record (#37).
 - Drafts sync like any other record. Autosave queues many changes to one
   draft; the push sends one operation per record, not one per change.
+
+### The server's side
+
+`POST /v1/sync/operations` applies each operation in its own database
+transaction (`warmly/db/sync_store.py`), in the order sent:
+
+1. Lock the account's counter row. This makes one account's operations run
+   one at a time, so what is read next is still true when the write happens.
+   Different accounts never wait for each other.
+2. If this `op_id` was already applied, answer `duplicate` with the revision
+   it produced and change nothing.
+3. Read the record and apply the refusal rules (`rejected`, `deleted`,
+   `conflict`). A refused operation stores nothing: no row, no receipt, no
+   place in the feed.
+4. Otherwise take the account's next sequence number, write the record at
+   `base_revision + 1` (the update's `WHERE revision = base` is the
+   compare-and-swap), and store the receipt.
+
+The database enforces the rest whatever the code does: the API role cannot
+delete a record or change a receipt, a trigger keeps a tombstone deleted and
+moves a record forward exactly one revision at a time, and row-level
+security keeps every row to its owner. The same record ID under another
+account is another row, so one account cannot tell whether another has a
+given record. The ETag is a SHA-256 of the payload text as sent; the server
+never decodes a payload.
+
+One operation per transaction means a batch is not all-or-nothing: each
+operation gets its own answer, which is what the client's outbox expects.

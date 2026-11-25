@@ -85,6 +85,42 @@ class OperationResult(ApiModel):
         return self
 
 
+def refusal_for(
+    operation: SyncOperation, stored: tuple[int, int, bool] | None
+) -> OperationResult | None:
+    """Decide whether an operation must be refused (ADR-0006).
+
+    This is the protocol's rule, kept in one place so that every store
+    applies it the same way. It never compares timestamps and never lets the
+    latest writer win.
+
+    Args:
+        operation: The operation to judge.
+        stored: The stored record's type, revision and tombstone flag, or
+            ``None`` if the account has no such record.
+
+    Returns:
+        The refusal, or ``None`` if the operation may be applied.
+    """
+    op_id = operation.op_id
+    if stored is None:
+        # A record the server has never seen can only be started from 0.
+        if operation.base_revision == 0:
+            return None
+        return OperationResult(op_id=op_id, status="rejected")
+    record_type, revision, tombstone = stored
+    if record_type != operation.type:
+        return OperationResult(op_id=op_id, status="rejected")
+    if tombstone:
+        # A deleted record never comes back, whatever is sent.
+        return OperationResult(op_id=op_id, status="deleted", current_revision=revision)
+    if revision != operation.base_revision:
+        return OperationResult(
+            op_id=op_id, status="conflict", current_revision=revision
+        )
+    return None
+
+
 class OperationsResponse(ApiModel):
     """Results for a batch, one per operation and in the same order."""
 

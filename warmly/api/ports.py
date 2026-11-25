@@ -12,6 +12,7 @@ from warmly.auth.device import DeviceKeys
 from warmly.schemas.devices import Device, RegisterDeviceRequest
 from warmly.schemas.enrollment import Enrollment, StartEnrollmentRequest
 from warmly.schemas.recovery import PutRecoveryEnvelopeRequest, RecoveryEnvelope
+from warmly.schemas.sync import OperationResult, SyncOperation
 
 
 class RecoveryStore(Protocol):
@@ -49,6 +50,13 @@ class DeviceStore(DeviceKeys, Protocol):
         self, owner_id: UUID, device_id: UUID, current: UUID
     ) -> Device | None:
         """Revoke a device for good; ``None`` if it is not the owner's."""
+
+
+class SyncStore(Protocol):
+    """One account's synced records (PRD SYNC-003, SYNC-008; ADR-0006)."""
+
+    async def apply(self, owner_id: UUID, operation: SyncOperation) -> OperationResult:
+        """Apply one operation, or say why it was not applied."""
 
 
 class EnrollmentStore(Protocol):

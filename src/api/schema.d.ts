@@ -526,14 +526,21 @@ export interface paths {
      * Apply a batch of operations
      * @description Apply an idempotent batch of record operations.
      *
-     *     Stub: reports every operation as rejected, because nothing is persisted.
-     *     The payloads are validated for shape only and are otherwise untouched.
+     *     Each operation is applied on its own, in request order: one that is
+     *     refused does not stop the others. A change is stored only when it was
+     *     made on top of the record's current revision. The server never merges
+     *     and never lets the latest writer win. Sending an operation that was
+     *     already applied again changes nothing and reports ``duplicate``.
+     *
+     *     The payloads are opaque: they are stored as sent and never decoded.
      *
      *     Args:
      *         request: The batch to apply.
+     *         caller: The verified account and device.
+     *         store: Where records are kept.
      *
      *     Returns:
-     *         One ``rejected`` result per operation, in request order.
+     *         One result per operation, in request order.
      */
     post: operations["post_operations_v1_sync_operations_post"];
     delete?: never;

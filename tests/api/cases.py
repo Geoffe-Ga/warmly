@@ -106,6 +106,7 @@ CASES = [
         "/v1/sync/operations",
         OperationsResponse,
         body={"operations": [OPERATION]},
+        stub=False,
     ),
     Case("GET", "/v1/devices", DeviceList, stub=False),
     Case(
