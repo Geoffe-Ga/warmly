@@ -95,6 +95,7 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
   const id = props.params["id"];
   const [found, setFound] = useState<Found>({ kind: "loading" });
   const [confirming, setConfirming] = useState(false);
+  const [inConflict, setInConflict] = useState(false);
   const deleted = found.kind === "deleted";
 
   useEffect(() => {
@@ -131,8 +132,23 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
         },
       );
     };
-    load();
-    const unsubscribe = records.subscribe(load);
+    const check = (): void => {
+      // Only a marker: if it cannot be worked out, the entry still shows.
+      void records.conflicts("journal-entry").then(
+        (conflicts) => {
+          if (current) {
+            setInConflict(conflicts.some((each) => each.id === id));
+          }
+        },
+        () => undefined,
+      );
+    };
+    const refresh = (): void => {
+      load();
+      check();
+    };
+    refresh();
+    const unsubscribe = records.subscribe(refresh);
     return () => {
       current = false;
       unsubscribe();
@@ -168,6 +184,13 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
           : "A journal entry."
       }
     >
+      {inConflict && (
+        <StatusBanner tone="warning" label="Changed in two places">
+          This {what} was also changed on another device. This is the version
+          from this device; both are kept until you choose.{" "}
+          <Link href={pathFor("sync-conflicts")}>Review the two versions</Link>
+        </StatusBanner>
+      )}
       {PROMPTS.map((prompt) => (
         <Card key={prompt.key} heading={prompt.label}>
           <Answer text={entry.responses[prompt.key]} />

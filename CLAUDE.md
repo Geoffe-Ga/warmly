@@ -251,6 +251,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   never apply it over unsent changes. A record is sent under the ID of its
   oldest queued change, and `duplicate` settles only that change. The
   engine never reads a clock to order anything.
+- A record changed in two places is settled only by the person, through
+  `keepMine`, `keepTheirs` or `keepMerged` (`src/sync/conflicts.ts`) on the
+  "Changed in two places" screen. Never merge for them, never choose by
+  time, and never remove either version before they choose. The server
+  holds no second version: a choice is an ordinary operation.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

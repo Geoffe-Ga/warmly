@@ -25,6 +25,7 @@ import { DeviceRevoked } from "../ui/screens/devices/DeviceRevoked";
 import { ManageDevices } from "../ui/screens/devices/ManageDevices";
 import { Compose } from "../ui/screens/journal/Compose";
 import { EditEntry } from "../ui/screens/journal/EditEntry";
+import { ConflictReview } from "../ui/screens/sync/ConflictReview";
 import { Entry } from "../ui/screens/journal/Entry";
 import { Timeline } from "../ui/screens/journal/Timeline";
 import { redirectFor } from "./access";
@@ -56,6 +57,7 @@ const SCREENS: Readonly<
   "journal-new": Compose,
   "journal-entry": Entry,
   "journal-edit": EditEntry,
+  "sync-conflicts": ConflictReview,
   settings: Settings,
   devices: ManageDevices,
   "approve-device": ApproveDevice,

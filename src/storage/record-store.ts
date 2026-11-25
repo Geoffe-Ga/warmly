@@ -28,6 +28,27 @@ export class StaleRecordError extends Error {
   }
 }
 
+/**
+ * A record that was changed in two places: this device's version, and the
+ * version the server holds, which was kept beside it and not applied
+ * (ADR-0006). Both exist until the person chooses.
+ */
+export interface RecordConflict<T> {
+  readonly id: string;
+  /** This device's version; `undefined` if it is deleted or unreadable here. */
+  readonly mine: T | undefined;
+  /**
+   * The server's version; `undefined` if it is deleted there, or if this
+   * version of the app cannot read it.
+   */
+  readonly theirs: T | undefined;
+  /** Whether the record is deleted on the server. */
+  readonly theirsDeleted: boolean;
+}
+
+/** Which version of a record in conflict to keep. */
+export type Keep = "mine" | "theirs";
+
 /** Reads and writes records by kind. */
 export interface RecordStore {
   /** @returns The record, or `undefined` if there is none with that ID. */
@@ -63,6 +84,26 @@ export interface RecordStore {
    */
   unreadable(kind: RecordKind): Promise<number>;
   /**
+   * @returns The records of the kind that were changed in two places and
+   *   are waiting for the person to choose a version.
+   */
+  conflicts<K extends RecordKind>(
+    kind: K,
+  ): Promise<RecordConflict<RecordKinds[K]>[]>;
+  /**
+   * Settle a record that was changed in two places.
+   *
+   * Keeping `mine` leaves this device's version as it is and queues it to
+   * be sent on top of the server's. Keeping `theirs` replaces this device's
+   * version with the server's and drops what was queued. Either way the
+   * version that was not kept is removed from this device. Settling a
+   * record that is not in conflict does nothing.
+   *
+   * @throws RecordDeletedError if keeping that version would bring a
+   *   deleted record back.
+   */
+  resolve(kind: RecordKind, id: string, keep: Keep): Promise<void>;
+  /**
    * Be told after any record changes.
    *
    * @param listener - Called after each change.
@@ -76,12 +117,25 @@ export interface RecordStore {
   lock(): void;
 }
 
+/**
+ * A record with this ID was deleted. A deletion is kept so that it can reach
+ * the person's other devices, and nothing may be written over it.
+ */
+export class RecordDeletedError extends Error {
+  constructor() {
+    super("A deleted record cannot be written again");
+    this.name = "RecordDeletedError";
+  }
+}
+
 /** A {@link RecordStore} that keeps records in memory only. */
 export class MemoryRecordStore implements RecordStore {
   // One map per kind, each typed to that kind's records.
   #records: { [K in RecordKind]: Map<string, RecordKinds[K]> } = {
     "journal-entry": new Map(),
   };
+  /** The other version of each record in conflict, by ID. */
+  #parked = new Map<string, JournalEntry | undefined>();
   readonly #listeners = new Set<() => void>();
 
   #kind<K extends RecordKind>(kind: K): Map<string, RecordKinds[K]> {
@@ -130,6 +184,51 @@ export class MemoryRecordStore implements RecordStore {
     return Promise.resolve(0);
   }
 
+  /**
+   * Put a record in conflict, as sync does when the server's version
+   * cannot replace this device's.
+   *
+   * @param id - The record's ID.
+   * @param theirs - The server's version; `undefined` if deleted there.
+   */
+  park(id: string, theirs: JournalEntry | undefined): void {
+    this.#parked.set(id, theirs);
+    this.#changed();
+  }
+
+  conflicts<K extends RecordKind>(
+    kind: K,
+  ): Promise<RecordConflict<RecordKinds[K]>[]> {
+    return Promise.resolve(
+      [...this.#parked.entries()].map(([id, theirs]) => ({
+        id,
+        mine: this.#kind(kind).get(id),
+        theirs,
+        theirsDeleted: theirs === undefined,
+      })),
+    );
+  }
+
+  resolve(kind: RecordKind, id: string, keep: Keep): Promise<void> {
+    if (!this.#parked.has(id)) {
+      return Promise.resolve();
+    }
+    const theirs = this.#parked.get(id);
+    if (keep === "mine" && theirs === undefined) {
+      return Promise.reject(new RecordDeletedError());
+    }
+    if (keep === "theirs") {
+      if (theirs === undefined) {
+        this.#kind(kind).delete(id);
+      } else {
+        this.#kind(kind).set(id, theirs);
+      }
+    }
+    this.#parked.delete(id);
+    this.#changed();
+    return Promise.resolve();
+  }
+
   subscribe(listener: () => void): () => void {
     this.#listeners.add(listener);
     return () => {
@@ -139,6 +238,7 @@ export class MemoryRecordStore implements RecordStore {
 
   lock(): void {
     this.#records = { "journal-entry": new Map() };
+    this.#parked = new Map();
     this.#changed();
   }
 }

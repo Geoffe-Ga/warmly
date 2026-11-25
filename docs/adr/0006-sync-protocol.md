@@ -174,12 +174,51 @@ sync", "Couldn't sync. Your writing is saved on this device.", and "Needs
 your attention"; while offline the app's offline notice says so. It is a
 count and a state, never anything private (SYNC-010). "Needs your
 attention" is worked out from the `parked` store, so it is still shown
-after a restart.
+after a restart. It is shown in preference to the offline and failed
+states, because choosing needs no connection. A change the server refused
+outright (`rejected`) is remembered only in memory: after a restart it
+shows as waiting until the next push is refused again.
+
+Changes that arrive from another device replace or delete local records
+without announcing `journal.changed` or `journal.deleted`. Whatever is
+built from an entry stores the entry's content hash and checks it again
+when records change (#51).
+
+#### Settling a record changed in two places
+
+The device whose change was refused holds both versions: its own, and the
+server's in `parked`. The server keeps no second version and offers no
+"resolve" operation: a choice is an ordinary operation, or none at all.
+(The first plan stored the refused ciphertext on the server and fed it to
+every device. That needs a second table, a second feed and a purge rule, to
+protect a version that is already safe on the device that wrote it. If that
+device is lost before the person chooses, its unsent change is lost exactly
+as any other unsent change would be.)
+
+The person sees both versions decrypted, side by side, on the "Changed in
+two places" screen (`src/sync/conflicts.ts`) and chooses:
+
+- **Keep this device's version.** Its base revision becomes the parked
+  revision and it stays queued; the next push is accepted on top of the
+  server's version. The parked version is removed.
+- **Keep the other version.** The local record is replaced by the parked
+  envelope, its queued changes are dropped and the parked version is
+  removed. Nothing is sent.
+- **Write one from both.** The person's text is stored as this device's
+  version, then as "keep this device's version". A finished entry must
+  still have all three answers.
+
+Nothing is merged for the person and neither version is removed before
+they choose. Afterwards the version not kept exists nowhere: there is no
+history (PRD §5.2). If the server's version changes again before the choice
+is sent, the push is refused again and the newer version is parked: a
+conflict on top of a conflict is just another conflict.
+
+A choice that would bring a deleted record back is refused by the store.
+Edit-against-delete is settled by its own rules (#37).
 
 ### What is deliberately left to later issues
 
-- Showing and resolving the two versions of a conflict (#36). Both are
-  already kept.
 - Browser tests of two devices against the real API and database: they
   need a deployed auth provider (#63).
 - Tombstone retention, compaction and a deletion ledger (#37, #65).

@@ -37,11 +37,16 @@ import type {
 import type { RemoteChange } from "../sync/protocol";
 import { queueOperation, type OutboxOperation } from "./outbox";
 import {
+  RecordDeletedError,
   StaleRecordError,
+  type Keep,
+  type RecordConflict,
   type RecordKind,
   type RecordKinds,
   type RecordStore,
 } from "./record-store";
+
+export { RecordDeletedError } from "./record-store";
 
 export { StaleRecordError } from "./record-store";
 
@@ -70,17 +75,6 @@ export class StoreLockedError extends Error {
   constructor() {
     super("The record store is locked");
     this.name = "StoreLockedError";
-  }
-}
-
-/**
- * A record with this ID was deleted. A deletion is kept so that it can reach
- * the person's other devices, and nothing may be written over it.
- */
-export class RecordDeletedError extends Error {
-  constructor() {
-    super("A deleted record cannot be written again");
-    this.name = "RecordDeletedError";
   }
 }
 
@@ -324,6 +318,103 @@ function readAll(
   );
 }
 
+/** Read every server version kept beside a local record. */
+function readParked(database: IDBDatabase): Promise<ParkedRecord[]> {
+  return transact<ParkedRecord[]>(
+    database,
+    [PARKED],
+    "readonly",
+    (transaction, result) => {
+      const reading = transaction.objectStore(PARKED).getAll();
+      reading.onsuccess = () => {
+        result(reading.result as ParkedRecord[]);
+      };
+    },
+  );
+}
+
+/** What settling a record in conflict did. */
+type Settled =
+  /** The record was not in conflict, or keeping that version is not allowed. */
+  | { readonly kind: "none" | "deleted" }
+  /** Settled. `row` is the local row if it was replaced. */
+  | { readonly kind: "settled"; readonly row?: StoredRecord };
+
+/**
+ * Keep one version of a record in conflict and remove the other, in one
+ * transaction (ADR-0006).
+ */
+function settle(
+  database: IDBDatabase,
+  type: number,
+  id: string,
+  keep: Keep,
+): Promise<Settled> {
+  return transact<Settled>(
+    database,
+    [RECORDS, OUTBOX, PARKED],
+    "readwrite",
+    (transaction, result) => {
+      const records = transaction.objectStore(RECORDS);
+      const outbox = transaction.objectStore(OUTBOX);
+      const parked = transaction.objectStore(PARKED);
+      const key = [type, id];
+      const kept = parked.get(key);
+      const reading = records.get(key);
+      const queued = outbox.getAll();
+      queued.onsuccess = () => {
+        const theirs = kept.result as ParkedRecord | undefined;
+        const mine = reading.result as StoredRecord | undefined;
+        if (theirs === undefined) {
+          result({ kind: "none" });
+          return;
+        }
+        // A record deleted on either side never comes back under this ID.
+        const revives =
+          keep === "mine"
+            ? theirs.tombstone
+            : mine?.tombstone === true && !theirs.tombstone;
+        if (revives) {
+          result({ kind: "deleted" });
+          return;
+        }
+        parked.delete(key);
+        if (keep === "mine") {
+          if (mine !== undefined) {
+            // Still unsent, now on top of the server's version: the next
+            // sync sends it and the server accepts it.
+            records.put({
+              ...mine,
+              baseRevision: theirs.revision,
+              dirty: true,
+            } satisfies StoredRecord);
+          }
+          result({ kind: "settled" });
+          return;
+        }
+        const row: StoredRecord = {
+          type,
+          id,
+          envelope: theirs.envelope,
+          schemaVersion: theirs.schemaVersion,
+          localRevision: (mine?.localRevision ?? 0) + 1,
+          baseRevision: theirs.revision,
+          tombstone: theirs.tombstone,
+          dirty: false,
+        };
+        records.put(row);
+        // This device's version is given up, so nothing is left to send.
+        for (const operation of queued.result as OutboxOperation[]) {
+          if (operation.type === type && operation.id === id) {
+            outbox.delete(operation.seq);
+          }
+        }
+        result({ kind: "settled", row });
+      };
+    },
+  );
+}
+
 /** What applying one change from the server did. */
 interface Applied {
   readonly outcome: RemoteOutcome;
@@ -346,8 +437,10 @@ function meet(
     return "applied";
   }
   if (row.dirty) {
-    // The server is still where this device's unsent change started.
-    return change.revision === row.baseRevision ? "unchanged" : "conflict";
+    // At the base, the server is still where this device's unsent change
+    // started. Below it, the change is one this device has already seen,
+    // met again because the feed was read from the start.
+    return change.revision <= row.baseRevision ? "unchanged" : "conflict";
   }
   if (change.revision <= row.baseRevision) {
     return "unchanged";
@@ -483,6 +576,61 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
 
   async unreadable(kind: RecordKind): Promise<number> {
     return (await this.#read())?.unreadable[kind].size ?? 0;
+  }
+
+  async conflicts<K extends RecordKind>(
+    kind: K,
+  ): Promise<RecordConflict<RecordKinds[K]>[]> {
+    const session = this.#session;
+    const opened = await this.#read();
+    if (session === undefined || opened === undefined || opened.superseded) {
+      return [];
+    }
+    const { type } = FORMATS[kind];
+    const parked = (await readParked(opened.database)).filter(
+      (kept) => kept.type === type,
+    );
+    return Promise.all(
+      parked.map(async (kept) => ({
+        id: kept.id,
+        mine: opened.records[kind].get(kept.id)?.record,
+        theirs: await decrypt(
+          kind,
+          // Only the envelope and the fields that say how to read it matter.
+          {
+            ...kept,
+            localRevision: 0,
+            baseRevision: kept.revision,
+            dirty: false,
+          },
+          session.root,
+          session.owner,
+        ),
+        theirsDeleted: kept.tombstone,
+      })),
+    );
+  }
+
+  async resolve(kind: RecordKind, id: string, keep: Keep): Promise<void> {
+    const session = this.#session;
+    const opened = await this.#read();
+    if (session === undefined || opened === undefined) {
+      throw new StoreLockedError();
+    }
+    if (opened.superseded) {
+      throw new NewerDatabaseError();
+    }
+    const settled = await settle(opened.database, FORMATS[kind].type, id, keep);
+    if (settled.kind === "deleted") {
+      throw new RecordDeletedError();
+    }
+    if (settled.kind !== "settled" || this.#session !== session) {
+      return;
+    }
+    if (settled.row !== undefined) {
+      await this.#remember(opened, session, settled.row);
+    }
+    this.#changed();
   }
 
   /**

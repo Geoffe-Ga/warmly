@@ -16,6 +16,7 @@ describe("route table", () => {
       "journal-new",
       "journal-entry",
       "journal-edit",
+      "sync-conflicts",
       "reflect",
       "reflect-session",
       "prepare",
