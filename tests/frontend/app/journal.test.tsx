@@ -13,6 +13,7 @@ import { AUTOSAVE_DELAY_MS } from "../../../src/domain/journal/drafts";
 import { FEELINGS } from "../../../src/domain/journal/feelings";
 import { PROMPTS, type JournalEntry } from "../../../src/domain/journal/types";
 import { ANSWER_NEEDED } from "../../../src/domain/journal/validation";
+import { StaleRecordError } from "../../../src/storage/record-store";
 import {
   DRAFT_NOT_SAVED,
   DRAFT_SAVED,
@@ -711,6 +712,79 @@ describe("drafts (JR-004)", () => {
     });
     expect(DRAFT_NOT_SAVED).toContain("Keep this page open");
     expect(first()).toHaveProperty("value", "x");
+  });
+
+  it("a draft changed in another tab is not saved over; the latest version can be loaded and carried on with", async () => {
+    const mine = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(mine));
+    const newer = {
+      ...mine,
+      responses: { good: "from the other tab", improve: "", loved: "" },
+      feelings: ["tired" as const],
+    };
+    const put = services.records.put.bind(services.records);
+    services.records.put = () => Promise.reject(new StaleRecordError());
+    services.records.reload = async () => {
+      await put("journal-entry", newer);
+      return newer;
+    };
+
+    await userEvent.type(first(), " mine");
+    hidePage();
+
+    const banner = (
+      await screen.findByText(/was changed in another tab or window/)
+    ).closest('[role="status"]');
+    expect(banner?.textContent).toContain("This draft");
+    expect(first()).toHaveProperty("value", "half a thought mine");
+
+    services.records.put = put;
+    await userEvent.click(
+      within(banner as HTMLElement).getByRole("button", {
+        name: "Load the latest version",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(first()).toHaveProperty("value", "from the other tab");
+    });
+    expect(screen.getByLabelText("tired")).toHaveProperty("checked", true);
+    expect(screen.queryByText(/was changed in another tab/)).toBeNull();
+
+    await userEvent.type(first(), " and on");
+    hidePage();
+    await waitFor(async () => {
+      expect((await drafts(services))[0]?.responses.good).toBe(
+        "from the other tab and on",
+      );
+    });
+    expect(await drafts(services)).toHaveLength(1);
+  });
+
+  it("starts empty when the other tab finished or discarded the draft", async () => {
+    const mine = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(mine));
+    services.records.put = () => Promise.reject(new StaleRecordError());
+    services.records.reload = () =>
+      Promise.resolve({ ...mine, status: "complete" as const });
+
+    await userEvent.type(first(), " mine");
+    hidePage();
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Load the latest version" }),
+    );
+
+    await waitFor(() => {
+      expect(first()).toHaveProperty("value", "");
+    });
+    expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
+    expect(screen.queryByText(/carrying on with the draft/)).toBeNull();
   });
 
   it("shows that it is saving without reading that out", async () => {

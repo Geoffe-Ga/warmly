@@ -47,9 +47,9 @@ function Answer(props: { readonly text: string }): JSX.Element {
 }
 
 /**
- * One journal entry: its date and the three answers under their questions
- * (PRD JR-001). Opening an entry never calls AI. Editing and deleting arrive
- * with later work.
+ * One journal entry: its date, the three answers under their questions,
+ * and the way to edit it (PRD JR-001, JR-005, JR-006). Opening an entry
+ * never calls AI. Deleting arrives with later work.
  *
  * @param props - The route's parameters; `id` names the entry.
  * @returns The entry screen.
@@ -129,11 +129,15 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
           <p>{entry.feelings.join(", ")}</p>
         </Card>
       )}
-      {entry.status === "draft" && (
-        <p>
+      <p>
+        {entry.status === "draft" ? (
           <Link href={pathFor("journal-new")}>Carry on writing</Link>
-        </p>
-      )}
+        ) : (
+          <Link href={pathFor("journal-edit", { id: entry.id })}>
+            Edit this entry
+          </Link>
+        )}
+      </p>
       {back}
     </PageLayout>
   );

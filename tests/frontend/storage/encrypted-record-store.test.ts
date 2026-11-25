@@ -404,6 +404,76 @@ describe("the encrypted record store", () => {
     ]);
   });
 
+  it("reads one record again, so a refused write can be redone on the newer version", async () => {
+    const { store: first, names, name, root } = await unlockedStore();
+    const written = await entry("Synthetic original");
+    await first.put("journal-entry", written);
+    const second = new EncryptedRecordStore(names);
+    second.unlock(root, OWNER);
+    await second.list("journal-entry");
+    const newer = { ...written, status: "draft" as const };
+    await first.put("journal-entry", newer);
+    const told = vi.fn();
+    second.subscribe(told);
+
+    expect(await second.reload("journal-entry", written.id)).toEqual(newer);
+
+    expect(told).toHaveBeenCalledTimes(1);
+    expect(await second.get("journal-entry", written.id)).toEqual(newer);
+    await second.put("journal-entry", { ...newer, feelings: ["sad"] });
+    expect(await readRows<StoredRecord>(name, RECORDS)).toMatchObject([
+      { localRevision: 3 },
+    ]);
+  });
+
+  it("on reading again, drops a record another tab deleted and picks up one it created", async () => {
+    const { store: first, names, root } = await unlockedStore();
+    const gone = await entry("Synthetic gone");
+    await first.put("journal-entry", gone);
+    const second = new EncryptedRecordStore(names);
+    second.unlock(root, OWNER);
+    await second.list("journal-entry");
+    await first.delete("journal-entry", gone.id);
+    const fresh = await entry("Synthetic fresh");
+    await first.put("journal-entry", fresh);
+
+    expect(await second.reload("journal-entry", gone.id)).toBeUndefined();
+    expect(await second.reload("journal-entry", fresh.id)).toEqual(fresh);
+    expect(await second.reload("journal-entry", "never-there")).toBeUndefined();
+
+    expect(await second.list("journal-entry")).toEqual([fresh]);
+  });
+
+  it("on reading again, counts a record it can no longer read and hides it", async () => {
+    const { store, name } = await unlockedStore();
+    const written = await entry();
+    await store.put("journal-entry", written);
+    const [row] = await readRows<StoredRecord>(name, RECORDS);
+    if (row === undefined) {
+      throw new Error("the row is expected");
+    }
+    await addRow(name, { ...row, schemaVersion: 2, localRevision: 2 });
+
+    expect(await store.reload("journal-entry", written.id)).toBeUndefined();
+
+    expect(await store.list("journal-entry")).toEqual([]);
+    expect(await store.unreadable("journal-entry")).toBe(1);
+  });
+
+  it("reads nothing again while locked, or when locked meanwhile", async () => {
+    const { store, root } = await unlockedStore();
+    const written = await entry();
+    await store.put("journal-entry", written);
+
+    const reading = store.reload("journal-entry", written.id);
+    store.lock();
+
+    expect(await reading).toBeUndefined();
+    expect(await store.reload("journal-entry", written.id)).toBeUndefined();
+    store.unlock(root, OWNER);
+    expect(await store.reload("journal-entry", written.id)).toEqual(written);
+  });
+
   it("refuses to create a record another tab already created with the same ID", async () => {
     const { store: first, names, name, root } = await unlockedStore();
     const second = new EncryptedRecordStore(names);

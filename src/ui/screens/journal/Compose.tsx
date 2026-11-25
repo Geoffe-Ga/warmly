@@ -4,20 +4,13 @@ import { useContext, useRef, useState } from "preact/hooks";
 import { Link, NavigationContext } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
 import type { SaveState } from "../../../domain/journal/drafts";
-import { FEELINGS } from "../../../domain/journal/feelings";
-import { PROMPTS } from "../../../domain/journal/types";
-import {
-  ANSWER_NEEDED,
-  canComplete,
-  unanswered,
-} from "../../../domain/journal/validation";
+import { canComplete, unanswered } from "../../../domain/journal/validation";
 import { Button } from "../../components/Button";
-import { CheckboxGroup } from "../../components/CheckboxGroup";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
-import { TextArea } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { AccountForm, useAction } from "../account/shared";
+import { EntryFields, OutOfDate } from "./EntryFields";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
 import { useDraft } from "./useDraft";
 
@@ -25,7 +18,7 @@ import { useDraft } from "./useDraft";
 export const DRAFT_SAVED = "Saved on this device";
 /** Said when a draft could not be stored. */
 export const DRAFT_NOT_SAVED =
-  "This draft couldn't be saved on this device. Keep this page open so what you wrote isn't lost. If the journal is open in another tab, close this one and carry on there.";
+  "This draft couldn't be saved on this device. Keep this page open so what you wrote isn't lost.";
 
 /**
  * Where the draft stands, in words. Only a settled state is announced to a
@@ -73,7 +66,7 @@ export function Compose(): JSX.Element {
   // Errors appear only once the person has tried to save, and then follow
   // what they type, so a message goes as soon as its answer has text.
   const [tried, setTried] = useState(false);
-  const { responses, feelings } = form.content;
+  const { responses } = form.content;
   const missing = tried ? unanswered(responses) : [];
 
   if (form.status !== "ready") {
@@ -106,6 +99,16 @@ export function Compose(): JSX.Element {
           {formatEntryDate(form.resumed)}.
         </StatusBanner>
       )}
+      {form.outOfDate && (
+        <OutOfDate
+          what="draft"
+          disabled={action.busy}
+          onLoad={() => {
+            setTried(false);
+            action.run(form.loadLatest);
+          }}
+        />
+      )}
       <AccountForm
         action={action}
         validate={() => {
@@ -127,32 +130,10 @@ export function Compose(): JSX.Element {
           comes to mind for one, say so in your own words. That is a real
           answer. What you write is saved as a draft as you go.
         </p>
-        {PROMPTS.map((prompt) => (
-          <TextArea
-            key={prompt.key}
-            label={prompt.label}
-            name={`journal-${prompt.key}`}
-            rows={5}
-            required
-            value={responses[prompt.key]}
-            error={missing.includes(prompt.key) ? ANSWER_NEEDED : undefined}
-            onInput={(value) => {
-              form.change({
-                responses: { ...responses, [prompt.key]: value },
-                feelings,
-              });
-            }}
-          />
-        ))}
-        <CheckboxGroup
-          legend="How are you feeling? (optional)"
-          hint="Choose any that fit, or none. Only what you choose is noted."
-          name="journal-feelings"
-          options={FEELINGS}
-          selected={feelings}
-          onChange={(chosen) => {
-            form.change({ responses, feelings: chosen });
-          }}
+        <EntryFields
+          content={form.content}
+          missing={missing}
+          onChange={form.change}
         />
         <SaveStatus state={form.saveState} />
         <div class="button-row">

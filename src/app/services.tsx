@@ -48,6 +48,7 @@ import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeDeviceRegistry } from "../testing/fake-device-registry";
 import { FakePairingRelay } from "../testing/fake-pairing-relay";
 import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
+import { createEventBus, type EventBus } from "../domain/events";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
@@ -71,6 +72,8 @@ export interface Services {
   readonly onboarding: Onboarding;
   /** Work to finish before the app locks; see {@link LockHooks}. */
   readonly lockHooks: LockHooks;
+  /** Announces changes to private records; see {@link EventBus}. */
+  readonly events: EventBus;
 }
 
 /**
@@ -329,6 +332,7 @@ export function createServices(): Services {
     session: createSession(),
     onboarding: createOnboarding(),
     lockHooks: createLockHooks(),
+    events: createEventBus(),
   };
 }
 

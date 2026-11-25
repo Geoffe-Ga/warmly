@@ -17,6 +17,7 @@ import {
   type SaveState,
 } from "../../../domain/journal/drafts";
 import type { EntryDate, JournalEntry } from "../../../domain/journal/types";
+import { StaleRecordError } from "../../../storage/record-store";
 
 /** The compose form, as the screen sees it. */
 export interface DraftForm {
@@ -28,6 +29,17 @@ export interface DraftForm {
   /** Whether a draft is stored for this form. */
   readonly hasDraft: boolean;
   readonly saveState: SaveState;
+  /**
+   * Whether a save was refused because the draft has been changed
+   * elsewhere, for example in another tab, since this screen read it.
+   */
+  readonly outOfDate: boolean;
+  /**
+   * Read the draft again and put it on the form, replacing what is typed
+   * here. If the draft is gone, or was finished elsewhere, the form is
+   * emptied.
+   */
+  readonly loadLatest: () => Promise<void>;
   /** Take new content from the form and save it shortly. */
   readonly change: (content: EntryContent) => void;
   /**
@@ -56,11 +68,15 @@ export function useDraft(): DraftForm {
   const [resumed, setResumed] = useState<EntryDate | undefined>(undefined);
   const [hasDraft, setHasDraft] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [outOfDate, setOutOfDate] = useState(false);
   const draft = useRef<JournalEntry | undefined>(undefined);
   const autosave = useRef<Autosave<EntryContent> | undefined>(undefined);
   // True from the moment the entry starts being finished. Nothing typed
   // after that may be saved as a draft: the draft is turning into the
-  // finished entry, and a late save would leave a second draft behind.
+  // finished entry, and a late save would leave a second draft behind. It
+  // stays true once the entry is stored, and when the app locked first:
+  // either way this screen is replaced, and the hook starts afresh when the
+  // form is next opened.
   const finishing = useRef(false);
 
   useEffect(() => {
@@ -75,12 +91,21 @@ export function useDraft(): DraftForm {
           return;
         }
         const next = await draftFrom(latest, draft.current);
-        await records.put("journal-entry", next);
+        try {
+          await records.put("journal-entry", next);
+        } catch (error) {
+          if (error instanceof StaleRecordError && mounted) {
+            setOutOfDate(true);
+          }
+          throw error;
+        }
         draft.current = next;
+        if (mounted) {
+          setHasDraft(true);
+        }
       },
       (state) => {
         if (mounted) {
-          setHasDraft(draft.current !== undefined);
           // "Saved" is only said when something is stored.
           setSaveState(
             state === "saved" && draft.current === undefined ? "idle" : state,
@@ -175,6 +200,25 @@ export function useDraft(): DraftForm {
         throw error;
       }
     },
+    outOfDate,
+    loadLatest: async () => {
+      await settle();
+      const latest =
+        draft.current === undefined
+          ? undefined
+          : await records.reload("journal-entry", draft.current.id);
+      const found = latest?.status === "draft" ? latest : undefined;
+      draft.current = found;
+      setContent(
+        found === undefined
+          ? BLANK
+          : { responses: found.responses, feelings: found.feelings ?? [] },
+      );
+      setResumed(found?.entryDate);
+      setHasDraft(found !== undefined);
+      setSaveState("idle");
+      setOutOfDate(false);
+    },
     discard: async () => {
       await settle();
       if (draft.current !== undefined) {
@@ -185,6 +229,7 @@ export function useDraft(): DraftForm {
       setResumed(undefined);
       setHasDraft(false);
       setSaveState("idle");
+      setOutOfDate(false);
     },
   };
 }

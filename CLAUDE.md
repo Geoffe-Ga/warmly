@@ -15,9 +15,9 @@ envelopes and device identities, and serves the remaining routes as typed
 stubs. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
 servers outside production) and a journal that can be written, listed, read
-and searched, with drafts saved as they are typed, stored encrypted in
-IndexedDB with an outbox that nothing sends yet; other routes render
-accessible placeholders.
+searched and edited in place, with drafts saved as they are typed, stored
+encrypted in IndexedDB with an outbox that nothing sends yet; other routes
+render accessible placeholders.
 
 ---
 
@@ -204,7 +204,8 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   (`src/storage/db.ts`) and a new dump under `tests/fixtures/idb/`; never
   edit a released step or an existing dump. Never write over a tombstone.
   A `put` based on an out-of-date copy is refused (`StaleRecordError`):
-  never catch it and write again without reading the newer record.
+  never catch it and write again without reading the newer record. Offer
+  the person the newer version (`RecordStore.reload`) instead.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only
@@ -214,6 +215,12 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   `useDraft`, which registers its flush with `services.lockHooks` and also
   flushes when the page is hidden or closed. Only the person finishing the
   entry makes it complete. Autosave never calls AI or the network.
+- A completed entry is changed only through `editEntry`
+  (`src/domain/journal/edit.ts`): it keeps the ID, creation time and day,
+  applies the completion rule, and keeps no copy of the old text. When the
+  content hash changes it announces `journal.changed` on `services.events`
+  (`src/domain/events.ts`) after the entry is stored. Events carry IDs and
+  hashes only, never text, and stay in memory on this device.
 - `contentHash` (`src/domain/journal/content-hash.ts`) covers the three
   answers only, never feelings (D-24). Changing its canonical form means a
   new `CONTENT_HASH_VERSION` and a new file beside

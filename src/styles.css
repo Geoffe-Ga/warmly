@@ -311,6 +311,11 @@ textarea.field__control {
   accent-color: var(--color-coral-strong);
 }
 
+/* An action offered inside a banner sits clear of its text */
+.banner .button-row {
+  margin-top: var(--space-2);
+}
+
 /* Save status: where a draft stands, under the form */
 
 .save-status {

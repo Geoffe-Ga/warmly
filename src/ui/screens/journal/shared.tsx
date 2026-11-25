@@ -28,7 +28,8 @@ export function formatEntryDate(entryDate: EntryDate): string {
 
 /**
  * Put entries in timeline order: newest day first, and within a day the
- * most recently created first.
+ * most recently created first. Entries created at the same instant are
+ * ordered by ID, so the order never changes from one reading to the next.
  *
  * @param entries - The entries, in any order.
  * @returns A new, sorted array.
@@ -39,7 +40,8 @@ export function inTimelineOrder(
   return [...entries].sort(
     (left, right) =>
       right.entryDate.date.localeCompare(left.entryDate.date) ||
-      right.createdAt.localeCompare(left.createdAt),
+      right.createdAt.localeCompare(left.createdAt) ||
+      left.id.localeCompare(right.id),
   );
 }
 

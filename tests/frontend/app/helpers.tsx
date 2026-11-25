@@ -7,6 +7,7 @@ import { createOnboarding } from "../../../src/app/onboarding";
 import type { Services } from "../../../src/app/services";
 import { createSession, type SessionState } from "../../../src/app/session";
 import { createRevocationSignal } from "../../../src/devices/revocation";
+import { createEventBus } from "../../../src/domain/events";
 import { MemoryRecordStore } from "../../../src/storage/record-store";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import { FakeDeviceDirectory } from "../../../src/testing/fake-device-directory";
@@ -63,6 +64,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     session: createSession(state),
     onboarding: createOnboarding(),
     lockHooks: createLockHooks(),
+    events: createEventBus(),
   };
 }
 

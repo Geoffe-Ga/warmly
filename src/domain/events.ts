@@ -1,0 +1,90 @@
+/**
+ * Domain events: things that happened to private records, announced so that
+ * other parts of the app can react without the code that caused them
+ * knowing who is listening (PRD DEP-001).
+ *
+ * Events stay on this device and in memory. An event carries IDs and
+ * hashes, never what a record says.
+ */
+
+/** Every event, and what it carries. */
+export interface DomainEvents {
+  /** What a completed journal entry says has changed. */
+  readonly "journal.changed": {
+    readonly entryId: string;
+    /** The content hash before the change. */
+    readonly oldHash: string;
+    /** The content hash after it. Never equal to `oldHash`. */
+    readonly newHash: string;
+  };
+}
+
+/** The name of an event. */
+export type DomainEventType = keyof DomainEvents;
+
+/** Reacts to one kind of event. May do asynchronous work. */
+export type DomainEventListener<K extends DomainEventType> = (
+  event: DomainEvents[K],
+) => void | Promise<void>;
+
+/** Announces events to whoever has asked to hear them. */
+export interface EventBus {
+  /**
+   * Ask to hear one kind of event.
+   *
+   * @param type - The event's name.
+   * @param listener - Called with each such event.
+   * @returns A function that stops the listener being called.
+   */
+  on<K extends DomainEventType>(
+    type: K,
+    listener: DomainEventListener<K>,
+  ): () => void;
+  /**
+   * Announce an event and wait for every listener to finish.
+   *
+   * @param type - The event's name.
+   * @param event - What happened.
+   * @throws AggregateError if any listener failed. Every listener is still
+   *   run: one that fails does not stop the others.
+   */
+  emit<K extends DomainEventType>(
+    type: K,
+    event: DomainEvents[K],
+  ): Promise<void>;
+}
+
+/**
+ * Create an event bus with no listeners.
+ *
+ * @returns The bus.
+ */
+export function createEventBus(): EventBus {
+  const listeners: {
+    [K in DomainEventType]: Set<DomainEventListener<K>>;
+  } = { "journal.changed": new Set() };
+
+  return {
+    on(type, listener) {
+      listeners[type].add(listener);
+      return () => {
+        listeners[type].delete(listener);
+      };
+    },
+    async emit(type, event) {
+      const outcomes = await Promise.allSettled(
+        // Each listener starts inside a promise, so one that throws at once
+        // is counted as failed and does not stop the rest being called.
+        [...listeners[type]].map((listener) =>
+          Promise.resolve().then(() => listener(event)),
+        ),
+      );
+      const failures = outcomes
+        .filter((outcome) => outcome.status === "rejected")
+        .map((outcome) => outcome.reason as unknown);
+      if (failures.length > 0) {
+        throw new AggregateError(failures, `A listener to ${type} failed`);
+      }
+    },
+  };
+}
