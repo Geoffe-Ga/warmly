@@ -9,7 +9,9 @@ import {
   InvalidNameError,
   MAX_COLLECTION_NAME,
 } from "../../../domain/cards/collections";
+import { reloadCards } from "../../../domain/cards/store";
 import { CARD_TYPE_LABELS, type CardType } from "../../../domain/cards/types";
+import { useServices } from "../../../app/services";
 import { StaleRecordError } from "../../../storage/record-store";
 import { StatusBanner } from "../../components/StatusBanner";
 import { describeStorageError } from "../../storage-messages";
@@ -119,9 +121,14 @@ export interface Change {
  * it fails. What the person typed is the screen's to keep; nothing here
  * clears it.
  *
+ * A change refused because the copy on screen was out of date is never
+ * tried again here. The stored collections and cards are read again, so
+ * the screen shows the newer version, and the person decides what to do.
+ *
  * @returns The state and the `run` function.
  */
 export function useChange(): Change {
+  const { records } = useServices();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const running = useRef(false);
@@ -134,7 +141,12 @@ export function useChange(): Change {
     setBusy(true);
     setError(undefined);
     work()
-      .catch((caught: unknown) => {
+      .catch(async (caught: unknown) => {
+        if (caught instanceof StaleRecordError) {
+          // Show what is stored now. If even that fails, the message
+          // still says nothing was saved over the newer version.
+          await reloadCards(records).catch(() => undefined);
+        }
         setError(describeChangeError(caught));
       })
       .finally(() => {

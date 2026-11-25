@@ -58,6 +58,21 @@ export interface CardsStore {
   subscribe(listener: () => void): () => void;
 }
 
+/**
+ * Read every collection and card again from this device's storage, so
+ * that what is shown is what is stored. Used after a change was refused
+ * because the copy on screen was out of date (see `StaleRecordError`).
+ *
+ * @param records - The private record store.
+ */
+export async function reloadCards(records: RecordStore): Promise<void> {
+  for (const kind of ["card-collection", "conversation-card"] as const) {
+    for (const record of await records.list(kind)) {
+      await records.reload(kind, record.id);
+    }
+  }
+}
+
 /** The cards store the app uses: a view of the private record store. */
 export class RecordCardsStore implements CardsStore {
   readonly #records: RecordStore;

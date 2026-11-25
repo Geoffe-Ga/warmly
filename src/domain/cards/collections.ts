@@ -167,22 +167,35 @@ function strays(
   return cards.filter((card) => !known.has(card.collectionId));
 }
 
+/** The cards among those the person was shown that are still strays. */
+async function straysAmong(
+  deps: Deps,
+  cardIds: readonly string[],
+): Promise<ConversationCard[]> {
+  const shown = new Set(cardIds);
+  return strays(
+    await deps.records.list("card-collection"),
+    await deps.records.list("conversation-card"),
+  ).filter((card) => shown.has(card.id));
+}
+
 /**
- * Keep the cards that belong to no collection, by putting them in the
- * collection for kept cards. Done only when the person asks.
+ * Keep cards that belong to no collection, by putting them in the
+ * collection for kept cards. Done only when the person asks, and only to
+ * the cards they were shown: one that arrives meanwhile is left for them
+ * to see first.
  *
  * @param deps - The record store.
+ * @param cardIds - The cards the person was shown.
  * @param now - The current time.
  * @returns How many cards were moved.
  */
 export async function keepStrayCards(
   deps: Deps,
+  cardIds: readonly string[],
   now: Date = new Date(),
 ): Promise<number> {
-  const found = strays(
-    await deps.records.list("card-collection"),
-    await deps.records.list("conversation-card"),
-  );
+  const found = await straysAmong(deps, cardIds);
   if (found.length === 0) {
     return 0;
   }
@@ -198,17 +211,19 @@ export async function keepStrayCards(
 }
 
 /**
- * Delete the cards that belong to no collection, for good. Done only when
- * the person asks, after a confirmation.
+ * Delete cards that belong to no collection, for good. Done only when the
+ * person asks, after a confirmation, and only to the cards they were
+ * shown.
  *
  * @param deps - The record store.
+ * @param cardIds - The cards the person was shown.
  * @returns How many cards were deleted.
  */
-export async function deleteStrayCards(deps: Deps): Promise<number> {
-  const found = strays(
-    await deps.records.list("card-collection"),
-    await deps.records.list("conversation-card"),
-  );
+export async function deleteStrayCards(
+  deps: Deps,
+  cardIds: readonly string[],
+): Promise<number> {
+  const found = await straysAmong(deps, cardIds);
   for (const card of found) {
     await deps.records.delete("conversation-card", card.id);
   }

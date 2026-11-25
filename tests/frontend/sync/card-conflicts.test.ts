@@ -260,7 +260,8 @@ describe("a card added while its collection is deleted on another device", () =>
       expect(await names(one)).toEqual([]);
     }
 
-    expect(await keepStrayCards({ records: a.store })).toBe(1);
+    const shown = (await cardsOf(a).strays()).map((each) => each.id);
+    expect(await keepStrayCards({ records: a.store }, shown)).toBe(1);
     await a.sync();
     await b.sync();
 

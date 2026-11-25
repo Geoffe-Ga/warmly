@@ -763,6 +763,50 @@ describe("moving cards (CC-010, AC-13)", () => {
     );
     expect(rowTexts()).toEqual(before);
   });
+
+  it("after such a refusal, reads what is stored again and shows it, without trying the change again", async () => {
+    const services = await unlocked();
+    await renderApp(pathFor("collection", SUNDAY), services);
+    const user = userEvent.setup();
+    await screen.findByRole("navigation", { name: "Cards in this collection" });
+    const put = services.records.put.bind(services.records);
+    let attempts = 0;
+    services.records.put = () => {
+      attempts += 1;
+      return Promise.reject(new StaleRecordError());
+    };
+    const reloaded: string[] = [];
+    // The stored collection is newer than the one on screen: reading it
+    // again is how the screen learns its new name.
+    services.records.reload = (async (kind: "card-collection", id: string) => {
+      reloaded.push(kind);
+      const stored = await services.records.get(kind, id);
+      if (
+        kind === "card-collection" &&
+        id === SEED.sunday &&
+        stored !== undefined
+      ) {
+        const newer = { ...stored, name: "Renamed in another tab" };
+        await put(kind, newer);
+        return newer;
+      }
+      return stored;
+    }) as typeof services.records.reload;
+
+    await user.click(
+      within(rows()[0] as HTMLElement).getByRole("button", {
+        name: /move down/i,
+      }),
+    );
+
+    await screen.findByRole("alert");
+    await waitFor(() => {
+      expect(heading().textContent).toBe("Renamed in another tab");
+    });
+    expect(reloaded).toContain("card-collection");
+    expect(reloaded).toContain("conversation-card");
+    expect(attempts).toBe(1);
+  });
 });
 
 describe("renaming and deleting a collection (CC-010)", () => {

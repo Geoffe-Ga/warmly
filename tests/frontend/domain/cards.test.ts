@@ -25,7 +25,7 @@ import {
   moveCard,
   renameCollection,
 } from "../../../src/domain/cards/collections";
-import { RecordCardsStore } from "../../../src/domain/cards/store";
+import { RecordCardsStore, reloadCards } from "../../../src/domain/cards/store";
 import {
   CARD_TYPE_LABELS,
   isCardCollection,
@@ -836,7 +836,9 @@ describe("cards that belong to no collection are never hidden (CC-010)", () => {
   it("keeps them, when asked, in a collection for kept cards, and nothing else moves", async () => {
     const { records, store } = await withStrays();
 
-    expect(await keepStrayCards({ records }, NOW)).toBe(2);
+    expect(await keepStrayCards({ records }, ["late-1", "late-2"], NOW)).toBe(
+      2,
+    );
 
     expect(await store.strays()).toEqual([]);
     const kept = (await store.collections()).find(
@@ -857,7 +859,7 @@ describe("cards that belong to no collection are never hidden (CC-010)", () => {
     const first = await keptCardsCollection({ records }, NOW);
 
     expect((await keptCardsCollection({ records })).id).toBe(first.id);
-    await keepStrayCards({ records });
+    await keepStrayCards({ records }, ["late-1", "late-2"]);
 
     expect(
       (await store.collections()).filter(
@@ -870,8 +872,8 @@ describe("cards that belong to no collection are never hidden (CC-010)", () => {
   it("does nothing, and makes no collection, when there are none to keep", async () => {
     const { records, store } = await seeded();
 
-    expect(await keepStrayCards({ records })).toBe(0);
-    expect(await deleteStrayCards({ records })).toBe(0);
+    expect(await keepStrayCards({ records }, ["late-1", "late-2"])).toBe(0);
+    expect(await deleteStrayCards({ records }, ["late-1", "late-2"])).toBe(0);
 
     expect(await store.collections()).toHaveLength(3);
   });
@@ -879,10 +881,42 @@ describe("cards that belong to no collection are never hidden (CC-010)", () => {
   it("deletes them, when asked, and only them", async () => {
     const { records, store } = await withStrays();
 
-    expect(await deleteStrayCards({ records })).toBe(2);
+    expect(await deleteStrayCards({ records }, ["late-1", "late-2"])).toBe(2);
 
     expect(await store.strays()).toEqual([]);
     expect(await records.list("conversation-card")).toHaveLength(4);
+  });
+
+  it("acts only on the cards the person was shown, not one that arrived meanwhile", async () => {
+    const { records, store } = await withStrays();
+
+    // The person saw one stray; another has arrived since.
+    expect(await keepStrayCards({ records }, ["late-1"], NOW)).toBe(1);
+    expect((await store.strays()).map((each) => each.id)).toEqual(["late-2"]);
+
+    expect(await deleteStrayCards({ records }, ["late-1", "nope"])).toBe(0);
+    expect((await store.strays()).map((each) => each.id)).toEqual(["late-2"]);
+    // A card that is in a collection is never touched, even if named.
+    expect(await deleteStrayCards({ records }, [SEED.chores])).toBe(0);
+    expect(await keepStrayCards({ records }, [SEED.chores])).toBe(0);
+    expect(await texts(store, SEED.sunday)).toHaveLength(3);
+  });
+
+  it("reading everything again asks the store for every collection and card", async () => {
+    const { records } = await seeded();
+    const asked: string[] = [];
+    const reload = records.reload.bind(records);
+    records.reload = ((kind: "card-collection", id: string) => {
+      asked.push(`${kind}/${id}`);
+      return reload(kind, id);
+    }) as typeof records.reload;
+
+    await reloadCards(records);
+
+    expect(asked).toHaveLength(3 + 4);
+    expect(
+      asked.filter((each) => each.startsWith("card-collection/")),
+    ).toHaveLength(3);
   });
 
   it("a card added while its collection was being deleted is left as a stray, not lost", async () => {

@@ -124,6 +124,8 @@ function StrayCards(props: {
   const [confirming, setConfirming] = useState(false);
   const [done, setDone] = useState("");
   const { cards } = props;
+  // What is on screen now is what a choice applies to.
+  const shown = cards.map((card) => card.id);
 
   if (cards.length === 0) {
     return done === "" ? null : (
@@ -147,7 +149,7 @@ function StrayCards(props: {
           disabled={change.busy}
           onClick={() => {
             change.run(async () => {
-              await keepStrayCards({ records });
+              await keepStrayCards({ records }, shown);
               setDone(`Kept in a collection called "${KEPT_CARDS_NAME}".`);
             });
           }}
@@ -175,7 +177,7 @@ function StrayCards(props: {
         onConfirm={() => {
           setConfirming(false);
           change.run(async () => {
-            await deleteStrayCards({ records });
+            await deleteStrayCards({ records }, shown);
             setDone("Those cards were deleted.");
           });
         }}
