@@ -37,7 +37,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Server or token holder intercepting a new device's pairing | Commit-then-reveal exchange, a six-digit code the person types into the approving device, one guess per request, HPKE transfer bound to the transcript, re-authentication on the approving device (ADR-0005) | **In place** |
 | Server planting a key of its own on a new device | The approving device sends a random confirmation code inside the encrypted transfer and shows it; the new device keeps the key only when the person types that code (ADR-0005) | **In place** |
 | Offline edit conflicts | Compare-and-swap; both versions kept | Planned: #33, #36 |
-| Revoked device reconnecting | The device is looked up, and refused if revoked, on every signed request (ADR-0005) | Check **in place**; revoking a device planned: #23 |
+| Revoked device reconnecting | The device is looked up, and refused if revoked, on every signed request; a revocation is permanent and written to an append-only ledger; revoking needs a device signature and a freshly entered password (ADR-0005) | **In place** |
 | Replayed or altered request | The signature covers the method, path, body hash, a timestamp and a nonce; stale timestamps and reused nonces are refused (ADR-0005) | **In place** |
 | Stale data resurrecting deletions | Permanent tombstones and a deletion ledger | Planned: #37, #65 |
 | Compromised dependency | Few runtime dependencies, exact pins, hashed Python requirements, dependency audit in CI, strict CSP | **In place** |
@@ -84,7 +84,8 @@ encrypted on the user's device and the backend stores ciphertext only.
 - **A signed-out or revoked session's access token** stays valid until it
   expires, because the API verifies tokens without calling the auth provider.
   The token decrypts nothing by itself, and since ADR-0005 it is not enough
-  to call a signed route. Cutting a device off at once is planned in #23.
+  to call a signed route. A revoked device is cut off at its next request
+  (ADR-0005).
 
 ## Controls added by the security baseline
 

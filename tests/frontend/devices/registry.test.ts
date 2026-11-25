@@ -253,6 +253,60 @@ describe("the device register on the Warmly API (DEV-002, DEV-003)", () => {
   });
 });
 
+describe("revoking through the Warmly API (DEV-003, AC-20)", () => {
+  it("sends a signed request with no body", async () => {
+    const identity = await testIdentity();
+    const api = registry(() => json(200, { ...WIRE_DEVICE, revoked_at: "x" }));
+
+    expect(await api.registry.revoke(SESSION, identity, WIRE_DEVICE.id)).toBe(
+      true,
+    );
+
+    const call = api.calls[0];
+    expect(call?.init.method).toBe("POST");
+    expect(call?.url).toBe(`/v1/devices/${WIRE_DEVICE.id}/revoke`);
+    expect(call?.body).toBe("");
+    expect(
+      await isSignedBy(
+        call,
+        identity,
+        "POST",
+        `/v1/devices/${WIRE_DEVICE.id}/revoke`,
+      ),
+    ).toBe(true);
+  });
+
+  it("escapes the device ID", async () => {
+    const api = registry(() => json(404, {}));
+
+    await api.registry.revoke(SESSION, await testIdentity(), "../x?y");
+
+    expect(api.calls[0]?.url).toBe("/v1/devices/..%2Fx%3Fy/revoke");
+  });
+
+  it.each([
+    [404, { code: "device.not_found" }, false],
+    [200, WIRE_DEVICE, true],
+  ])("reports %i as %j", async (status, body, expected) => {
+    const api = registry(() => json(status, body));
+
+    expect(await api.registry.revoke(SESSION, await testIdentity(), "d")).toBe(
+      expected,
+    );
+  });
+
+  it.each([
+    [403, "reauthentication_required"],
+    [500, "unexpected"],
+  ])("fails on %i with %s", async (status, code) => {
+    const api = registry(() => json(status, {}));
+
+    await expect(
+      api.registry.revoke(SESSION, await testIdentity(), "d"),
+    ).rejects.toMatchObject({ code });
+  });
+});
+
 describe("the in-memory register follows the same ownership rules (DEV-010)", () => {
   const NOW = new Date("2026-11-25T10:00:00Z");
   let fake: FakeDeviceRegistry;
@@ -331,6 +385,49 @@ describe("the in-memory register follows the same ownership rules (DEV-010)", ()
     expect((await reloaded.list(SESSION, identity))[0]?.nameCiphertext).toBe(
       "bmV3",
     );
+  });
+
+  it("refuses a revoked device from then on, tells the app, and never lets its ID back", async () => {
+    let reports = 0;
+    const reporting = new FakeDeviceRegistry(
+      localStorage,
+      () => NOW,
+      () => {
+        reports += 1;
+      },
+    );
+    const first = await testIdentity("d0000000-0000-4000-8000-000000000001");
+    const second = await testIdentity("d0000000-0000-4000-8000-000000000002");
+    await reporting.register(SESSION, first, REGISTRATION);
+    await reporting.register(SESSION, second, REGISTRATION);
+
+    expect(await reporting.revoke(SESSION, first, second.deviceId)).toBe(true);
+
+    expect(
+      (await reporting.list(SESSION, first)).map((device) => device.revoked),
+    ).toEqual([false, true]);
+    expect(reports).toBe(0);
+    for (const attempt of [
+      reporting.list(SESSION, second),
+      reporting.rename(SESSION, second, second.deviceId, "bmV3"),
+      reporting.revoke(SESSION, second, first.deviceId),
+    ]) {
+      await expect(attempt).rejects.toMatchObject({ code: "device_revoked" });
+    }
+    expect(reports).toBe(3);
+    expect(await reporting.register(SESSION, second, REGISTRATION)).toBe(false);
+    expect((await reporting.list(SESSION, first))[0]?.revoked).toBe(false);
+  });
+
+  it("never revokes another account's device", async () => {
+    const mine = await testIdentity("d0000000-0000-4000-8000-000000000001");
+    const theirs = await testIdentity("d0000000-0000-4000-8000-000000000002");
+    await fake.register(SESSION, mine, REGISTRATION);
+    await fake.register(OTHER, theirs, REGISTRATION);
+
+    expect(await fake.revoke(SESSION, mine, theirs.deviceId)).toBe(false);
+    expect(await fake.revoke(SESSION, mine, "unknown")).toBe(false);
+    expect((await fake.list(OTHER, theirs))[0]?.revoked).toBe(false);
   });
 
   it("stores only ciphertext and identifiers, under a name that marks it as fake", async () => {

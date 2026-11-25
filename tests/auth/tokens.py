@@ -69,6 +69,8 @@ class Signer:
             "exp": now + 3600,
             "role": "authenticated",
             "aal": "aal1",
+            # The password was entered when the token was issued.
+            "amr": [{"method": "password", "timestamp": now}],
             "session_id": "5e55105e-0000-4000-8000-000000000001",
             "email": "person@example.test",
             "is_anonymous": False,

@@ -54,8 +54,12 @@ from one of the account's registered devices over the method, path, body
 hash, a timestamp and a nonce. A stolen token alone is therefore not enough.
 The message format, the checks, the exempt routes and how a device registers
 are in [ADR-0005](../adr/0005-device-identity-and-pairing.md). A refusal is
-`401` with `device.missing_signature`, `device.stale_request` or
-`device.not_authorized`.
+`401` with `device.missing_signature`, `device.stale_request`,
+`device.not_authorized` or `device.revoked`.
+
+Revoking a device also needs the password to have been entered in the last
+five minutes. The API reads that from the token's `amr` claim and answers
+`403 auth.reauthentication_required` otherwise.
 
 ### Signing keys
 
@@ -140,7 +144,7 @@ available, and every other build uses the in-memory double.
 | Smoke-test the real client and verifier against a live Supabase project | Claim names and error codes were taken from the client library's source, not from a live project | #78 |
 | Keep **Confirm email** on, use an asymmetric signing key, register the two redirect URLs | The API's `email_verified` check alone is not a control | #78 (dev project), #68 (release checklist), #61 (deploy pipeline) |
 | Every deployed environment, including staging and previews, sets `WARMLY_ENV=production` and `WARMLY_AUTH_ISSUER` | Outside production the API defaults to the local development issuer | #61 |
-| Revoke a device | Requests are bound to a device key (ADR-0005), but a device cannot be cut off yet | #23 |
+| Check the `amr` claim against a live project | Revoking a device needs a timed `password` entry in `amr`; the shape was taken from the client library's types, not from a live token | #78 |
 | Load the auth client on demand | It is imported statically and adds to the first download | #63 |
 
 ## Tests

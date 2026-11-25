@@ -50,6 +50,8 @@ export interface PairingRelay {
   start(session: AuthSession, start: PairingStart): Promise<PairingRequest>;
   /** Either device: read a request; `undefined` if it is not the account's. */
   read(session: AuthSession, id: string): Promise<PairingRequest | undefined>;
+  /** New device: give up its own request, so it does not stay open. */
+  cancel(session: AuthSession, id: string): Promise<void>;
   /** Approving device: the request nobody has taken up, if there is one. */
   openRequest(
     session: AuthSession,
@@ -188,6 +190,16 @@ export class ApiPairingRelay implements PairingRelay {
       await this.#api.send(session, {
         method: "GET",
         path: `${PATH}/${encodeURIComponent(id)}`,
+        signedBy: undefined,
+      }),
+    );
+  }
+
+  async cancel(session: AuthSession, id: string): Promise<void> {
+    await this.#request(
+      await this.#api.send(session, {
+        method: "POST",
+        path: `${PATH}/${encodeURIComponent(id)}/cancel`,
         signedBy: undefined,
       }),
     );

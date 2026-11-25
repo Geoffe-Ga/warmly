@@ -11,6 +11,7 @@ import {
 } from "../../../devices/this-device";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
@@ -81,13 +82,96 @@ function RenameForm(props: {
   );
 }
 
+/** Asks for the account password and confirms removing a device. */
+function RemoveDialog(props: {
+  readonly device: DeviceView;
+  readonly name: string;
+  readonly onRemoved: () => void;
+  readonly onCancel: () => void;
+}): JSX.Element {
+  const { devices } = useServices();
+  const action = useAction();
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  const confirm = (): void => {
+    if (password === "") {
+      setError("Enter your account password to confirm.");
+      return;
+    }
+    setError(undefined);
+    action.run(async () => {
+      await devices.revoke(props.device.id, password);
+      setPassword("");
+      props.onRemoved();
+    });
+  };
+
+  return (
+    <ConfirmDialog
+      open
+      title={`Remove ${props.name}?`}
+      confirmLabel="Remove device"
+      destructive
+      onConfirm={confirm}
+      onCancel={props.onCancel}
+    >
+      <p>
+        {props.device.isCurrent
+          ? "This is the device you are using. It will be signed out now and will no longer be able to open your journal."
+          : "It will stop syncing straight away and will be signed out the next time it connects."}{" "}
+        This cannot be undone. To use the device again you would add it as a new
+        one.
+      </p>
+      <p>
+        We cannot erase a device from here. If it is offline, it keeps what it
+        already has, including anything open on its screen, until it next
+        connects.
+      </p>
+      {action.error !== undefined && (
+        <StatusBanner tone="error" label="Not removed">
+          {action.error}
+        </StatusBanner>
+      )}
+      <TextField
+        label="Account password"
+        type="password"
+        name="current-password"
+        autocomplete="current-password"
+        required
+        hint="Confirms it is you. This is your sign-in password, not a device passphrase."
+        value={password}
+        onInput={setPassword}
+        error={error}
+      />
+    </ConfirmDialog>
+  );
+}
+
 function DeviceCard(props: {
   readonly device: DeviceView;
   readonly onRenamed: () => void;
+  readonly onRemoved: () => void;
 }): JSX.Element {
   const { device } = props;
   const [renaming, setRenaming] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const name = device.name ?? UNNAMED;
+
+  if (device.revoked) {
+    return (
+      <Card heading={name}>
+        <p>
+          <strong>Removed.</strong> This device can no longer sync or open your
+          journal.
+        </p>
+        <dl class="detail-list">
+          <dt>Added</dt>
+          <dd>{formatDate(device.createdAt)}</dd>
+        </dl>
+      </Card>
+    );
+  }
 
   return (
     <Card heading={name}>
@@ -126,7 +210,29 @@ function DeviceCard(props: {
           >
             Rename
           </Button>
+          <Button
+            variant="danger"
+            ariaLabel={`Remove ${name}`}
+            onClick={() => {
+              setRemoving(true);
+            }}
+          >
+            Remove
+          </Button>
         </div>
+      )}
+      {removing && (
+        <RemoveDialog
+          device={device}
+          name={name}
+          onCancel={() => {
+            setRemoving(false);
+          }}
+          onRemoved={() => {
+            setRemoving(false);
+            props.onRemoved();
+          }}
+        />
       )}
     </Card>
   );
@@ -134,7 +240,7 @@ function DeviceCard(props: {
 
 /**
  * Manage Devices: the account's own devices, with the one in use marked, and
- * a way to rename each (PRD DEV-002, DEV-003). Names are decrypted on this
+ * a way to rename or remove each (PRD DEV-002, DEV-003, DEV-004). Names are decrypted on this
  * device; the server holds only ciphertext.
  *
  * @returns The Manage Devices screen.
@@ -143,7 +249,9 @@ export function ManageDevices(): JSX.Element {
   const { devices } = useServices();
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
-  const [renamed, setRenamed] = useState(false);
+  const [notice, setNotice] = useState<"renamed" | "removed" | undefined>(
+    undefined,
+  );
 
   const reload = useCallback(() => {
     setAttempt((count) => count + 1);
@@ -173,9 +281,14 @@ export function ManageDevices(): JSX.Element {
       title="Manage Devices"
       lead="The devices registered to your account. Each one has its own key, and the server checks it on every request."
     >
-      {renamed && (
+      {notice === "renamed" && (
         <StatusBanner tone="success" label="Saved">
           The device has its new name.
+        </StatusBanner>
+      )}
+      {notice === "removed" && (
+        <StatusBanner tone="success" label="Removed">
+          That device can no longer sync or open your journal.
         </StatusBanner>
       )}
       {load.kind === "loading" && (
@@ -199,8 +312,16 @@ export function ManageDevices(): JSX.Element {
             key={device.id}
             device={device}
             onRenamed={() => {
-              setRenamed(true);
+              setNotice("renamed");
               reload();
+            }}
+            onRemoved={() => {
+              // Removing the device in use ends its session instead; the
+              // app shell takes over and this screen goes away.
+              if (!device.isCurrent) {
+                setNotice("removed");
+                reload();
+              }
             }}
           />
         ))}
@@ -213,9 +334,6 @@ export function ManageDevices(): JSX.Element {
           <Link href={pathFor("approve-device")}>Approve a new device</Link>
         </p>
       </Card>
-      <StatusBanner tone="info" label="Coming soon">
-        Removing a device is not built yet.
-      </StatusBanner>
     </PageLayout>
   );
 }

@@ -39,7 +39,7 @@ interface SessionOutcome extends Outcome {
   readonly data: {
     readonly session: {
       readonly access_token: string;
-      readonly user: { readonly id: string };
+      readonly user: { readonly id: string; readonly email?: string };
     } | null;
   };
 }
@@ -242,6 +242,18 @@ export class SupabaseAuthClient implements AuthClient {
   async signIn(email: string, password: string): Promise<void> {
     check(await this.#api.signInWithPassword({ email, password }));
     this.#pending = undefined;
+  }
+
+  async reauthenticate(password: string): Promise<void> {
+    const outcome = await this.#api.getSession();
+    check(outcome);
+    const email = outcome.data.session?.user.email;
+    if (email === undefined) {
+      throw new AuthError("invalid_credentials");
+    }
+    // Signing in again with the same account replaces the session with one
+    // whose token records that the password was just entered.
+    check(await this.#api.signInWithPassword({ email, password }));
   }
 
   async signOut(): Promise<void> {

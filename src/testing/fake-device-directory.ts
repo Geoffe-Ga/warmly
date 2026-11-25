@@ -2,6 +2,7 @@
  * In-memory {@link DeviceDirectory} for screen tests. It must never be part
  * of a production build.
  */
+import { AuthError } from "../auth/auth-client";
 import {
   DeviceError,
   cleanDeviceName,
@@ -34,6 +35,10 @@ export class FakeDeviceDirectory implements DeviceDirectory {
   #devices: DeviceView[];
   /** Set to make the next call fail with this error, once. */
   failNextWith: Error | undefined;
+  /** The account password a revocation must be confirmed with. */
+  password = "";
+  /** Called when the device in use is revoked. */
+  onThisDeviceRevoked: () => void = () => undefined;
 
   constructor(devices: readonly DeviceView[] = FAKE_DEVICES) {
     this.#devices = [...devices];
@@ -68,5 +73,23 @@ export class FakeDeviceDirectory implements DeviceDirectory {
     this.#devices = this.#devices.map((device) =>
       device.id === deviceId ? { ...device, name: cleaned } : device,
     );
+  }
+
+  async revoke(deviceId: string, password: string): Promise<void> {
+    await Promise.resolve();
+    this.#maybeFail();
+    if (password !== this.password) {
+      throw new AuthError("invalid_credentials");
+    }
+    const device = this.#devices.find((entry) => entry.id === deviceId);
+    if (device === undefined) {
+      throw new DeviceError("not_found");
+    }
+    this.#devices = this.#devices.map((entry) =>
+      entry.id === deviceId ? { ...entry, revoked: true } : entry,
+    );
+    if (device.isCurrent) {
+      this.onThisDeviceRevoked();
+    }
   }
 }

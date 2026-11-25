@@ -425,6 +425,15 @@ export class AccountPairing implements DevicePairing {
       commitment: toBase64(commitment),
     });
     onProgress({ kind: "waiting_for_approver" });
+    // Leaving the screen gives the request up at once, so it does not sit
+    // open for an approving device to find. Best effort: it expires anyway.
+    signal.addEventListener(
+      "abort",
+      () => {
+        this.#relay.cancel(session, started.id).catch(() => undefined);
+      },
+      { once: true },
+    );
 
     const claimed = await this.#waitUntil(
       session,

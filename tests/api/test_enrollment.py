@@ -49,18 +49,21 @@ def _problem(response: Any, status: int, code: str) -> None:
 
 
 def _claim(client: TestClient, enrollment_id: str = ID) -> Any:
+    """Send the claim step as the approving device."""
     return client.post(
         f"/v1/enrollments/{enrollment_id}/claim", json={"approver_nonce": BYTES32}
     )
 
 
 def _reveal(client: TestClient, enrollment_id: str = ID) -> Any:
+    """Send the reveal step with the committed value."""
     return client.post(
         f"/v1/enrollments/{enrollment_id}/reveal", json={"joiner_nonce": BYTES32}
     )
 
 
 def _approve(client: TestClient, enrollment_id: str = ID) -> Any:
+    """Send the approve step with a wrapped key."""
     return client.post(
         f"/v1/enrollments/{enrollment_id}/approve", json={"wrapped_key": CIPHERTEXT}
     )
@@ -350,6 +353,7 @@ def test_an_expired_request_no_longer_gives_up_its_wrapped_key(
 def test_a_request_still_works_just_before_it_expires(
     client: TestClient, enrollment_store: InMemoryEnrollmentStore
 ) -> None:
+    """A request still works just before it expires."""
     enrollment_store.now += enrollment_store.LIFETIME - 1
 
     assert _claim(client).status_code == 200
@@ -369,9 +373,71 @@ def test_starting_a_new_request_ends_the_earlier_open_one(
 
 
 def test_there_is_no_open_request_once_it_is_claimed(client: TestClient) -> None:
+    """There is no open request once it is claimed."""
     _claim(client)
 
     _problem(client.get("/v1/enrollments/open"), 404, "enrollment.not_found")
+
+
+def test_an_expired_wrapped_key_is_removed_not_just_hidden(
+    client: TestClient, enrollment_store: InMemoryEnrollmentStore
+) -> None:
+    """An expired wrapped key is removed not just hidden."""
+    _claim(client)
+    _reveal(client)
+    _approve(client)
+    enrollment_store.now += enrollment_store.LIFETIME
+
+    client.get(f"/v1/enrollments/{ID}")
+
+    stored = enrollment_store.requests[SEEDED_ENROLLMENT_ID].enrollment
+    assert stored.wrapped_key is None
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [[], [_claim], [_claim, _reveal]],
+    ids=["pending", "claimed", "revealed"],
+)
+def test_the_new_device_can_give_up_its_request(
+    client: TestClient, session_only: TestClient, steps: list[Any]
+) -> None:
+    """Leaving the screen ends the request at once, with the session alone."""
+    for step in steps:
+        step(client)
+
+    cancelled = session_only.post(f"/v1/enrollments/{ID}/cancel")
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "expired"
+    for step in (_claim, _reveal, _approve):
+        _problem(step(client), 409, "enrollment.wrong_state")
+    _problem(client.get("/v1/enrollments/open"), 404, "enrollment.not_found")
+
+
+def test_cancelling_a_finished_request_changes_nothing(
+    client: TestClient, session_only: TestClient
+) -> None:
+    """A delivered key is not taken back by a late cancel."""
+    _claim(client)
+    _reveal(client)
+    _approve(client)
+
+    cancelled = session_only.post(f"/v1/enrollments/{ID}/cancel")
+
+    assert cancelled.status_code == 200
+    assert cancelled.json()["status"] == "approved"
+    assert cancelled.json()["wrapped_key"] == CIPHERTEXT
+
+
+def test_another_account_cannot_cancel_my_request(
+    client: TestClient, other_owner: TestClient
+) -> None:
+    """Another account cannot cancel my request."""
+    _problem(
+        other_owner.post(f"/v1/enrollments/{ID}/cancel"), 404, "enrollment.not_found"
+    )
+    assert client.get(f"/v1/enrollments/{ID}").json()["status"] == "pending"
 
 
 # --- who may do what ---------------------------------------------------------
@@ -404,8 +470,7 @@ def test_a_revoked_device_cannot_approve(
     for stored in device_store.devices.values():
         stored.revoked = True
 
-    _problem(_approve(client), 401, "device.not_authorized")
-    assert client.headers["Authorization"]
+    _problem(_approve(client), 401, "device.revoked")
 
 
 def test_another_account_cannot_see_or_advance_a_request(
@@ -435,6 +500,7 @@ def test_another_account_cannot_see_or_advance_a_request(
 def test_another_accounts_new_request_does_not_end_mine(
     client: TestClient, other_owner: TestClient
 ) -> None:
+    """Another accounts new request does not end mine."""
     other_owner.post("/v1/enrollments", json=START)
 
     assert client.get("/v1/enrollments/open").json()["id"] == ID
@@ -475,10 +541,12 @@ def test_a_malformed_start_is_rejected(
 def test_a_malformed_step_is_rejected(
     client: TestClient, step: str, body: dict[str, str]
 ) -> None:
+    """A malformed step is rejected."""
     assert client.post(f"/v1/enrollments/{ID}/{step}", json=body).status_code == 422
 
 
 def test_a_malformed_request_id_is_rejected(client: TestClient) -> None:
+    """A malformed request id is rejected."""
     assert client.get("/v1/enrollments/not-a-uuid").status_code == 422
 
 

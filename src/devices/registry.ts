@@ -65,6 +65,19 @@ export interface DeviceRegistry {
     deviceId: string,
     nameCiphertext: string,
   ): Promise<boolean>;
+  /**
+   * Revoke a device for good. The session must show that the password was
+   * entered in the last few minutes.
+   *
+   * @returns `false` if the device is not one of the account's.
+   * @throws ApiError `reauthentication_required` if the password was not
+   *   entered recently enough.
+   */
+  revoke(
+    session: AuthSession,
+    identity: DeviceIdentity,
+    deviceId: string,
+  ): Promise<boolean>;
 }
 
 const PATH = "/v1/devices";
@@ -173,6 +186,28 @@ export class ApiDeviceRegistry implements DeviceRegistry {
     });
     if (response.status === 404) {
       return false;
+    }
+    if (!response.ok) {
+      throw new ApiError("unexpected");
+    }
+    return true;
+  }
+
+  async revoke(
+    session: AuthSession,
+    identity: DeviceIdentity,
+    deviceId: string,
+  ): Promise<boolean> {
+    const response = await this.#api.send(session, {
+      method: "POST",
+      path: `${PATH}/${encodeURIComponent(deviceId)}/revoke`,
+      signedBy: identity,
+    });
+    if (response.status === 404) {
+      return false;
+    }
+    if (response.status === 403) {
+      throw new ApiError("reauthentication_required");
     }
     if (!response.ok) {
       throw new ApiError("unexpected");

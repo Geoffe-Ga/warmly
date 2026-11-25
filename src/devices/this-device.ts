@@ -54,6 +54,14 @@ export interface DeviceDirectory {
    * @throws DeviceError `invalid_name`, `not_found` or `locked`.
    */
   rename(deviceId: string, name: string): Promise<void>;
+  /**
+   * Revoke a device for good, after the account password has been entered
+   * again. Revoking the device in use ends its session.
+   *
+   * @throws AuthError `invalid_credentials` if the password is wrong;
+   *   DeviceError `not_found` or `locked`.
+   */
+  revoke(deviceId: string, password: string): Promise<void>;
 }
 
 function nameContext(owner: string, deviceId: string): RecordContext {
@@ -98,6 +106,7 @@ export class AccountDevices implements DeviceDirectory {
   readonly #registry: DeviceRegistry;
   readonly #rootKey: () => RootKey | undefined;
   readonly #now: () => Date;
+  readonly #onThisDeviceRevoked: () => void;
   #registering: Promise<void> | undefined;
 
   /**
@@ -106,6 +115,7 @@ export class AccountDevices implements DeviceDirectory {
    * @param registry - The server's register of devices.
    * @param rootKey - The account root key while unlocked, else `undefined`.
    * @param now - The current time; tests pass their own.
+   * @param onThisDeviceRevoked - Called when this device revokes itself.
    */
   constructor(
     auth: AuthClient,
@@ -113,12 +123,14 @@ export class AccountDevices implements DeviceDirectory {
     registry: DeviceRegistry,
     rootKey: () => RootKey | undefined,
     now: () => Date = () => new Date(),
+    onThisDeviceRevoked: () => void = () => undefined,
   ) {
     this.#auth = auth;
     this.#identities = identities;
     this.#registry = registry;
     this.#rootKey = rootKey;
     this.#now = now;
+    this.#onThisDeviceRevoked = onThisDeviceRevoked;
   }
 
   async #unlocked(): Promise<{ session: AuthSession; root: RootKey }> {
@@ -252,6 +264,24 @@ export class AccountDevices implements DeviceDirectory {
       throw new DeviceError("not_found");
     }
   }
+
+  async revoke(deviceId: string, password: string): Promise<void> {
+    // Checked before anything is sent, so a locked or signed-out app does
+    // not ask the auth service to check a password for nothing.
+    await this.#unlocked();
+    await this.#auth.reauthenticate(password);
+    // The session is read again: entering the password replaced its token.
+    const { session, identity } = await this.#ready();
+    const revoked = await this.#registry.revoke(session, identity, deviceId);
+    if (!revoked) {
+      throw new DeviceError("not_found");
+    }
+    if (deviceId === identity.deviceId) {
+      // The server will refuse this device from now on. Say so at once,
+      // without waiting for the next request to find out.
+      this.#onThisDeviceRevoked();
+    }
+  }
 }
 
 /** Stand-in for builds with no backend configured: there are no devices. */
@@ -261,6 +291,10 @@ export class UnavailableDeviceDirectory implements DeviceDirectory {
   }
 
   rename(): Promise<void> {
+    return Promise.reject(new DeviceError("locked"));
+  }
+
+  revoke(): Promise<void> {
     return Promise.reject(new DeviceError("locked"));
   }
 }

@@ -31,6 +31,25 @@ _END_OPEN = """
        AND expires_at > now()
 """
 
+# Past its expiry a request gives up no wrapped key; this removes it from
+# the row as well, the next time the request is looked at.
+_CLEAR_EXPIRED_KEY = """
+    UPDATE warmly_private.device_enrollments
+       SET wrapped_key = NULL
+     WHERE id = %s
+       AND wrapped_key IS NOT NULL
+       AND expires_at <= now()
+"""
+
+# The new device may give up its own request while it is still open.
+_CANCEL = """
+    UPDATE warmly_private.device_enrollments
+       SET expires_at = now()
+     WHERE id = %s
+       AND status IN ('pending', 'claimed', 'revealed')
+       AND expires_at > now()
+"""
+
 _FORGET_OLD = """
     DELETE FROM warmly_private.device_enrollments
      WHERE expires_at < now() - interval '1 hour'
@@ -193,7 +212,28 @@ class PostgresEnrollmentStore:
             The request. Past its expiry it reads as ``expired`` and carries
             no wrapped key.
         """
-        return await self._one(owner_id, _READ, (enrollment_id,))
+        async with self._database.as_owner(owner_id) as tx:
+            await tx.execute(_CLEAR_EXPIRED_KEY, (enrollment_id,))
+            cursor = await tx.execute(_READ, (enrollment_id,))
+            return _enrollment(await cursor.fetchone())
+
+    async def cancel(self, owner_id: UUID, enrollment_id: UUID) -> Enrollment | None:
+        """End an open request early, at the new device's wish.
+
+        A finished or already expired request is left as it is.
+
+        Args:
+            owner_id: The verified owner.
+            enrollment_id: The request to end.
+
+        Returns:
+            The request as it now stands, or ``None`` if it is not the
+            owner's.
+        """
+        async with self._database.as_owner(owner_id) as tx:
+            await tx.execute(_CANCEL, (enrollment_id,))
+            cursor = await tx.execute(_READ, (enrollment_id,))
+            return _enrollment(await cursor.fetchone())
 
     async def open_request(self, owner_id: UUID) -> Enrollment | None:
         """Return the owner's request that is waiting to be taken up, if any.

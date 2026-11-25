@@ -73,6 +73,10 @@ const MESSAGES: Readonly<
     "This reset link has expired or was already used. Ask for a new one and open it on this device.",
   device_not_authorized:
     "This device isn't registered with your account. Lock Warmly, unlock it with your recovery key, and try again. Nothing was changed.",
+  device_revoked:
+    "This device has been removed from your account, so it can no longer sync or open your journal.",
+  reauthentication_required:
+    "Your password needs to be entered again for this. Type it and try once more. Nothing was changed.",
   clock_wrong:
     "This device's clock looks wrong, so the request was refused. Set the date and time to automatic, then try again. Nothing was changed.",
   unexpected:

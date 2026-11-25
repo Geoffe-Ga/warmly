@@ -6,6 +6,7 @@ import { createLockHooks } from "../../../src/app/lock-hooks";
 import { createOnboarding } from "../../../src/app/onboarding";
 import type { Services } from "../../../src/app/services";
 import { createSession, type SessionState } from "../../../src/app/session";
+import { createRevocationSignal } from "../../../src/devices/revocation";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import { FakeDeviceDirectory } from "../../../src/testing/fake-device-directory";
 import { FakeDevicePairing } from "../../../src/testing/fake-device-pairing";
@@ -42,10 +43,19 @@ export const ACCOUNT = {
  */
 export function testServices(state: SessionState = "signed_out"): TestServices {
   const vault = new FakeKeyVault();
+  const revocation = createRevocationSignal();
+  const devices = new FakeDeviceDirectory();
+  devices.password = ACCOUNT.password;
+  devices.onThisDeviceRevoked = revocation.report;
   return {
     auth: new FakeAuthClient(),
     vault,
-    devices: new FakeDeviceDirectory(),
+    devices,
+    revocation,
+    forgetThisDevice: () => {
+      vault.forgetThisDevice();
+      return Promise.resolve();
+    },
     pairing: new FakeDevicePairing(vault),
     session: createSession(state),
     onboarding: createOnboarding(),

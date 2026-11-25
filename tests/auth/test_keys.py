@@ -254,6 +254,7 @@ async def test_a_cached_key_is_served_while_a_slow_fetch_is_in_flight(
     release = asyncio.Event()
 
     async def slow() -> Sequence[dict[str, Any]]:
+        """Fetch the keys slowly, so the test can act meanwhile."""
         await release.wait()
         return provider.keys
 

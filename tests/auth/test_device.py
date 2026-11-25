@@ -181,8 +181,22 @@ async def test_a_revoked_device_is_refused_without_recording_anything() -> None:
     with pytest.raises(DeviceAuthorizationError) as raised:
         await DeviceVerifier(devices, clock=lambda: NOW).verify(OWNER, _signed(device))
 
-    assert raised.value.code == "device.not_authorized"
+    assert raised.value.code == "device.revoked"
     assert not devices.nonces
+
+
+async def test_only_the_device_itself_is_told_it_was_revoked() -> None:
+    """Without its key, a revoked device looks like any other refusal."""
+    device = TestDevice()
+    impostor = TestDevice()
+    devices = Devices(device, revoked=True)
+
+    with pytest.raises(DeviceAuthorizationError) as raised:
+        await DeviceVerifier(devices, clock=lambda: NOW).verify(
+            OWNER, _signed(impostor)
+        )
+
+    assert raised.value.code == "device.not_authorized"
 
 
 async def test_a_failure_carries_only_its_code() -> None:
@@ -257,6 +271,7 @@ def _request(raw_path: bytes, query: bytes) -> Request:
     ]
 
     async def receive() -> dict[str, object]:
+        """Deliver an empty request body."""
         return {"type": "http.request", "body": b"", "more_body": False}
 
     scope = {

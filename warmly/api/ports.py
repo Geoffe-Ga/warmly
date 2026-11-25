@@ -45,6 +45,11 @@ class DeviceStore(DeviceKeys, Protocol):
     ) -> Device | None:
         """Replace a device's encrypted name; ``None`` if it is not the owner's."""
 
+    async def revoke(
+        self, owner_id: UUID, device_id: UUID, current: UUID
+    ) -> Device | None:
+        """Revoke a device for good; ``None`` if it is not the owner's."""
+
 
 class EnrollmentStore(Protocol):
     """One account's device pairing requests (PRD DEV-001 path A)."""
@@ -56,6 +61,9 @@ class EnrollmentStore(Protocol):
 
     async def read(self, owner_id: UUID, enrollment_id: UUID) -> Enrollment | None:
         """Return the owner's request, or ``None``."""
+
+    async def cancel(self, owner_id: UUID, enrollment_id: UUID) -> Enrollment | None:
+        """End an open request early; ``None`` if it is not the owner's."""
 
     async def open_request(self, owner_id: UUID) -> Enrollment | None:
         """Return the owner's request waiting to be taken up, if any."""

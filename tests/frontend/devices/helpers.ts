@@ -117,6 +117,11 @@ export class MemoryIdentityStore implements DeviceIdentityStore {
     }
     return Promise.resolve();
   }
+
+  forget(userId: string): Promise<void> {
+    this.#identities.delete(userId);
+    return Promise.resolve();
+  }
 }
 
 /** The synthetic root key used by the committed fixtures: bytes 0 to 31. */

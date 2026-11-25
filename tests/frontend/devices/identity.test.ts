@@ -134,6 +134,22 @@ describe("this device's identity (DEV-002, D-06)", () => {
     expect(await store.get(USER)).toBeUndefined();
   });
 
+  it("forgets one account's identity for good; the next one is a new device", async () => {
+    const store = new IndexedDbDeviceIdentityStore(name);
+    const mine = await store.getOrCreate(USER);
+    const theirs = await store.getOrCreate(OTHER_USER);
+
+    await store.forget(USER);
+    await store.forget("nobody");
+
+    expect(await store.get(USER)).toBeUndefined();
+    expect((await store.get(OTHER_USER))?.deviceId).toBe(theirs.deviceId);
+    const fresh = await store.getOrCreate(USER);
+    expect(fresh.deviceId).not.toBe(mine.deviceId);
+    expect(fresh.publicKey).not.toBe(mine.publicKey);
+    expect(fresh.registered).toBe(false);
+  });
+
   it("keeps the private key where script cannot read it", async () => {
     const store = new IndexedDbDeviceIdentityStore(name);
     await store.getOrCreate(USER);

@@ -148,6 +148,14 @@ export class FakeAuthClient implements AuthClient {
     return Promise.resolve();
   }
 
+  reauthenticate(password: string): Promise<void> {
+    const state = this.#read();
+    return state.signedIn !== null &&
+      passwordFor(state, state.signedIn) === password
+      ? Promise.resolve()
+      : Promise.reject(new AuthError("invalid_credentials"));
+  }
+
   signOut(): Promise<void> {
     const state = this.#read();
     state.signedIn = null;

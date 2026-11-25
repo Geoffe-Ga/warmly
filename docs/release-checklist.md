@@ -63,3 +63,14 @@ the whole product; items are added here as the work that creates them lands.
 - [ ] **Checked with a screen reader** (VoiceOver): the code on the new
       device is read digit by digit, and the approval form's fields and
       errors are announced. Tracked in #66.
+
+## Device revocation (issue #23, `docs/adr/0005-device-identity-and-pairing.md`)
+
+- [ ] **A live token carries a timed `password` entry in `amr`** after
+      signing in again, so that revoking a device works against the real
+      auth provider. The automated tests sign their own tokens. Tracked in
+      #78.
+- [ ] **Checked with two real devices**: remove one from the other and
+      confirm the removed one is signed out on its next action and shows the
+      explanation; remove the device in use and confirm it is signed out at
+      once. Tracked in #66.

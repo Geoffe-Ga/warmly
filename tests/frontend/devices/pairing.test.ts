@@ -340,6 +340,7 @@ function tampering(
     approve: (session, identity, id, key) =>
       alter(base.approve(session, identity, id, key)),
     reject: (session, identity, id) => base.reject(session, identity, id),
+    cancel: (session, id) => base.cancel(session, id),
   };
 }
 
@@ -759,8 +760,26 @@ describe("a request is short-lived and single use", () => {
     ).toBeUndefined();
   });
 
-  it("stops when the screen is left", async () => {
+  it("stops when the screen is left, and gives the request up at once", async () => {
     const joining = startJoining(device().pairing);
+    await requested(joining);
+
+    joining.abort.abort();
+
+    expect(await codeOf(joining.done)).toBe("pairing_cancelled");
+    // An approving device finds nothing to take up, without waiting out
+    // the five minutes.
+    expect(
+      await approver.takeUpRequest(new AbortController().signal),
+    ).toBeUndefined();
+  });
+
+  it("leaving still ends the pairing when the relay cannot be told", async () => {
+    const unreachable: PairingRelay = {
+      ...tampering((request) => request),
+      cancel: () => Promise.reject(new Error("offline")),
+    };
+    const joining = startJoining(device(unreachable).pairing);
     await requested(joining);
 
     joining.abort.abort();

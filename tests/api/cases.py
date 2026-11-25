@@ -124,7 +124,7 @@ CASES = [
         body={"name_ciphertext": CIPHERTEXT},
         stub=False,
     ),
-    Case("POST", f"/v1/devices/{DEVICE_ID}/revoke", Device),
+    Case("POST", f"/v1/devices/{REGISTERED_DEVICE_ID}/revoke", Device, stub=False),
     Case(
         "POST",
         "/v1/enrollments",
@@ -141,6 +141,7 @@ CASES = [
     Case("GET", f"/v1/enrollments/{ENROLLMENT_ID}", Enrollment, stub=False),
     Case("POST", CLAIM[0], Enrollment, body=CLAIM[1], stub=False),
     Case("POST", REVEAL[0], Enrollment, body=REVEAL[1], stub=False, before=(CLAIM,)),
+    Case("POST", f"/v1/enrollments/{ENROLLMENT_ID}/cancel", Enrollment, stub=False),
     Case(
         "POST",
         f"/v1/enrollments/{ENROLLMENT_ID}/approve",

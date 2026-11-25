@@ -58,6 +58,14 @@ export interface AuthClient {
   /** @throws AuthError `invalid_credentials` or `email_not_verified`. */
   signIn(email: string, password: string): Promise<void>;
   /**
+   * Prove again that the person at this device knows the account password,
+   * before something that cannot be undone. The session continues, with a
+   * record that the password was just entered.
+   *
+   * @throws AuthError `invalid_credentials` if the password is wrong.
+   */
+  reauthenticate(password: string): Promise<void>;
+  /**
    * End the session on this device. The local session is always removed,
    * whether or not the server could be told.
    */
@@ -100,6 +108,10 @@ export class UnavailableAuthClient implements AuthClient {
   }
 
   signIn(): Promise<void> {
+    return Promise.reject(new AuthError("unavailable"));
+  }
+
+  reauthenticate(): Promise<void> {
     return Promise.reject(new AuthError("unavailable"));
   }
 

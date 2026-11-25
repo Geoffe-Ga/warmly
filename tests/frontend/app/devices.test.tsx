@@ -140,7 +140,7 @@ describe("Manage Devices (DEV-002, DEV-003)", () => {
     expect(document.body.textContent).not.toContain("SECRET");
   });
 
-  it("offers to approve a new device, and says honestly that removing one is not built yet", async () => {
+  it("offers to approve a new device", async () => {
     await open();
 
     const link = await screen.findByRole("link", {
@@ -148,10 +148,6 @@ describe("Manage Devices (DEV-002, DEV-003)", () => {
     });
 
     expect(link.getAttribute("href")).toBe("/settings/devices/approve");
-    expect(
-      screen.getByText("Removing a device is not built yet."),
-    ).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /revoke|remove/i })).toBeNull();
   });
 
   it.each(["signed_out", "signed_in_locked"] as const)(

@@ -50,11 +50,40 @@ class Owner:
     """The account a request acts for, taken from a verified token."""
 
     id: UUID
+    # When the password was last entered for this session, in seconds since
+    # the epoch, or ``None`` if the token does not say.
+    password_entered_at: int | None = None
 
 
 def _invalid() -> AuthenticationError:
     """Build the one failure used for every unacceptable token."""
     return AuthenticationError(INVALID_TOKEN)
+
+
+def _password_entered_at(claims: dict[str, object]) -> int | None:
+    """Read when the password was last entered from the ``amr`` claim.
+
+    The provider lists each sign-in method with the time it was used. Only
+    that form counts: a bare list of method names carries no time, so it
+    cannot show that the password was entered recently.
+
+    Args:
+        claims: The verified claims.
+
+    Returns:
+        The latest time a password was entered, or ``None``.
+    """
+    methods = claims.get("amr")
+    if not isinstance(methods, list):
+        return None
+    times = [
+        entry["timestamp"]
+        for entry in methods
+        if isinstance(entry, dict)
+        and entry.get("method") == "password"
+        and type(entry.get("timestamp")) is int
+    ]
+    return max(times, default=None)
 
 
 def _email_is_verified(claims: dict[str, object]) -> bool:
@@ -142,4 +171,4 @@ class TokenVerifier:
             raise _invalid() from None
         if not _email_is_verified(claims):
             raise AuthenticationError(EMAIL_NOT_VERIFIED)
-        return Owner(id=owner_id)
+        return Owner(id=owner_id, password_entered_at=_password_entered_at(claims))
