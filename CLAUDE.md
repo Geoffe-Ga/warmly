@@ -22,7 +22,9 @@ consent dialog, checked answers, a stand-in provider outside production) but no 
 it and no real provider is connected. A sync engine sends the outbox
 and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Collections and manual conversation cards can be made, edited, reordered,
 printed, presented and deleted; they are encrypted records that sync like
-journal entries. Other routes render accessible placeholders.
+journal entries. Reflect has its landing and session screens, answered by
+the stand-in provider outside production, with sessions held in memory
+only. Other routes render accessible placeholders.
 
 ---
 
@@ -357,6 +359,16 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   provider adapter must still pass the signal on, and whatever a stopped
   call returns later is dropped unread. Call `reset()` when the screen
   closes or the app locks.
+- Reflect (`src/ui/screens/reflect/`, `src/domain/reflect/`): opening
+  the landing page or a saved reflection never calls AI (PRD RF-001). The
+  only way to an answer is the person's own question (no suggested or
+  canned questions, RF-002), the Ask button and the disclosure dialog. A
+  request is built by `reflectRequest` from fresh copies of finished
+  entries, never from stored records themselves and never from a draft. An
+  answer is shown with `CitedAnswer`, which shows answer text as text and
+  reads cited words from the entry as it is now, and only if its content
+  hash still matches. Sessions are in memory for now (`services.reflect`)
+  and are dropped by `dropSecrets`.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

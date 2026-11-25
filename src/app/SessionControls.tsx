@@ -28,6 +28,7 @@ export function dropSecrets(services: Services): void {
   services.onboarding.clear();
   // Anything decrypted goes with the keys.
   services.records.lock();
+  services.reflect.lock();
   services.sync.reset();
 }
 

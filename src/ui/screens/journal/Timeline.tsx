@@ -9,7 +9,7 @@ import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { ResultCount, useJournalSearch } from "./Search";
-import { formatEntryDate, useJournalEntries } from "./shared";
+import { formatEntryDate, useJournalEntries, type Journal } from "./shared";
 
 function EntryLink(props: {
   readonly entry: JournalEntry;
@@ -56,25 +56,28 @@ function DraftLink(props: { readonly draft: JournalEntry }): JSX.Element {
 const NO_ENTRIES: readonly JournalEntry[] = [];
 
 /**
- * The journal: completed entries newest first, a box to search them, the
- * draft being written if there is one, and the way to a new entry (PRD
- * JR-001, JR-004). A draft is not a completed entry, so it is shown apart
- * and is not searched. Search matches whole words, ignoring case, with the
- * last word allowed to be unfinished (JR-010). Nothing here calls AI, and
- * what is typed in the search box stays in memory: it is never put in the
- * address, in storage or in a log.
+ * The finished journal entries, newest first, with a box to search them.
+ * Used by the journal and by Reflect, so the two never differ. Search
+ * matches whole words, ignoring case, with the last word allowed to be
+ * unfinished (JR-010). Nothing here calls AI, and what is typed in the
+ * search box stays in memory: it is never put in the address, in storage
+ * or in a log.
  *
- * @returns The journal timeline screen.
+ * @param props - The journal as loaded, and whether a draft exists (it
+ *   changes what is said when there are no finished entries).
+ * @returns The search box, any notices, and the list.
  */
-export function Timeline(): JSX.Element {
-  const journal = useJournalEntries();
+export function JournalBrowser(props: {
+  readonly journal: Journal;
+  readonly hasDraft: boolean;
+}): JSX.Element {
+  const { journal } = props;
   const [query, setQuery] = useState("");
   const all = journal.state === "ready" ? journal.entries : undefined;
   const entries = useMemo(
     () => all?.filter((entry) => entry.status === "complete"),
     [all],
   );
-  const draft = currentDraft(all ?? []);
   const search = useJournalSearch(entries ?? NO_ENTRIES, query);
   const shown = search.searching
     ? search.matches
@@ -82,14 +85,7 @@ export function Timeline(): JSX.Element {
   const unreadable = journal.state === "ready" ? journal.unreadable : 0;
 
   return (
-    <PageLayout title="Journal" lead="Your entries, newest first.">
-      {draft === undefined ? (
-        <p>
-          <Link href={pathFor("journal-new")}>Write a new entry</Link>
-        </p>
-      ) : (
-        <DraftLink draft={draft} />
-      )}
+    <>
       <TextField
         label="Search your journal"
         name="journal-search"
@@ -116,7 +112,7 @@ export function Timeline(): JSX.Element {
         </StatusBanner>
       )}
       <ResultCount search={search} />
-      {entries?.length === 0 && <p>{emptyMessage(draft !== undefined)}</p>}
+      {entries?.length === 0 && <p>{emptyMessage(props.hasDraft)}</p>}
       {shown !== undefined && shown.length > 0 && (
         <nav aria-label="Entries">
           <ul class="action-list">
@@ -126,6 +122,32 @@ export function Timeline(): JSX.Element {
           </ul>
         </nav>
       )}
+    </>
+  );
+}
+
+/**
+ * The journal: completed entries newest first, a box to search them, the
+ * draft being written if there is one, and the way to a new entry (PRD
+ * JR-001, JR-004). A draft is not a completed entry, so it is shown apart
+ * and is not searched. Nothing here calls AI.
+ *
+ * @returns The journal timeline screen.
+ */
+export function Timeline(): JSX.Element {
+  const journal = useJournalEntries();
+  const draft = currentDraft(journal.state === "ready" ? journal.entries : []);
+
+  return (
+    <PageLayout title="Journal" lead="Your entries, newest first.">
+      {draft === undefined ? (
+        <p>
+          <Link href={pathFor("journal-new")}>Write a new entry</Link>
+        </p>
+      ) : (
+        <DraftLink draft={draft} />
+      )}
+      <JournalBrowser journal={journal} hasDraft={draft !== undefined} />
     </PageLayout>
   );
 }
