@@ -616,7 +616,11 @@ describe("describeError", () => {
     [new VaultError("locked"), "Unlock it and try again"],
     [new PairingError("pairing_expired"), "ran out of time"],
     [new PairingError("pairing_rejected"), "didn't approve this request"],
-    [new PairingError("pairing_tampered"), "changed the messages"],
+    [new PairingError("pairing_tampered"), "didn't arrive as they were sent"],
+    [
+      new PairingError("pairing_confirmation_mismatch"),
+      "did not keep what it was sent",
+    ],
     [
       new PairingError("pairing_code_mismatch"),
       "isn't the code on the new device",

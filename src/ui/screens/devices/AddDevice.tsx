@@ -7,25 +7,90 @@ import { useServices } from "../../../app/services";
 import {
   PairingError,
   formatPairingCode,
+  normalisePairingCode,
+  type JoinConfirmation,
   type JoinProgress,
 } from "../../../devices/pairing";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
+import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { afterRecoveryKey, describeError } from "../account/shared";
+import {
+  AccountForm,
+  afterRecoveryKey,
+  describeError,
+  useAction,
+} from "../account/shared";
 
 /** Where the pairing has got to on this, the new, device. */
 type Step =
   | { readonly kind: "idle" }
   | { readonly kind: "failed"; readonly message: string }
+  | { readonly kind: "confirm"; readonly received: JoinConfirmation }
   | JoinProgress;
+
+/** Asks for the code the approving device shows, then keeps the key. */
+function ConfirmationForm(props: {
+  readonly received: JoinConfirmation;
+  readonly onKept: () => void;
+  readonly onEnded: (error: unknown) => void;
+}): JSX.Element {
+  const action = useAction();
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | undefined>(undefined);
+
+  return (
+    <AccountForm
+      action={action}
+      validate={() => {
+        const problem =
+          normalisePairingCode(code).length === 6
+            ? undefined
+            : "Type the six digits shown on your other device.";
+        setError(problem);
+        return problem === undefined;
+      }}
+      onValid={async () => {
+        try {
+          await props.received.confirm(code);
+        } catch (caught) {
+          props.onEnded(caught);
+          return;
+        }
+        props.onKept();
+      }}
+    >
+      <StatusBanner tone="info" label="One more step">
+        Your other device now shows a confirmation code. Typing it here proves
+        that what this device received really came from your other device.
+      </StatusBanner>
+      <TextField
+        label="Confirmation code on your other device"
+        name="confirmation-code"
+        autocomplete="off"
+        required
+        hint="Six digits. Spaces don't matter. You get one try."
+        value={code}
+        onInput={setCode}
+        error={error}
+      />
+      <div class="button-row">
+        <Button type="submit" variant="primary" disabled={action.busy}>
+          Finish
+        </Button>
+      </div>
+    </AccountForm>
+  );
+}
 
 /**
  * Open the journal on a new device with the help of one that is already
  * unlocked (PRD DEV-001 path A, AC-19). This device shows a six-digit code;
  * the person types it into the other device, which then sends the account
- * key, encrypted so that only this device can read it.
+ * key, encrypted so that only this device can read it. The other device then
+ * shows a confirmation code, and this device keeps the key only once that
+ * code has been typed here.
  *
  * @returns The screen a new device shows while it is being approved.
  */
@@ -53,27 +118,31 @@ export function AddDevice(): JSX.Element {
       .join((progress) => {
         setStep(progress);
       }, abort.signal)
-      .then(
-        () => {
-          if (session.state !== "signed_in_locked") {
-            // The session ended while the key was on its way, for example
-            // by a sign-out. Never leave keys open without it.
-            vault.lock();
-            return;
-          }
-          session.unlock();
-          navigate(afterRecoveryKey(vault));
-        },
-        (error: unknown) => {
-          running.current = undefined;
-          if (
-            !(error instanceof PairingError) ||
-            error.code !== "pairing_cancelled"
-          ) {
-            setStep({ kind: "failed", message: describeError(error) });
-          }
-        },
-      );
+      .then((received) => {
+        setStep({ kind: "confirm", received });
+      }, ended);
+  };
+
+  const ended = (error: unknown): void => {
+    running.current?.abort();
+    running.current = undefined;
+    if (
+      !(error instanceof PairingError) ||
+      error.code !== "pairing_cancelled"
+    ) {
+      setStep({ kind: "failed", message: describeError(error) });
+    }
+  };
+
+  const kept = (): void => {
+    if (session.state !== "signed_in_locked") {
+      // The session ended while the key was on its way, for example by a
+      // sign-out. Never leave keys open without it.
+      vault.lock();
+      return;
+    }
+    session.unlock();
+    navigate(afterRecoveryKey(vault));
   };
 
   return (
@@ -124,6 +193,13 @@ export function AddDevice(): JSX.Element {
             minutes.
           </p>
         </Card>
+      )}
+      {step.kind === "confirm" && (
+        <ConfirmationForm
+          received={step.received}
+          onKept={kept}
+          onEnded={ended}
+        />
       )}
       <p>
         <Link href={pathFor("recover")}>Use your recovery key instead</Link>

@@ -3,7 +3,13 @@ import { beforeEach, describe, expect, it } from "vitest";
 import type { AuthSession } from "../../../src/auth/auth-client";
 import { AccountVault } from "../../../src/crypto/account-vault";
 import { IndexedDbDeviceKeyStore } from "../../../src/crypto/device-key-store";
-import { fromBase64, toBase64, utf8 } from "../../../src/crypto/encoding";
+import {
+  concat,
+  fromBase64,
+  lengthPrefixed,
+  toBase64,
+  utf8,
+} from "../../../src/crypto/encoding";
 import { openJson, sealJson } from "../../../src/crypto/envelope";
 import { generateRecipientKey, hpkeSeal } from "../../../src/crypto/hpke";
 import type { RootKey } from "../../../src/crypto/root-key";
@@ -12,10 +18,12 @@ import {
   PairingError,
   UnavailableDevicePairing,
   formatPairingCode,
+  newConfirmationCode,
   normalisePairingCode,
   pairingCode,
   pairingCommitment,
   type Approval,
+  type JoinConfirmation,
   type PairingTiming,
   type PairingTranscript,
   type RootKeyCredential,
@@ -30,6 +38,7 @@ import {
   FakePairingRelay,
 } from "../../../src/testing/fake-pairing-relay";
 import { FakeRecoveryEnvelopeStore } from "../../../src/testing/fake-recovery-envelope-store";
+import fixture from "../../fixtures/pairing/v1.json";
 import { MemoryIdentityStore } from "./helpers";
 
 // Assembled from words so no credential-shaped literal sits in the repository.
@@ -94,8 +103,8 @@ beforeEach(async () => {
 
 /** What happened on the new device. */
 interface Joining {
-  /** Settles when the new device's pairing ends. */
-  readonly done: Promise<void>;
+  /** Settles when a key has arrived, or the pairing has ended early. */
+  readonly done: Promise<JoinConfirmation>;
   /** The code the new device shows, once it shows one. */
   readonly code: Promise<string>;
   readonly progress: string[];
@@ -138,6 +147,17 @@ async function takeUp(pairing: AccountPairing = approver): Promise<Approval> {
   throw new Error("no request appeared");
 }
 
+/** Approve on the first device and type its confirmation code on the new. */
+async function finish(
+  joining: Joining,
+  approval: Approval,
+  credential: RootKeyCredential = WITH_PASSPHRASE,
+): Promise<string> {
+  const confirmation = await approval.approve(await joining.code, credential);
+  await (await joining.done).confirm(confirmation);
+  return confirmation;
+}
+
 async function codeOf(error: Promise<unknown>): Promise<string> {
   try {
     await error;
@@ -159,8 +179,7 @@ describe("pairing a new device with an unlocked one (AC-19, DEV-001 path A)", ()
     const joining = startJoining(joiner.pairing);
 
     const approval = await takeUp();
-    await approval.approve(await joining.code, WITH_PASSPHRASE);
-    await joining.done;
+    await finish(joining, approval);
 
     expect(await joiner.vault.fingerprint()).toBe(
       await approverVault.fingerprint(),
@@ -178,9 +197,9 @@ describe("pairing a new device with an unlocked one (AC-19, DEV-001 path A)", ()
 
     const approval = await takeUp();
     const code = await joining.code;
-    await approval.approve(code, WITH_PASSPHRASE);
-    await joining.done;
+    const confirmation = await finish(joining, approval);
 
+    expect(confirmation).toMatch(/^\d{6}$/);
     expect(joining.progress).toEqual(["waiting_for_approver", "compare_code"]);
     expect(code).toMatch(/^\d{6}$/);
     expect(approval.expiresAt.getTime()).toBe(clock + 5 * 60 * 1_000);
@@ -191,11 +210,11 @@ describe("pairing a new device with an unlocked one (AC-19, DEV-001 path A)", ()
     const joining = startJoining(joiner.pairing);
 
     const approval = await takeUp();
-    await approval.approve(` ${formatPairingCode(await joining.code)} `, {
-      kind: "recovery_key",
-      recoveryKey,
-    });
-    await joining.done;
+    const confirmation = await approval.approve(
+      ` ${formatPairingCode(await joining.code)} `,
+      { kind: "recovery_key", recoveryKey },
+    );
+    await (await joining.done).confirm(formatPairingCode(confirmation));
 
     expect(await joiner.vault.fingerprint()).toBe(
       await approverVault.fingerprint(),
@@ -207,16 +226,16 @@ describe("pairing a new device with an unlocked one (AC-19, DEV-001 path A)", ()
     const joining = startJoining(joiner.pairing);
     const approval = await takeUp();
     const code = await joining.code;
-    await approval.approve(code, WITH_PASSPHRASE);
-    await joining.done;
+    const confirmation = await finish(joining, approval);
 
     const held = localStorage.getItem(FAKE_PAIRING_STORAGE_KEY) ?? "";
     const [stored] = JSON.parse(held) as { request: PairingRequest }[];
 
     expect(held).not.toContain(code);
+    expect(held).not.toContain(confirmation);
     expect(held).not.toContain(PASSPHRASE);
-    // 65-byte sender key, 32-byte root key, 16-byte tag.
-    expect(fromBase64(stored?.request.wrappedKey ?? "")).toHaveLength(113);
+    // 65-byte sender key, 32-byte root key, 6-digit code, 16-byte tag.
+    expect(fromBase64(stored?.request.wrappedKey ?? "")).toHaveLength(119);
   });
 });
 
@@ -268,8 +287,7 @@ describe("the person must compare the code", () => {
     ).toBe("wrong_device_passphrase");
     expect(await joiner.vault.fingerprint()).toBeUndefined();
 
-    await approval.approve(code, WITH_PASSPHRASE);
-    await joining.done;
+    await finish(joining, approval);
     expect(await joiner.vault.fingerprint()).toBe(
       await approverVault.fingerprint(),
     );
@@ -493,8 +511,7 @@ describe("a relay in the middle cannot get the key (AC-19, D-07)", () => {
 
   it("a wrapped key from an earlier pairing cannot be replayed into a new one", async () => {
     const earlier = startJoining(device().pairing);
-    await (await takeUp()).approve(await earlier.code, WITH_PASSPHRASE);
-    await earlier.done;
+    await finish(earlier, await takeUp());
     const [old] = JSON.parse(
       localStorage.getItem(FAKE_PAIRING_STORAGE_KEY) ?? "[]",
     ) as { request: PairingRequest }[];
@@ -513,6 +530,159 @@ describe("a relay in the middle cannot get the key (AC-19, D-07)", () => {
 
     expect(await codeOf(joining.done)).toBe("pairing_tampered");
     expect(await joiner.vault.fingerprint()).toBeUndefined();
+  });
+});
+
+/** The transfer's HPKE info, rebuilt from values the relay can all see. */
+function publicTransferInfo(
+  owner: string,
+  request: PairingRequest,
+): Uint8Array<ArrayBuffer> {
+  return concat(
+    utf8("warmly-root-key-transfer-v1"),
+    lengthPrefixed("owner", owner),
+    lengthPrefixed("request", request.id),
+    lengthPrefixed("device", request.deviceId),
+    fromBase64(request.publicKey),
+    fromBase64(request.commitment),
+    fromBase64(request.challenge),
+    fromBase64(request.approverNonce ?? ""),
+    fromBase64(request.joinerNonce ?? ""),
+  );
+}
+
+/** A relay that hands the new device a key of the relay's own making. */
+function forging(plaintext: Uint8Array<ArrayBuffer>): PairingRelay {
+  return {
+    ...tampering((request) => request),
+    read: async (session, id) => {
+      const request = await relay.read(session, id);
+      if (request?.joinerNonce === undefined) {
+        return request;
+      }
+      return {
+        ...request,
+        status: "approved",
+        wrappedKey: toBase64(
+          await hpkeSeal(
+            fromBase64(request.publicKey),
+            {
+              info: publicTransferInfo(session.userId, request),
+              aad: new Uint8Array(0),
+            },
+            plaintext,
+          ),
+        ),
+      };
+    },
+  };
+}
+
+describe("the new device keeps only a key its other device sent (invariant 1)", () => {
+  const RELAY_KEY = new Uint8Array(32).fill(0xee);
+  const RELAY_CODE = "135790";
+  const forgedMessage = concat(RELAY_KEY, utf8(RELAY_CODE));
+
+  it("a well-formed key sealed by the relay itself is not kept: nobody shows its code", async () => {
+    const joiner = device(forging(forgedMessage));
+    const joining = startJoining(joiner.pairing);
+    // The approving device takes the request up but never approves it.
+    await takeUp();
+
+    const received = await joining.done;
+
+    // The forgery opens: everything it needed is public. Nothing is unlocked.
+    expect(await joiner.vault.fingerprint()).toBeUndefined();
+    expect(joiner.vault.rootKey()).toBeUndefined();
+    expect(await codeOf(received.confirm("246802"))).toBe(
+      "pairing_confirmation_mismatch",
+    );
+    expect(await joiner.vault.fingerprint()).toBeUndefined();
+  });
+
+  it("a relay that swaps a real approval for its own key is caught by the confirmation code", async () => {
+    const joiner = device(forging(forgedMessage));
+    const joining = startJoining(joiner.pairing);
+    const approval = await takeUp();
+
+    const shown = await approval.approve(await joining.code, WITH_PASSPHRASE);
+    const received = await joining.done;
+
+    expect(shown).not.toBe(RELAY_CODE);
+    expect(await codeOf(received.confirm(shown))).toBe(
+      "pairing_confirmation_mismatch",
+    );
+    expect(await joiner.vault.fingerprint()).toBeUndefined();
+    expect(joiner.vault.deviceTrustPending()).toBe(false);
+  });
+
+  it("allows one guess at the confirmation code, then discards the key", async () => {
+    const joiner = device();
+    const joining = startJoining(joiner.pairing);
+    const approval = await takeUp();
+    const shown = await approval.approve(await joining.code, WITH_PASSPHRASE);
+    const received = await joining.done;
+    const wrong = shown === "000000" ? "000001" : "000000";
+
+    expect(await codeOf(received.confirm(wrong))).toBe(
+      "pairing_confirmation_mismatch",
+    );
+
+    expect(await codeOf(received.confirm(shown))).toBe("pairing_expired");
+    expect(await joiner.vault.fingerprint()).toBeUndefined();
+  });
+
+  it("does not unlock until the confirmation code has been typed", async () => {
+    const joiner = device();
+    const joining = startJoining(joiner.pairing);
+    const approval = await takeUp();
+    const shown = await approval.approve(await joining.code, WITH_PASSPHRASE);
+
+    const received = await joining.done;
+    expect(await joiner.vault.fingerprint()).toBeUndefined();
+
+    await received.confirm(shown);
+    expect(await joiner.vault.fingerprint()).toBe(
+      await approverVault.fingerprint(),
+    );
+    // A second use of the same confirmation does nothing more.
+    expect(await codeOf(received.confirm(shown))).toBe("pairing_expired");
+  });
+
+  it("discards an unconfirmed key when the screen is left", async () => {
+    const joiner = device();
+    const joining = startJoining(joiner.pairing);
+    const approval = await takeUp();
+    const shown = await approval.approve(await joining.code, WITH_PASSPHRASE);
+    const received = await joining.done;
+
+    joining.abort.abort();
+
+    expect(await codeOf(received.confirm(shown))).toBe("pairing_expired");
+    expect(await joiner.vault.fingerprint()).toBeUndefined();
+  });
+
+  it.each([
+    ["a bare key with no confirmation code", new Uint8Array(32).fill(1)],
+    ["a message that is too long", new Uint8Array(64).fill(1)],
+    ["an empty message", new Uint8Array(0)],
+  ])("refuses %s outright", async (_name, plaintext) => {
+    const joiner = device(forging(plaintext));
+    const joining = startJoining(joiner.pairing);
+    await takeUp();
+
+    expect(await codeOf(joining.done)).toBe("pairing_tampered");
+    expect(await joiner.vault.fingerprint()).toBeUndefined();
+  });
+
+  it("picks confirmation codes of six digits that do not repeat or favour low values", () => {
+    const codes = Array.from({ length: 2_000 }, () => newConfirmationCode());
+
+    expect(codes.every((code) => /^\d{6}$/.test(code))).toBe(true);
+    expect(new Set(codes).size).toBeGreaterThan(1_950);
+    const high = codes.filter((code) => Number(code) >= 500_000).length;
+    expect(high).toBeGreaterThan(850);
+    expect(high).toBeLessThan(1_150);
   });
 });
 
@@ -564,8 +734,7 @@ describe("a request is short-lived and single use", () => {
     const second = startJoining(device().pairing);
 
     expect(await codeOf(first.done)).toBe("pairing_expired");
-    await (await takeUp()).approve(await second.code, WITH_PASSPHRASE);
-    await second.done;
+    await finish(second, await takeUp());
   });
 
   it("only one of two approving devices gets the request", async () => {
@@ -691,6 +860,30 @@ describe("the pairing code", () => {
     expect(await pairingCode({ ...transcript, ...change })).not.toBe(
       await pairingCode(transcript),
     );
+  });
+
+  it("matches the fixture the server tests also check (ADR-0005)", async () => {
+    const publicKey = fromBase64(fixture.publicKey);
+    const joinerNonce = fromBase64(fixture.joinerNonce);
+    const commitment = await pairingCommitment(
+      fixture.deviceId,
+      publicKey,
+      joinerNonce,
+    );
+
+    expect(toBase64(commitment)).toBe(fixture.commitment);
+    expect(
+      await pairingCode({
+        owner: fixture.owner,
+        requestId: fixture.requestId,
+        deviceId: fixture.deviceId,
+        publicKey,
+        commitment,
+        challenge: fromBase64(fixture.challenge),
+        approverNonce: fromBase64(fixture.approverNonce),
+        joinerNonce,
+      }),
+    ).toBe(fixture.code);
   });
 
   it("keeps leading zeros", async () => {

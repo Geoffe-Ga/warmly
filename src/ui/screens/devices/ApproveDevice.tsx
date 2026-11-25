@@ -6,11 +6,13 @@ import { pathFor } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import {
   PairingError,
+  formatPairingCode,
   normalisePairingCode,
   type Approval,
   type RootKeyCredential,
 } from "../../../devices/pairing";
 import { Button } from "../../components/Button";
+import { Card } from "../../components/Card";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
@@ -22,7 +24,7 @@ type Step =
   | { readonly kind: "none_waiting" }
   | { readonly kind: "ended"; readonly message: string }
   | { readonly kind: "refused" }
-  | { readonly kind: "approved" }
+  | { readonly kind: "approved"; readonly confirmation: string }
   | { readonly kind: "found"; readonly approval: Approval };
 
 interface FieldErrors {
@@ -67,8 +69,9 @@ function ApprovalForm(props: {
       action={action}
       validate={validate}
       onValid={async () => {
+        let confirmation: string;
         try {
-          await props.approval.approve(code, credential());
+          confirmation = await props.approval.approve(code, credential());
         } catch (error) {
           if (error instanceof PairingError) {
             // The request is over. A wrong passphrase, by contrast, is
@@ -79,7 +82,7 @@ function ApprovalForm(props: {
           throw error;
         }
         setSecret("");
-        props.onStep({ kind: "approved" });
+        props.onStep({ kind: "approved", confirmation });
       }}
     >
       <StatusBanner tone="warning" label="Check first">
@@ -134,7 +137,8 @@ function ApprovalForm(props: {
  * Approve a new device from this unlocked one (PRD DEV-001 path A, AC-19).
  * The person types the code the new device shows and confirms with this
  * device's passphrase or the recovery key. Only then is the account key
- * sent, encrypted so that only the new device can read it.
+ * sent, encrypted so that only the new device can read it. This device then
+ * shows a confirmation code for the person to type into the new one.
  *
  * @returns The screen an unlocked device shows to approve another.
  */
@@ -193,10 +197,25 @@ export function ApproveDevice(): JSX.Element {
         </StatusBanner>
       )}
       {step.kind === "approved" && (
-        <StatusBanner tone="success" label="Approved">
-          The new device can now open your journal. It will appear in Manage
-          Devices once it has finished setting up.
-        </StatusBanner>
+        <>
+          <StatusBanner tone="success" label="Approved">
+            One more step. Type the confirmation code below into the new device
+            to finish.
+          </StatusBanner>
+          <Card heading="Type this code on the new device">
+            <p
+              class="recovery-key"
+              data-testid="confirmation-code"
+              aria-label={`Code: ${[...step.confirmation].join(" ")}`}
+            >
+              {formatPairingCode(step.confirmation)}
+            </p>
+            <p>
+              It proves to the new device that its key came from this one. The
+              new device will appear in Manage Devices once it has finished.
+            </p>
+          </Card>
+        </>
       )}
       {step.kind === "idle" && (
         <p>

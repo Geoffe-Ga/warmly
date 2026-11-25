@@ -53,6 +53,26 @@ async function shownCode(page: Page): Promise<string> {
   return (await page.getByTestId("pairing-code").innerText()).trim();
 }
 
+/**
+ * Type the new device's code and this device's passphrase, and approve.
+ *
+ * @returns The confirmation code the approving device then shows.
+ */
+async function approve(page: Page, code: string): Promise<string> {
+  await page.getByLabel("Code on the new device").fill(code);
+  await page.getByLabel("This device's passphrase").fill(DEVICE_PASSPHRASE);
+  await page.getByRole("button", { name: "Approve this device" }).click();
+  return (await page.getByTestId("confirmation-code").innerText()).trim();
+}
+
+/** On the new device: type the confirmation code and finish. */
+async function confirm(page: Page, confirmation: string): Promise<void> {
+  await page
+    .getByLabel("Confirmation code on your other device")
+    .fill(confirmation);
+  await page.getByRole("button", { name: "Finish" }).click();
+}
+
 test.describe("approving a new device", () => {
   test("the new device shows a code, the first approves it, and the new one opens the journal", async ({
     page,
@@ -77,15 +97,19 @@ test.describe("approving a new device", () => {
     expect(code).toMatch(/^\d{3} \d{3}$/);
     await expectNoViolations(second);
 
-    await page.getByLabel("Code on the new device").fill(code);
-    await page.getByLabel("This device's passphrase").fill(DEVICE_PASSPHRASE);
-    await page.getByRole("button", { name: "Approve this device" }).click();
-    await expect(
-      page.getByText("The new device can now open your journal."),
-    ).toBeVisible();
+    const confirmation = await approve(page, code);
+    expect(confirmation).toMatch(/^\d{3} \d{3}$/);
     await expectNoViolations(page);
 
-    // The new device unlocks by itself and is offered a passphrase.
+    // The new device has the key but keeps it only once its sender is
+    // confirmed.
+    await expect(
+      second.getByLabel("Confirmation code on your other device"),
+    ).toBeVisible();
+    await expectNoViolations(second);
+    await confirm(second, confirmation);
+
+    // It unlocks and is offered a passphrase of its own.
     await expect(second.getByRole("heading", { level: 1 })).toHaveText(
       "Unlock this device more easily",
     );
@@ -111,6 +135,7 @@ test.describe("approving a new device", () => {
     );
     expect(held).toContain("wrappedKey");
     expect(held).not.toContain(code.replace(" ", ""));
+    expect(held).not.toContain(confirmation.replace(" ", ""));
     expect(held).not.toContain(fingerprint);
   });
 
@@ -152,14 +177,40 @@ test.describe("approving a new device", () => {
       second.getByText("Waiting for your other device"),
     ).toBeVisible();
     await page.getByRole("button", { name: "Look again" }).click();
-    await page
-      .getByLabel("Code on the new device")
-      .fill(await shownCode(second));
-    await page.getByLabel("This device's passphrase").fill(DEVICE_PASSPHRASE);
-    await page.getByRole("button", { name: "Approve this device" }).click();
+    await confirm(second, await approve(page, await shownCode(second)));
     await expect(second.getByRole("heading", { level: 1 })).toHaveText(
       "Unlock this device more easily",
     );
+  });
+
+  test("a wrong confirmation code on the new device keeps nothing", async ({
+    page,
+    context,
+  }) => {
+    await onboard(page);
+    const second = await context.newPage();
+    await askToBeApproved(second);
+    await lookForDevice(page);
+    const confirmation = (await approve(page, await shownCode(second))).replace(
+      " ",
+      "",
+    );
+    const wrong = confirmation === "000000" ? "000001" : "000000";
+
+    await confirm(second, wrong);
+
+    await expect(second.getByRole("alert")).toContainText(
+      "isn't the confirmation code on your other device",
+    );
+    await expectNoViolations(second);
+    await expect(second.getByRole("heading", { level: 1 })).toHaveText(
+      "Approve from another device",
+    );
+    // Still locked: a reload lands on the locked screen, not on Home.
+    await second.reload();
+    await expect(
+      second.getByRole("navigation", { name: "Primary" }),
+    ).toHaveCount(0);
   });
 
   test("a wrong passphrase releases nothing and can be corrected", async ({
@@ -185,6 +236,10 @@ test.describe("approving a new device", () => {
 
     await page.getByLabel("This device's passphrase").fill(DEVICE_PASSPHRASE);
     await page.getByRole("button", { name: "Approve this device" }).click();
+    await confirm(
+      second,
+      (await page.getByTestId("confirmation-code").innerText()).trim(),
+    );
 
     await expect(second.getByRole("heading", { level: 1 })).toHaveText(
       "Unlock this device more easily",

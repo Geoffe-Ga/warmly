@@ -15,11 +15,21 @@
  * 4. Both compute the code from everything exchanged. The new device shows
  *    it; the person types it into the approving device.
  * 5. If the typed code matches, the approving device encrypts the root key
- *    to the new device's public key (HPKE, RFC 9180) and sends it.
+ *    to the new device's public key (HPKE, RFC 9180) and sends it, together
+ *    with a random **confirmation code** that it also shows on its screen.
+ * 6. The new device opens the message and asks for the confirmation code.
+ *    Only if the person types the one the approving device shows does it
+ *    keep the key.
  *
  * Each side has fixed its random value before it learns the other's, so a
  * relay in the middle gets one blind guess in a million per attempt, and a
  * wrong code ends the attempt.
+ *
+ * The two codes protect the two directions. The first makes sure the
+ * approving device sends the key to the real new device. The second makes
+ * sure the new device keeps a key that the real approving device sent:
+ * without it, a relay could seal a key of its own choosing to the new
+ * device, which would then encrypt the journal under a key the relay knows.
  */
 import type { AuthClient, AuthSession } from "../auth/auth-client";
 import {
@@ -42,6 +52,7 @@ import type { PairingRelay, PairingRequest } from "./pairing-relay";
 type Bytes = Uint8Array<ArrayBuffer>;
 
 const NONCE_BYTES = 32;
+const ROOT_KEY_BYTES = 32;
 const CODE_DIGITS = 6;
 /** How often a device asks the relay whether the other has moved on. */
 export const PAIRING_POLL_MS = 1_000;
@@ -56,6 +67,8 @@ export type PairingErrorCode =
   | "pairing_tampered"
   /** The typed code was not the code this pairing produced. */
   | "pairing_code_mismatch"
+  /** The confirmation code typed on the new device was not the sender's. */
+  | "pairing_confirmation_mismatch"
   /** The screen was left before the pairing finished. */
   | "pairing_cancelled";
 
@@ -97,6 +110,19 @@ export type JoinProgress =
   | { readonly kind: "waiting_for_approver" }
   | { readonly kind: "compare_code"; readonly code: string };
 
+/** A key the new device has received and not yet decided to keep. */
+export interface JoinConfirmation {
+  /**
+   * Keep the received key, if the typed confirmation code is the one the
+   * approving device shows. Unlocks this device.
+   *
+   * @param typedCode - The confirmation code, as typed here.
+   * @throws PairingError `pairing_confirmation_mismatch`. The received key
+   *   is then discarded and the pairing is over.
+   */
+  confirm(typedCode: string): Promise<void>;
+}
+
 /** A request the approving device has taken up and checked. */
 export interface Approval {
   /** When the request stops being usable. */
@@ -106,11 +132,13 @@ export interface Approval {
    *
    * @param typedCode - The code shown on the new device, as typed here.
    * @param credential - Re-opens the root key on this device.
+   * @returns The confirmation code to show, for the person to type into
+   *   the new device.
    * @throws PairingError `pairing_code_mismatch` (the pairing is then over),
    *   `pairing_expired`; VaultError if the credential is wrong, after which
    *   this may be called again.
    */
-  approve(typedCode: string, credential: RootKeyCredential): Promise<void>;
+  approve(typedCode: string, credential: RootKeyCredential): Promise<string>;
   /** Refuse the request. */
   reject(): Promise<void>;
 }
@@ -118,17 +146,19 @@ export interface Approval {
 /** What the pairing screens need. */
 export interface DevicePairing {
   /**
-   * New device: run a pairing to its end. Resolves once this device holds
-   * the root key and is unlocked.
+   * New device: run a pairing until a key has arrived. This device is not
+   * unlocked yet: the person must still confirm where the key came from.
    *
    * @param onProgress - Told when to wait and when to show the code.
-   * @param signal - Aborted when the screen is left.
+   * @param signal - Aborted when the screen is left. A received key that
+   *   has not been confirmed is then discarded.
+   * @returns The received key, waiting for its confirmation code.
    * @throws PairingError if the pairing ended early.
    */
   join(
     onProgress: (progress: JoinProgress) => void,
     signal: AbortSignal,
-  ): Promise<void>;
+  ): Promise<JoinConfirmation>;
   /**
    * Approving device: take up the waiting request, if there is one.
    *
@@ -207,6 +237,9 @@ export async function pairingCode(
     transcriptBytes("warmly-pairing-code-v1", transcript),
   );
   const number = new DataView(digest.buffer).getUint32(0);
+  // 2^32 is not a multiple of a million, so the lowest codes are very
+  // slightly likelier than the rest: by about one part in four thousand,
+  // which does not help anyone guess one.
   return String(number % 10 ** CODE_DIGITS).padStart(CODE_DIGITS, "0");
 }
 
@@ -264,7 +297,27 @@ function sealedKey(encoded: string): Bytes {
 }
 
 function sameBytes(left: Bytes, right: Bytes): boolean {
-  return toBase64(left) === toBase64(right);
+  return (
+    left.length === right.length &&
+    left.every((byte, index) => byte === right[index])
+  );
+}
+
+/**
+ * Pick a confirmation code: six digits, every code equally likely.
+ *
+ * @returns The code.
+ */
+export function newConfirmationCode(): string {
+  const span = 10 ** CODE_DIGITS;
+  // Values at the top of the range are thrown away, so that taking the
+  // remainder does not favour the low codes.
+  const limit = Math.floor(2 ** 32 / span) * span;
+  const draw = new Uint32Array(1);
+  do {
+    crypto.getRandomValues(draw);
+  } while ((draw[0] ?? limit) >= limit);
+  return String((draw[0] ?? 0) % span).padStart(CODE_DIGITS, "0");
 }
 
 function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
@@ -356,7 +409,7 @@ export class AccountPairing implements DevicePairing {
   async join(
     onProgress: (progress: JoinProgress) => void,
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<JoinConfirmation> {
     const session = await this.#session();
     const identity = await this.#identities.getOrCreate(session.userId);
     const recipient = await generateRecipientKey();
@@ -408,9 +461,9 @@ export class AccountPairing implements DevicePairing {
       signal,
       (request) => request.wrappedKey !== undefined,
     );
-    let rootKeyBytes: Bytes;
+    let received: Bytes;
     try {
-      rootKeyBytes = await hpkeOpen(
+      received = await hpkeOpen(
         recipient,
         transferMessage(transcript),
         sealedKey(approved.wrappedKey ?? ""),
@@ -421,11 +474,14 @@ export class AccountPairing implements DevicePairing {
       }
       throw error;
     }
-    try {
-      await this.#keys.acceptRootKey(rootKeyBytes);
-    } finally {
-      rootKeyBytes.fill(0);
+    if (received.length !== ROOT_KEY_BYTES + CODE_DIGITS) {
+      received.fill(0);
+      throw new PairingError("pairing_tampered");
     }
+    // Whoever sealed this knew the new device's public key, and so does the
+    // relay. The key is kept only once the person has typed the code the
+    // approving device shows, which the relay never sees.
+    return new ReceivedKey(received, this.#keys, signal);
   }
 
   async takeUpRequest(signal: AbortSignal): Promise<Approval | undefined> {
@@ -532,7 +588,7 @@ class ClaimedApproval implements Approval {
   async approve(
     typedCode: string,
     credential: RootKeyCredential,
-  ): Promise<void> {
+  ): Promise<string> {
     const { session, identity, relay, keys } = this.#context;
     if (!this.#codeConfirmed) {
       const code = await pairingCode(this.#transcript);
@@ -543,12 +599,21 @@ class ClaimedApproval implements Approval {
       }
       this.#codeConfirmed = true;
     }
-    const wrapped = await keys.withRootKeyBytes(credential, (rootKeyBytes) =>
-      hpkeSeal(
-        this.#transcript.publicKey,
-        transferMessage(this.#transcript),
-        rootKeyBytes,
-      ),
+    const confirmation = newConfirmationCode();
+    const wrapped = await keys.withRootKeyBytes(
+      credential,
+      async (rootKeyBytes) => {
+        const message = concat(rootKeyBytes, utf8(confirmation));
+        try {
+          return await hpkeSeal(
+            this.#transcript.publicKey,
+            transferMessage(this.#transcript),
+            message,
+          );
+        } finally {
+          message.fill(0);
+        }
+      },
     );
     const approved = await relay.approve(
       session,
@@ -559,6 +624,7 @@ class ClaimedApproval implements Approval {
     if (approved === undefined) {
       throw new PairingError("pairing_expired");
     }
+    return confirmation;
   }
 
   async reject(): Promise<void> {
@@ -567,9 +633,58 @@ class ClaimedApproval implements Approval {
   }
 }
 
+/** See {@link JoinConfirmation}. */
+class ReceivedKey implements JoinConfirmation {
+  readonly #received: Bytes;
+  readonly #keys: RootKeyAccess;
+  #open = true;
+
+  constructor(received: Bytes, keys: RootKeyAccess, signal: AbortSignal) {
+    this.#received = received;
+    this.#keys = keys;
+    signal.addEventListener(
+      "abort",
+      () => {
+        this.#discard();
+      },
+      { once: true },
+    );
+    if (signal.aborted) {
+      this.#discard();
+    }
+  }
+
+  #discard(): void {
+    this.#open = false;
+    this.#received.fill(0);
+  }
+
+  async confirm(typedCode: string): Promise<void> {
+    if (!this.#open) {
+      throw new PairingError("pairing_expired");
+    }
+    const expected = new TextDecoder().decode(
+      this.#received.slice(ROOT_KEY_BYTES),
+    );
+    if (normalisePairingCode(typedCode) !== expected) {
+      // One guess, as for the first code. The key is thrown away.
+      this.#discard();
+      throw new PairingError("pairing_confirmation_mismatch");
+    }
+    this.#open = false;
+    const rootKeyBytes = this.#received.slice(0, ROOT_KEY_BYTES);
+    try {
+      await this.#keys.acceptRootKey(rootKeyBytes);
+    } finally {
+      rootKeyBytes.fill(0);
+      this.#received.fill(0);
+    }
+  }
+}
+
 /** Stand-in for builds with no backend configured: pairing is unavailable. */
 export class UnavailableDevicePairing implements DevicePairing {
-  join(): Promise<void> {
+  join(): Promise<JoinConfirmation> {
     return Promise.reject(new PairingError("pairing_expired"));
   }
 

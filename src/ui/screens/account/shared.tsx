@@ -86,9 +86,11 @@ const MESSAGES: Readonly<
   pairing_rejected:
     "The other device didn't approve this request. Nothing was shared. If that was you, start again and type the code carefully.",
   pairing_tampered:
-    "Something changed the messages between your two devices, so we stopped. Nothing was shared. Try again on a network you trust, or use your recovery key instead.",
+    "The messages between your two devices didn't arrive as they were sent, so we stopped. Nothing was shared. Try again, or use your recovery key instead.",
   pairing_code_mismatch:
     "That isn't the code on the new device, so the request was cancelled. Nothing was shared. Start again on the new device, and type the code it shows.",
+  pairing_confirmation_mismatch:
+    "That isn't the confirmation code on your other device, so this device did not keep what it was sent. Start again, and if it happens twice, use your recovery key instead.",
   pairing_cancelled: "That request was cancelled. Nothing was shared.",
   unavailable:
     "Accounts aren't available in this version of Warmly yet. Nothing was sent or saved.",

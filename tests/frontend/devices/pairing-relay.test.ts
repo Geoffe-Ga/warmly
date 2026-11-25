@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { ApiClient } from "../../../src/api/client";
 import type { AuthSession } from "../../../src/auth/auth-client";
+import { fromBase64, toBase64 } from "../../../src/crypto/encoding";
+import { pairingCommitment } from "../../../src/devices/pairing";
 import {
   ApiPairingRelay,
   type PairingStart,
@@ -195,7 +197,22 @@ describe("the in-memory relay follows the server's rules", () => {
   let clock: number;
   let relay: FakePairingRelay;
 
-  beforeEach(() => {
+  const NONCE = toBase64(new Uint8Array(32).fill(7));
+  const KEY = toBase64(new Uint8Array(65).fill(4));
+  let COMMITTED: PairingStart;
+
+  beforeEach(async () => {
+    COMMITTED = {
+      deviceId: START.deviceId,
+      publicKey: KEY,
+      commitment: toBase64(
+        await pairingCommitment(
+          START.deviceId,
+          fromBase64(KEY),
+          fromBase64(NONCE),
+        ),
+      ),
+    };
     localStorage.clear();
     clock = Date.parse("2026-11-25T10:00:00Z");
     relay = new FakePairingRelay(localStorage, () => clock);
@@ -204,12 +221,12 @@ describe("the in-memory relay follows the server's rules", () => {
   it("runs each step once and in order, and only the claiming device finishes", async () => {
     const approver = await testIdentity("d0000000-0000-4000-8000-000000000001");
     const another = await testIdentity("d0000000-0000-4000-8000-000000000002");
-    const started = await relay.start(SESSION, START);
+    const started = await relay.start(SESSION, COMMITTED);
     expect(started.status).toBe("pending");
     expect(started.expiresAt).toBe("2026-11-25T10:05:00.000Z");
     expect(await relay.openRequest(SESSION)).toEqual(started);
 
-    expect(await relay.reveal(SESSION, started.id, "ag==")).toBeUndefined();
+    expect(await relay.reveal(SESSION, started.id, NONCE)).toBeUndefined();
     expect(
       await relay.approve(SESSION, approver, started.id, "dw=="),
     ).toBeUndefined();
@@ -222,10 +239,10 @@ describe("the in-memory relay follows the server's rules", () => {
     ).toBeUndefined();
     expect(await relay.openRequest(SESSION)).toBeUndefined();
 
-    expect((await relay.reveal(SESSION, started.id, "ag=="))?.status).toBe(
+    expect((await relay.reveal(SESSION, started.id, NONCE))?.status).toBe(
       "revealed",
     );
-    expect(await relay.reveal(SESSION, started.id, "eA==")).toBeUndefined();
+    expect(await relay.reveal(SESSION, started.id, NONCE)).toBeUndefined();
     expect(
       await relay.approve(SESSION, another, started.id, "dw=="),
     ).toBeUndefined();
@@ -235,7 +252,7 @@ describe("the in-memory relay follows the server's rules", () => {
     expect(approved).toMatchObject({
       status: "approved",
       approverNonce: "YQ==",
-      joinerNonce: "ag==",
+      joinerNonce: NONCE,
       wrappedKey: "dw==",
     });
     expect(
@@ -245,22 +262,40 @@ describe("the in-memory relay follows the server's rules", () => {
     expect((await relay.read(SESSION, started.id))?.status).toBe("approved");
   });
 
+  it("refuses a revealed value that does not match the commitment, and still takes the real one", async () => {
+    const approver = await testIdentity();
+    const started = await relay.start(SESSION, COMMITTED);
+    await relay.claim(SESSION, approver, started.id, "YQ==");
+
+    expect(
+      await relay.reveal(SESSION, started.id, toBase64(new Uint8Array(32))),
+    ).toBeUndefined();
+    expect(
+      await relay.reveal(SESSION, started.id, "not base64!"),
+    ).toBeUndefined();
+    expect(await relay.reveal(OTHER, started.id, NONCE)).toBeUndefined();
+
+    expect((await relay.reveal(SESSION, started.id, NONCE))?.status).toBe(
+      "revealed",
+    );
+  });
+
   it("lets the claiming device reject, after which nothing more happens", async () => {
     const approver = await testIdentity();
-    const started = await relay.start(SESSION, START);
+    const started = await relay.start(SESSION, COMMITTED);
     await relay.claim(SESSION, approver, started.id, "YQ==");
 
     await relay.reject(SESSION, approver, started.id);
 
     expect((await relay.read(SESSION, started.id))?.status).toBe("rejected");
-    expect(await relay.reveal(SESSION, started.id, "ag==")).toBeUndefined();
+    expect(await relay.reveal(SESSION, started.id, NONCE)).toBeUndefined();
   });
 
   it("expires a request after five minutes and then gives up no wrapped key", async () => {
     const approver = await testIdentity();
-    const started = await relay.start(SESSION, START);
+    const started = await relay.start(SESSION, COMMITTED);
     await relay.claim(SESSION, approver, started.id, "YQ==");
-    await relay.reveal(SESSION, started.id, "ag==");
+    await relay.reveal(SESSION, started.id, NONCE);
     clock += 5 * 60 * 1_000 - 1;
     await relay.approve(SESSION, approver, started.id, "dw==");
     expect((await relay.read(SESSION, started.id))?.wrappedKey).toBe("dw==");
@@ -277,10 +312,10 @@ describe("the in-memory relay follows the server's rules", () => {
   });
 
   it("a new request ends the account's earlier open one, and nobody else's", async () => {
-    const mine = await relay.start(SESSION, START);
-    const theirs = await relay.start(OTHER, START);
+    const mine = await relay.start(SESSION, COMMITTED);
+    const theirs = await relay.start(OTHER, COMMITTED);
 
-    const newer = await relay.start(SESSION, START);
+    const newer = await relay.start(SESSION, COMMITTED);
 
     expect((await relay.read(SESSION, mine.id))?.status).toBe("expired");
     expect((await relay.openRequest(SESSION))?.id).toBe(newer.id);
@@ -289,7 +324,7 @@ describe("the in-memory relay follows the server's rules", () => {
 
   it("keeps accounts apart", async () => {
     const approver = await testIdentity();
-    const started = await relay.start(SESSION, START);
+    const started = await relay.start(SESSION, COMMITTED);
 
     expect(await relay.read(OTHER, started.id)).toBeUndefined();
     expect(
@@ -302,7 +337,7 @@ describe("the in-memory relay follows the server's rules", () => {
   it("stores under a name that marks it as fake, and uses the real clock by default", async () => {
     const before = Date.now();
 
-    const started = await new FakePairingRelay().start(SESSION, START);
+    const started = await new FakePairingRelay().start(SESSION, COMMITTED);
 
     expect(FAKE_PAIRING_STORAGE_KEY).toContain("warmly.fake.");
     expect(localStorage.getItem(FAKE_PAIRING_STORAGE_KEY)).toContain(

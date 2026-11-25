@@ -10,6 +10,10 @@ registered key yet. Nothing they do can release a key. Every route that an
 approving device calls requires its signature.
 """
 
+import base64
+import binascii
+import hashlib
+import hmac
 from http import HTTPStatus
 from typing import Annotated, Any
 from uuid import UUID
@@ -31,6 +35,9 @@ from warmly.schemas.problem import Problem
 
 NOT_FOUND_CODE = "enrollment.not_found"
 WRONG_STATE_CODE = "enrollment.wrong_state"
+COMMITMENT_MISMATCH_CODE = "enrollment.commitment_mismatch"
+
+_COMMITMENT_LABEL = b"warmly-pairing-commit-v1"
 
 _NOT_FOUND: dict[int | str, dict[str, Any]] = {
     404: {"model": Problem, "description": "No such pairing request on this account"}
@@ -56,6 +63,40 @@ def _enrollments(request: Request) -> EnrollmentStore:
 
 
 Enrollments = Annotated[EnrollmentStore, Depends(_enrollments)]
+
+
+def commitment_matches(enrollment: Enrollment, joiner_nonce: str) -> bool:
+    """Check a revealed value against the commitment made at the start.
+
+    The commitment is SHA-256 over a label, the device ID with a two-byte
+    length in front, the public key and the random value. Checking it here
+    is a courtesy, not the control: the approving device checks it too, and
+    it is the one that must not be fooled. What the check buys is that
+    someone holding only a session token cannot spoil a pairing by revealing
+    a made-up value before the new device reveals the real one.
+
+    Args:
+        enrollment: The request as stored.
+        joiner_nonce: The value being revealed, base64.
+
+    Returns:
+        Whether the value is the one the new device committed to.
+    """
+    try:
+        public_key = base64.b64decode(enrollment.public_key, validate=True)
+        nonce = base64.b64decode(joiner_nonce, validate=True)
+        commitment = base64.b64decode(enrollment.commitment, validate=True)
+    except (binascii.Error, ValueError):
+        return False
+    device_id = str(enrollment.device_id).encode()
+    expected = hashlib.sha256(
+        _COMMITMENT_LABEL
+        + len(device_id).to_bytes(2, "big")
+        + device_id
+        + public_key
+        + nonce
+    ).digest()
+    return hmac.compare_digest(expected, commitment)
 
 
 async def _step(
@@ -190,8 +231,8 @@ async def reveal_enrollment(
 ) -> Enrollment:
     """Record the value the new device committed to when it started.
 
-    The server does not check the value against the commitment: the
-    approving device does, because it is the one that must not be fooled.
+    A value that does not match the commitment is refused and leaves the
+    request as it was, so the real value can still be revealed.
 
     Args:
         enrollment_id: The request.
@@ -201,7 +242,17 @@ async def reveal_enrollment(
 
     Returns:
         The request, now ready for the pairing code to be compared.
+
+    Raises:
+        ProblemError: 404 if the request is not the caller's; 409 if the
+            value does not match the commitment, or the request is not
+            waiting for it.
     """
+    stored = await enrollments.read(owner.id, enrollment_id)
+    if stored is None:
+        raise ProblemError(HTTPStatus.NOT_FOUND, NOT_FOUND_CODE)
+    if not commitment_matches(stored, request.joiner_nonce):
+        raise ProblemError(HTTPStatus.CONFLICT, COMMITMENT_MISMATCH_CODE)
     revealed = await enrollments.reveal(owner.id, enrollment_id, request.joiner_nonce)
     return await _step(enrollments, owner.id, enrollment_id, revealed)
 

@@ -5,6 +5,7 @@ Adding a route without adding a case here fails
 """
 
 import base64
+import hashlib
 import json
 from dataclasses import dataclass, field
 from typing import Any
@@ -29,6 +30,21 @@ CIPHERTEXT = "b3BhcXVl"
 
 # 32 synthetic bytes in base64, standing in for digests and random values.
 BYTES32 = base64.b64encode(bytes(range(32))).decode()
+
+
+def commitment(device_id: str, public_key: str, nonce: str) -> str:
+    """Compute a pairing commitment as the app does, independently of the API."""
+    name = device_id.encode()
+    digest = hashlib.sha256(
+        b"warmly-pairing-commit-v1"
+        + len(name).to_bytes(2, "big")
+        + name
+        + base64.b64decode(public_key)
+        + base64.b64decode(nonce)
+    ).digest()
+    return base64.b64encode(digest).decode()
+
+
 # The first two steps of a pairing, as (path, body).
 CLAIM = (f"/v1/enrollments/{ENROLLMENT_ID}/claim", {"approver_nonce": BYTES32})
 REVEAL = (f"/v1/enrollments/{ENROLLMENT_ID}/reveal", {"joiner_nonce": BYTES32})
@@ -114,7 +130,11 @@ CASES = [
         "/v1/enrollments",
         Enrollment,
         status=201,
-        body={"device_id": DEVICE_ID, "public_key": CIPHERTEXT, "commitment": BYTES32},
+        body={
+            "device_id": DEVICE_ID,
+            "public_key": CIPHERTEXT,
+            "commitment": commitment(DEVICE_ID, CIPHERTEXT, BYTES32),
+        },
         stub=False,
     ),
     Case("GET", "/v1/enrollments/open", Enrollment, stub=False),

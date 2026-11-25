@@ -216,6 +216,9 @@ key, already exists (ADR-0003).
   and not enough to get it.
 - A server that misbehaves, or someone holding a stolen session token, must
   not be able to get the key by putting themselves between the two devices.
+- The same must hold in the other direction: the new device must not end
+  up holding a key that the server, rather than the other device, chose.
+  Otherwise it would encrypt the journal under a key the server knows.
 - A person has to be able to check that, without a camera and with a screen
   reader.
 
@@ -250,7 +253,8 @@ The exchange, relayed through `/v1/enrollments`:
 | 3. reveal | New device | Only now sends its random value. |
 | 4. check | Approving device | Recomputes the commitment from the revealed value. If it does not match, it refuses the request. |
 | 5. compare | Person | The new device shows a six-digit code. The person **types it** into the approving device. |
-| 6. approve | Approving device | If the typed code equals the code it computed, it encrypts the root key to the new device's public key and sends it. |
+| 6. approve | Approving device | If the typed code equals the code it computed, it picks a random six-digit **confirmation code**, encrypts the root key and that code together to the new device's public key, sends the result, and shows the confirmation code. |
+| 7. confirm | Person, new device | The new device opens the message and asks for the confirmation code. It keeps the key only if the person types the one the approving device shows. |
 
 - **The code** is SHA-256 over the account, the request ID, the device ID,
   the public key, the commitment, the challenge and both random values,
@@ -259,8 +263,23 @@ The exchange, relayed through `/v1/enrollments`:
 - **Typed, not just confirmed.** A "yes, they match" button gets pressed
   without looking. Typing the code is the comparison. The approving device
   never displays its own code.
-- **One guess.** A wrong code refuses the request, so the code cannot be
-  searched for. The person starts again on the new device.
+- **Why a second code.** The first code only protects the approving device:
+  it knows it is sending to the real new device. The new device knows
+  nothing yet. HPKE in base mode does not say who sealed a message, and
+  everything needed to seal one to the new device (its public key and the
+  whole transcript) passes through the relay. So a relay could seal a key
+  of its own to the new device, with or without a real approval. The
+  confirmation code closes that: it travels only inside the encrypted
+  message and on the approving device's screen, so the relay cannot know
+  the one the person will type. Signing the transfer with a key the
+  approving device contributes was considered and is not enough by itself:
+  a relay that substitutes that key makes the first code mismatch on the
+  approving device, which refuses, but the new device has no way to learn
+  of the refusal except through the relay. Only something the person
+  carries between the two screens can tell it.
+- **One guess, for each code.** A wrong first code refuses the request. A
+  wrong confirmation code makes the new device discard what it received.
+  Neither code can be searched for. The person starts again.
 - **Re-authentication.** The unlocked root key cannot be exported, so the
   approving device opens it again with its device passphrase, or with the
   recovery key on a device that has no passphrase. That also confirms the
@@ -276,7 +295,10 @@ The exchange, relayed through `/v1/enrollments`:
   checked against the RFC's own test vectors for this suite
   (`tests/fixtures/hpke/`), both sealing with the vector's one-time key and
   opening its ciphertext.
-- **After the transfer** the new device holds the root key, so it registers
+- **Nothing is unlocked early.** The received key is held in memory, not
+  adopted, until the confirmation code is typed. Leaving the screen wipes
+  it.
+- **After the confirmation** the new device holds the root key, so it registers
   itself exactly as a device that used the recovery key does: with the
   enrollment proof described above.
 
@@ -285,6 +307,11 @@ What the server enforces (`warmly/api/enrollment.py`,
 
 - A request lasts **5 minutes**. After that it reads as `expired`, cannot be
   advanced, and gives up no wrapped key.
+- A revealed value that does not match the commitment is refused and
+  leaves the request as it was, so someone holding only a session token
+  cannot spoil a pairing by revealing a made-up value first. This is a
+  courtesy: the approving device makes the same check and is the one that
+  must not be fooled.
 - Each step is one `UPDATE` that names the state it expects, so it happens
   once and in order. A request cannot be claimed twice, a value cannot be
   revealed twice, and a second wrapped key cannot replace the first.
@@ -310,6 +337,9 @@ What the server enforces (`warmly/api/enrollment.py`,
 - The remaining risk is the person: approving a device that is not theirs
   because someone asked them to type a code. The screens say to approve
   only a device you are holding.
+- The person types two codes, one on each device. That is one step more
+  than a single comparison, and is the price of protecting both directions
+  without a camera.
 - Six digits give a one-in-a-million chance per attempt that a relay's blind
   guess goes unnoticed. Each attempt needs the owner to start a pairing, so
   attempts are few.

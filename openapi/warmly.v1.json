@@ -1592,7 +1592,7 @@
     },
     "/v1/enrollments/{enrollment_id}/reveal": {
       "post": {
-        "description": "Record the value the new device committed to when it started.\n\nThe server does not check the value against the commitment: the\napproving device does, because it is the one that must not be fooled.\n\nArgs:\n    enrollment_id: The request.\n    request: The new device's random value.\n    owner: The verified account.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The request, now ready for the pairing code to be compared.",
+        "description": "Record the value the new device committed to when it started.\n\nA value that does not match the commitment is refused and leaves the\nrequest as it was, so the real value can still be revealed.\n\nArgs:\n    enrollment_id: The request.\n    request: The new device's random value.\n    owner: The verified account.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The request, now ready for the pairing code to be compared.\n\nRaises:\n    ProblemError: 404 if the request is not the caller's; 409 if the\n        value does not match the commitment, or the request is not\n        waiting for it.",
         "operationId": "reveal_enrollment_v1_enrollments__enrollment_id__reveal_post",
         "parameters": [
           {

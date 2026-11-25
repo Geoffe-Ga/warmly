@@ -7,6 +7,9 @@ account can never touch another's request.
 """
 
 import base64
+import json
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -14,7 +17,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.api.cases import BYTES32, CIPHERTEXT, DEVICE_ID
+from tests.api.cases import BYTES32, CIPHERTEXT, DEVICE_ID, commitment
 from tests.api.conftest import (
     SEEDED_ENROLLMENT_ID,
     InMemoryDeviceStore,
@@ -22,11 +25,20 @@ from tests.api.conftest import (
 )
 from tests.auth.devices import OTHER_DEVICE_ID, DeviceAuth, TestDevice
 from tests.auth.tokens import OTHER_OWNER_ID, OWNER_ID, Signer
+from warmly.api.enrollment import commitment_matches
 from warmly.api.errors import PROBLEM_MEDIA_TYPE
+from warmly.schemas.enrollment import Enrollment
 
 ID = str(SEEDED_ENROLLMENT_ID)
 OTHER_NONCE = base64.b64encode(bytes(range(32, 64))).decode()
-START = {"device_id": DEVICE_ID, "public_key": CIPHERTEXT, "commitment": BYTES32}
+START = {
+    "device_id": DEVICE_ID,
+    "public_key": CIPHERTEXT,
+    "commitment": commitment(DEVICE_ID, CIPHERTEXT, BYTES32),
+}
+FIXTURE: dict[str, str] = json.loads(
+    (Path(__file__).parent.parent / "fixtures" / "pairing" / "v1.json").read_text()
+)
 
 
 def _problem(response: Any, status: int, code: str) -> None:
@@ -44,7 +56,7 @@ def _claim(client: TestClient, enrollment_id: str = ID) -> Any:
 
 def _reveal(client: TestClient, enrollment_id: str = ID) -> Any:
     return client.post(
-        f"/v1/enrollments/{enrollment_id}/reveal", json={"joiner_nonce": OTHER_NONCE}
+        f"/v1/enrollments/{enrollment_id}/reveal", json={"joiner_nonce": BYTES32}
     )
 
 
@@ -99,7 +111,7 @@ def test_a_pairing_runs_start_claim_reveal_approve(
     assert enrollment["status"] == "pending"
     assert enrollment["device_id"] == DEVICE_ID
     assert enrollment["public_key"] == CIPHERTEXT
-    assert enrollment["commitment"] == BYTES32
+    assert enrollment["commitment"] == START["commitment"]
     assert len(enrollment["challenge"]) == 44
     assert enrollment["wrapped_key"] is None
     new_id = enrollment["id"]
@@ -111,7 +123,7 @@ def test_a_pairing_runs_start_claim_reveal_approve(
 
     revealed = _reveal(session_only, new_id).json()
     assert revealed["status"] == "revealed"
-    assert revealed["joiner_nonce"] == OTHER_NONCE
+    assert revealed["joiner_nonce"] == BYTES32
 
     approved = _approve(client, new_id).json()
     assert approved["status"] == "approved"
@@ -166,14 +178,74 @@ def test_the_new_device_cannot_reveal_before_an_approver_has_committed(
 
 
 def test_a_value_is_revealed_only_once(client: TestClient) -> None:
-    """The revealed value cannot be replaced after the fact."""
+    """Revealing again changes nothing."""
     _claim(client)
     assert _reveal(client).status_code == 200
 
-    again = client.post(f"/v1/enrollments/{ID}/reveal", json={"joiner_nonce": BYTES32})
+    _problem(_reveal(client), 409, "enrollment.wrong_state")
+    assert client.get(f"/v1/enrollments/{ID}").json()["status"] == "revealed"
 
-    _problem(again, 409, "enrollment.wrong_state")
-    assert client.get(f"/v1/enrollments/{ID}").json()["joiner_nonce"] == OTHER_NONCE
+
+def test_a_value_that_does_not_match_the_commitment_is_refused(
+    client: TestClient, session_only: TestClient
+) -> None:
+    """A stolen session token cannot spoil a pairing with a made-up value."""
+    _claim(client)
+
+    junk = session_only.post(
+        f"/v1/enrollments/{ID}/reveal", json={"joiner_nonce": OTHER_NONCE}
+    )
+
+    _problem(junk, 409, "enrollment.commitment_mismatch")
+    assert client.get(f"/v1/enrollments/{ID}").json()["status"] == "claimed"
+    # The real value can still be revealed afterwards.
+    assert _reveal(session_only).json()["joiner_nonce"] == BYTES32
+
+
+def test_the_commitment_check_agrees_with_the_browser(
+    client: TestClient, session_only: TestClient
+) -> None:
+    """The shared fixture is also checked by the browser tests (ADR-0005)."""
+    started = session_only.post(
+        "/v1/enrollments",
+        json={
+            "device_id": FIXTURE["deviceId"],
+            "public_key": FIXTURE["publicKey"],
+            "commitment": FIXTURE["commitment"],
+        },
+    ).json()
+    _claim(client, started["id"])
+
+    revealed = session_only.post(
+        f"/v1/enrollments/{started['id']}/reveal",
+        json={"joiner_nonce": FIXTURE["joinerNonce"]},
+    )
+
+    assert revealed.status_code == 200
+    assert (
+        commitment(FIXTURE["deviceId"], FIXTURE["publicKey"], FIXTURE["joinerNonce"])
+        == (FIXTURE["commitment"])
+    )
+
+
+@pytest.mark.parametrize("field", ["public_key", "commitment"])
+def test_a_stored_value_that_is_not_base64_never_matches(field: str) -> None:
+    """The check fails closed on a value it cannot decode."""
+    stored = Enrollment(
+        id=SEEDED_ENROLLMENT_ID,
+        device_id=UUID(DEVICE_ID),
+        public_key=CIPHERTEXT,
+        commitment=commitment(DEVICE_ID, CIPHERTEXT, BYTES32),
+        challenge=BYTES32,
+        status="claimed",
+        expires_at=datetime(2026, 11, 25, tzinfo=UTC),
+    )
+    assert commitment_matches(stored, BYTES32)
+
+    broken = stored.model_construct(**(stored.model_dump() | {field: "not base64!"}))
+
+    assert not commitment_matches(broken, BYTES32)
+    assert not commitment_matches(stored, "not base64!")
 
 
 @pytest.mark.parametrize("steps", [[], [_claim]], ids=["pending", "claimed"])

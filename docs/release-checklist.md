@@ -58,7 +58,7 @@ the whole product; items are added here as the work that creates them lands.
 
 - [ ] **Checked with two real devices**, one of them an iPhone: start on the
       new device, type the code on the other, confirm the new device unlocks
-      and appears in Manage Devices. Repeat with a wrong code and confirm
+      and appears in Manage Devices. Type the confirmation code on the new device. Repeat with a wrong code and confirm
       both devices say the request was cancelled. Tracked in #66.
 - [ ] **Checked with a screen reader** (VoiceOver): the code on the new
       device is read digit by digit, and the approval form's fields and

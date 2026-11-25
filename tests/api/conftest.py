@@ -1,6 +1,5 @@
 """Shared fixtures for API tests."""
 
-import base64
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -12,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api.cases import BYTES32, commitment
 from tests.auth.devices import (
     ENROLLMENT_VERIFIER,
     NAME_CIPHERTEXT,
@@ -194,8 +194,8 @@ class InMemoryDeviceStore:
 
 # The pairing request the in-memory store starts with, waiting to be claimed.
 SEEDED_ENROLLMENT_ID = UUID("44444444-4444-4444-8444-444444444444")
-# 32 synthetic bytes in base64, standing in for digests and random values.
-BYTES32 = base64.b64encode(bytes(range(32))).decode()
+SEEDED_DEVICE_ID = "11111111-1111-4111-8111-111111111111"
+SEEDED_PUBLIC_KEY = "cHVibGljLWtleQ=="
 _SEED_TIME = datetime(2026, 11, 25, tzinfo=UTC)
 
 
@@ -249,9 +249,10 @@ class InMemoryEnrollmentStore:
         """Add a waiting request directly, bypassing the route."""
         enrollment = Enrollment(
             id=enrollment_id,
-            device_id=UUID("11111111-1111-4111-8111-111111111111"),
-            public_key="cHVibGljLWtleQ==",
-            commitment=BYTES32,
+            device_id=UUID(SEEDED_DEVICE_ID),
+            public_key=SEEDED_PUBLIC_KEY,
+            # The seeded request commits to BYTES32 as its random value.
+            commitment=commitment(SEEDED_DEVICE_ID, SEEDED_PUBLIC_KEY, BYTES32),
             challenge=BYTES32,
             status="pending",
             expires_at=_SEED_TIME,

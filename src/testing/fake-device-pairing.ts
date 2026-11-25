@@ -9,6 +9,7 @@ import {
   normalisePairingCode,
   type Approval,
   type DevicePairing,
+  type JoinConfirmation,
   type JoinProgress,
   type PairingErrorCode,
   type RootKeyCredential,
@@ -20,8 +21,10 @@ import {
   type FakeKeyVault,
 } from "./fake-key-vault";
 
-/** The code a scripted pairing shows. */
+/** The code a scripted pairing shows on the new device. */
 export const FAKE_PAIRING_CODE = "042917";
+/** The confirmation code a scripted pairing shows on the approving device. */
+export const FAKE_CONFIRMATION_CODE = "660135";
 
 /** See the module comment. */
 export class FakeDevicePairing implements DevicePairing {
@@ -36,6 +39,8 @@ export class FakeDevicePairing implements DevicePairing {
   outcome: "approved" | "rejected" | undefined;
   /** How many times the new device started a pairing. */
   joins = 0;
+  /** Called just before a confirmed key unlocks the vault, if set. */
+  beforeKeyIsKept: (() => void) | undefined;
 
   /** @param vault - The vault double a finished pairing unlocks. */
   constructor(vault: FakeKeyVault) {
@@ -76,13 +81,25 @@ export class FakeDevicePairing implements DevicePairing {
   async join(
     onProgress: (progress: JoinProgress) => void,
     signal: AbortSignal,
-  ): Promise<void> {
+  ): Promise<JoinConfirmation> {
     this.joins += 1;
     onProgress({ kind: "waiting_for_approver" });
     await this.#wait(signal);
     onProgress({ kind: "compare_code", code: FAKE_PAIRING_CODE });
     await this.#wait(signal);
-    this.#vault.acceptKeyFromAnotherDevice();
+    return {
+      confirm: async (typedCode) => {
+        await Promise.resolve();
+        if (signal.aborted) {
+          throw new PairingError("pairing_expired");
+        }
+        if (normalisePairingCode(typedCode) !== FAKE_CONFIRMATION_CODE) {
+          throw new PairingError("pairing_confirmation_mismatch");
+        }
+        this.beforeKeyIsKept?.();
+        this.#vault.acceptKeyFromAnotherDevice();
+      },
+    };
   }
 
   async takeUpRequest(): Promise<Approval | undefined> {
@@ -106,6 +123,7 @@ export class FakeDevicePairing implements DevicePairing {
         }
         checkCredential(credential);
         this.outcome = "approved";
+        return FAKE_CONFIRMATION_CODE;
       },
       reject: async () => {
         await Promise.resolve();

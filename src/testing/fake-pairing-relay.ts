@@ -5,15 +5,17 @@
  * It keeps the requests in `localStorage`, playing the part of the server,
  * so two tabs can pair as two devices. It applies the same rules as the real
  * API: each step happens once and in order, a request lasts five minutes,
- * starting a new one ends the account's earlier open ones, only the device
- * that claimed a request can finish it, and an account sees only its own.
+ * starting a new one ends the account's earlier open ones, a revealed value
+ * must match the commitment, only the device that claimed a request can
+ * finish it, and an account sees only its own.
  *
  * It does not check request signatures. Those are covered by the API's own
  * tests.
  */
 import type { AuthSession } from "../auth/auth-client";
-import { toBase64 } from "../crypto/encoding";
+import { fromBase64, toBase64 } from "../crypto/encoding";
 import type { DeviceIdentity } from "../devices/identity";
+import { pairingCommitment } from "../devices/pairing";
 import type {
   PairingRelay,
   PairingRequest,
@@ -148,15 +150,33 @@ export class FakePairingRelay implements PairingRelay {
     });
   }
 
-  reveal(
+  async reveal(
     session: AuthSession,
     id: string,
     joinerNonce: string,
   ): Promise<PairingRequest | undefined> {
+    const stored = await this.read(session, id);
+    if (stored === undefined || !(await this.#committed(stored, joinerNonce))) {
+      return undefined;
+    }
     return this.#step(session, id, ["claimed"], undefined, () => ({
       status: "revealed",
       joinerNonce,
     }));
+  }
+
+  /** Whether a revealed value is the one the request committed to. */
+  async #committed(request: PairingRequest, nonce: string): Promise<boolean> {
+    try {
+      const expected = await pairingCommitment(
+        request.deviceId,
+        fromBase64(request.publicKey),
+        fromBase64(nonce),
+      );
+      return toBase64(expected) === request.commitment;
+    } catch {
+      return false;
+    }
   }
 
   approve(

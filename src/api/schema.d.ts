@@ -313,8 +313,8 @@ export interface paths {
      * Reveal the new device's random value
      * @description Record the value the new device committed to when it started.
      *
-     *     The server does not check the value against the commitment: the
-     *     approving device does, because it is the one that must not be fooled.
+     *     A value that does not match the commitment is refused and leaves the
+     *     request as it was, so the real value can still be revealed.
      *
      *     Args:
      *         enrollment_id: The request.
@@ -324,6 +324,11 @@ export interface paths {
      *
      *     Returns:
      *         The request, now ready for the pairing code to be compared.
+     *
+     *     Raises:
+     *         ProblemError: 404 if the request is not the caller's; 409 if the
+     *             value does not match the commitment, or the request is not
+     *             waiting for it.
      */
     post: operations["reveal_enrollment_v1_enrollments__enrollment_id__reveal_post"];
     delete?: never;

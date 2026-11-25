@@ -163,7 +163,9 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - The root key leaves a device only through pairing (`src/devices/pairing.ts`,
   ADR-0005): encrypted to the new device with `src/crypto/hpke.ts`, after
   the person has typed the pairing code. Never add another way to export it,
-  and never let the approving device show or skip the code.
+  and never let the approving device show or skip the code. The new device
+  keeps a received key only after the confirmation code has been typed:
+  never adopt a transferred key without it.
 - The browser talks to Supabase Auth only, through `@supabase/auth-js`. Never
   add the full Supabase client or call the Data API from the browser.
 - New keys and a replacement recovery key are saved only after the user has

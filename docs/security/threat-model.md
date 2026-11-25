@@ -35,6 +35,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Lost devices, or a forgotten password | Personal recovery key wraps the root key; the server holds only the wrapped copy; a password reset changes no keys (ADR-0003) | **In place** |
 | Stolen locked device | Root key stored wrapped twice, by a non-extractable device key and by a device passphrase (ADR-0004); 30-minute inactivity lock. A weak device passphrase is the weak point: PBKDF2 slows guessing but does not stop it | **In place**; passkey unlock planned: #80 |
 | Server or token holder intercepting a new device's pairing | Commit-then-reveal exchange, a six-digit code the person types into the approving device, one guess per request, HPKE transfer bound to the transcript, re-authentication on the approving device (ADR-0005) | **In place** |
+| Server planting a key of its own on a new device | The approving device sends a random confirmation code inside the encrypted transfer and shows it; the new device keeps the key only when the person types that code (ADR-0005) | **In place** |
 | Offline edit conflicts | Compare-and-swap; both versions kept | Planned: #33, #36 |
 | Revoked device reconnecting | The device is looked up, and refused if revoked, on every signed request (ADR-0005) | Check **in place**; revoking a device planned: #23 |
 | Replayed or altered request | The signature covers the method, path, body hash, a timestamp and a nonce; stale timestamps and reused nonces are refused (ADR-0005) | **In place** |

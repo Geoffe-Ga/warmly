@@ -95,7 +95,14 @@ describe("a new device asks to be approved (DEV-001 path A, AC-19)", () => {
     expect(code.getAttribute("aria-label")).toBe("Code: 0 4 2 9 1 7");
     expect(services.session.state).toBe("signed_in_locked");
 
+    // The key has arrived, but it is not kept until its sender is confirmed.
     services.pairing.otherDeviceMovesOn();
+    await fill("Confirmation code on your other device", "660 135");
+    expect(screen.queryByTestId("pairing-code")).toBeNull();
+    expect(services.vault.isUnlocked).toBe(false);
+    expect(services.session.state).toBe("signed_in_locked");
+
+    await press("Finish");
     await waitFor(() => {
       expect(heading().textContent).toBe("Unlock this device more easily");
     });
@@ -107,7 +114,7 @@ describe("a new device asks to be approved (DEV-001 path A, AC-19)", () => {
   it.each([
     ["pairing_rejected", "didn't approve this request"],
     ["pairing_expired", "ran out of time"],
-    ["pairing_tampered", "changed the messages between your two devices"],
+    ["pairing_tampered", "didn't arrive as they were sent"],
   ] as const)(
     "explains %s, stays locked and can start again",
     async (code, text) => {
@@ -132,6 +139,66 @@ describe("a new device asks to be approved (DEV-001 path A, AC-19)", () => {
       expect(screen.queryByRole("alert")).toBeNull();
     },
   );
+
+  async function toConfirmation(): Promise<TestServices> {
+    const services = await renderApp(
+      "/recover/another-device",
+      await newDevice(),
+    );
+    await press("Show a code");
+    await screen.findByText(/open Manage Devices and choose/);
+    services.pairing.otherDeviceMovesOn();
+    await screen.findByTestId("pairing-code");
+    services.pairing.otherDeviceMovesOn();
+    await screen.findByLabelText("Confirmation code on your other device");
+    return services;
+  }
+
+  it("a wrong confirmation code keeps nothing, stays locked and can start again", async () => {
+    const services = await toConfirmation();
+
+    await fill("Confirmation code on your other device", "111111");
+    await press("Finish");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(
+      "isn't the confirmation code on your other device",
+    );
+    expect(services.vault.isUnlocked).toBe(false);
+    expect(services.session.state).toBe("signed_in_locked");
+    expect(
+      screen.queryByLabelText("Confirmation code on your other device"),
+    ).toBeNull();
+
+    await press("Start again");
+    await screen.findByText(/open Manage Devices and choose/);
+    expect(services.pairing.joins).toBe(2);
+  });
+
+  it.each(["", "6601"])(
+    "asks for all six digits of the confirmation code (%j)",
+    async (typed) => {
+      const services = await toConfirmation();
+      if (typed !== "") {
+        await fill("Confirmation code on your other device", typed);
+      }
+
+      await press("Finish");
+
+      expect(
+        await screen.findByText(
+          "Type the six digits shown on your other device.",
+        ),
+      ).toBeTruthy();
+      expect(services.vault.isUnlocked).toBe(false);
+    },
+  );
+
+  it("explains why the confirmation code is asked for", async () => {
+    await toConfirmation();
+
+    expect(screen.getByText(/really came from your other device/)).toBeTruthy();
+  });
 
   it("starts only one request however often the button is pressed", async () => {
     const services = await renderApp(
@@ -167,23 +234,19 @@ describe("a new device asks to be approved (DEV-001 path A, AC-19)", () => {
     expect(services.vault.isUnlocked).toBe(false);
   });
 
-  it("locks again if the session ended while the key was on its way", async () => {
-    const services = await renderApp(
-      "/recover/another-device",
-      await newDevice(),
-    );
-    await press("Show a code");
-    await screen.findByText(/open Manage Devices and choose/);
-    services.pairing.otherDeviceMovesOn();
-    await screen.findByTestId("pairing-code");
+  it("locks again if the session ended while the key was being kept", async () => {
+    const services = await toConfirmation();
+    services.pairing.beforeKeyIsKept = () => {
+      services.session.signOut();
+    };
 
-    services.session.signOut();
-    services.pairing.otherDeviceMovesOn();
+    await fill("Confirmation code on your other device", "660135");
+    await press("Finish");
 
     await waitFor(() => {
+      expect(services.session.state).toBe("signed_out");
       expect(services.vault.isUnlocked).toBe(false);
     });
-    expect(services.session.state).toBe("signed_out");
   });
 
   it.each(["signed_out", "unlocked"] as const)(
@@ -231,10 +294,11 @@ describe("an unlocked device approves a new one (DEV-001 path A, AC-19)", () => 
     await fill("This device's passphrase", FAKE_DEVICE_PASSPHRASE);
     await press("Approve this device");
 
+    const confirmation = await screen.findByTestId("confirmation-code");
+    expect(confirmation.textContent).toBe("660 135");
+    expect(confirmation.getAttribute("aria-label")).toBe("Code: 6 6 0 1 3 5");
     expect(
-      (await screen.findByText(/can now open your journal/)).getAttribute(
-        "role",
-      ),
+      screen.getByText(/Type the confirmation code below/).getAttribute("role"),
     ).toBe("status");
     expect(services.pairing.outcome).toBe("approved");
     expect(screen.queryByLabelText("Code on the new device")).toBeNull();
@@ -249,7 +313,7 @@ describe("an unlocked device approves a new one (DEV-001 path A, AC-19)", () => 
     await fill("Recovery key", FAKE_RECOVERY_KEY);
     await press("Approve this device");
 
-    await screen.findByText(/can now open your journal/);
+    await screen.findByTestId("confirmation-code");
     expect(services.pairing.outcome).toBe("approved");
     expect(screen.queryByLabelText("This device's passphrase")).toBeNull();
   });
@@ -297,7 +361,7 @@ describe("an unlocked device approves a new one (DEV-001 path A, AC-19)", () => 
     await userEvent.type(secret, FAKE_DEVICE_PASSPHRASE);
     await press("Approve this device");
 
-    await screen.findByText(/can now open your journal/);
+    await screen.findByTestId("confirmation-code");
     expect(services.pairing.outcome).toBe("approved");
   });
 
