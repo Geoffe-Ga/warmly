@@ -163,6 +163,17 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   outside the locked transaction). A page is limited by count and by
   payload size; a cursor the account was never given is refused with
   `sync.cursor_unknown`, never answered with an empty page.
+- Every route that needs a signed-in caller is rate limited per account
+  and per device (`warmly/api/rate_limit.py`): 429 with `Retry-After`,
+  counted in PostgreSQL. A new router is included with the `limited`
+  dependency in `warmly/api/__init__.py`.
+- Every such route also has a row in `tests/security/matrix.py`, which
+  attacks it from a second account against a real database. A route in the
+  contract with no row fails the suite. After changing a route or an attack,
+  run `python -m tests.security.render` to rewrite
+  `docs/security/isolation-test-matrix.md`; never edit that file by hand.
+  "Not yours" and "does not exist" must get the same answer: add any
+  exception to `KNOWN_DIFFERENCES` with its reason.
 - Database tests need `WARMLY_TEST_DATABASE_URL` (see README). They fail when it is
   missing; never mark them to skip.
 

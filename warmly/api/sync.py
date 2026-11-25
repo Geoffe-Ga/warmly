@@ -12,7 +12,8 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from warmly.api.errors import SIGNED_IN_RESPONSES, ProblemError
 from warmly.api.ports import DeviceStore, SyncStore
-from warmly.auth.device import CurrentCaller, require_device
+from warmly.auth.device import Caller, CurrentCaller, require_device
+from warmly.logs import log_failure
 from warmly.schemas.problem import Problem
 from warmly.schemas.sync import (
     ChangesResponse,
@@ -21,6 +22,8 @@ from warmly.schemas.sync import (
 )
 
 CURSOR_UNKNOWN_CODE = "sync.cursor_unknown"
+# The name logged when a device's last-sync time could not be stored.
+LAST_SYNC_FAILED = "sync.last_sync_failed"
 
 # The largest sequence the database can hold. A cursor beyond it was never
 # issued, and is refused before it reaches a query.
@@ -68,6 +71,21 @@ Cursor = Annotated[
 ]
 
 
+async def _note_synced(devices: DeviceStore, caller: Caller) -> None:
+    """Record that the device has caught up, without letting that fail the read.
+
+    The time is only shown to the person in Manage Devices. If it cannot be
+    stored, the device still gets the page it asked for, and the failure is
+    logged by name.
+
+    Args:
+        devices: Where the device's last sync is recorded.
+        caller: The verified account and device.
+    """
+    if not await devices.mark_synced(caller.owner.id, caller.device_id):
+        log_failure(LAST_SYNC_FAILED)
+
+
 @router.get("/changes", summary="List changes after a cursor", responses=_RESYNC)
 async def get_changes(
     caller: CurrentCaller, store: Store, devices: Devices, cursor: Cursor = "0"
@@ -101,7 +119,7 @@ async def get_changes(
     if page is None:
         raise ProblemError(HTTPStatus.CONFLICT, CURSOR_UNKNOWN_CODE)
     if not page.has_more:
-        await devices.mark_synced(caller.owner.id, caller.device_id)
+        await _note_synced(devices, caller)
     return page
 
 

@@ -93,6 +93,11 @@ each gets one result in the same order.
 
 - `applied` and `duplicate` carry `revision`. `conflict` and `deleted` carry
   `current_revision`. `rejected` carries neither.
+- An `op_id` names one operation. If it arrives again with a different
+  record or different content, it is still answered `duplicate` and nothing
+  is stored: the server cannot tell a client's bug from a retry, and a retry
+  must never change anything. A client makes a fresh `op_id` for every
+  change (`crypto.randomUUID`).
 - An `op_id` is remembered only once it has been applied. Sending an
   operation that was not applied again evaluates it again, with the same
   outcome unless the record has changed.

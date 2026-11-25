@@ -5,6 +5,7 @@ the guarantee that a reader never skips a change, are tested against
 PostgreSQL in ``tests/db/test_sync_feed.py``.
 """
 
+import logging
 from typing import Any
 from uuid import UUID
 
@@ -17,6 +18,7 @@ from tests.api.conftest import SYNCED_AT, InMemoryDeviceStore, InMemorySyncStore
 from tests.auth.devices import DEVICE_ID, DeviceAuth, TestDevice
 from tests.auth.tokens import OTHER_OWNER_ID, Signer
 from warmly.db.sync_store import etag_of
+from warmly.logs import LOGGER_NAME
 
 URL = "/v1/sync/changes"
 OPERATIONS = "/v1/sync/operations"
@@ -256,6 +258,24 @@ def test_a_refused_cursor_does_not_count_as_a_sync(
     client.get(URL, params={"cursor": "5"})
 
     assert device_store.devices[UUID(DEVICE_ID)].device.last_sync_at is None
+
+
+def test_the_page_is_still_returned_when_the_last_sync_time_cannot_be_stored(
+    client: TestClient,
+    device_store: InMemoryDeviceStore,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The read succeeded; a time shown in Manage Devices must not undo it."""
+    _write(client, 1)
+    device_store.cannot_mark = True
+    caplog.set_level(logging.WARNING, logger=LOGGER_NAME)
+
+    page = _pull(client)
+
+    assert _places(page) == [(_record(1), 1, 1)]
+    failures = [record.fields for record in caplog.records if hasattr(record, "fields")]
+    # Logged by a fixed name, with nothing about the account or device.
+    assert {"event": "sync.last_sync_failed"} in failures
 
 
 def test_only_the_calling_device_is_marked_as_synced(

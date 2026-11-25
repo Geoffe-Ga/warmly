@@ -41,8 +41,9 @@ WRITES = {"next sequence", "create", "replace", "write receipt"}
 class _Cursor:
     """A cursor holding at most one row."""
 
-    def __init__(self, row: tuple[Any, ...] | None) -> None:
+    def __init__(self, row: tuple[Any, ...] | None, rowcount: int = 1) -> None:
         self._row = row
+        self.rowcount = rowcount
 
     async def fetchone(self) -> tuple[Any, ...] | None:
         """Return the row."""
@@ -60,13 +61,15 @@ class _Database:
         self._rows: dict[str, tuple[Any, ...] | None] = {"next sequence": (7,)}
         self._rows |= {name.replace("_", " "): row for name, row in rows.items()}
         self.owners: list[UUID] = []
+        # How many rows a statement reports it changed, if not one.
+        self.rowcounts: dict[str, int] = {}
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
 
     async def execute(self, query: str, params: tuple[Any, ...]) -> _Cursor:
         """Record a statement and return its scripted row."""
         name = NAMES[query]
         self.calls.append((name, params))
-        return _Cursor(self._rows.get(name))
+        return _Cursor(self._rows.get(name), self.rowcounts.get(name, 1))
 
     @asynccontextmanager
     async def as_owner(self, owner_id: UUID) -> AsyncIterator[Any]:
@@ -242,3 +245,16 @@ async def test_a_cursor_that_was_never_given_reads_no_records(
 
     assert await PostgresSyncStore(database).changes(OWNER, 4) is None
     assert database.names == ["last sequence"]
+
+
+async def test_an_update_that_changes_no_row_fails_loudly() -> None:
+    """A device is never told its change was stored when it was not."""
+    database = _Database(read_record=(1, 4, False))
+    database.rowcounts["replace"] = 0
+
+    with pytest.raises(sync_store.SyncInvariantError):
+        await PostgresSyncStore(database).apply(OWNER, _op(4))
+
+    # It stopped before the receipt, and the error ends the transaction.
+    assert database.names[-1] == "replace"
+    assert "write receipt" not in database.names

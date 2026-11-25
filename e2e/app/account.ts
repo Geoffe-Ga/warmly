@@ -20,11 +20,15 @@ export const ACCOUNT = {
  * Create an account and finish onboarding, ending unlocked on Home.
  *
  * @param page - The page to drive.
+ * @param email - The account's email address, for a test with two accounts.
  * @returns The recovery key that was shown.
  */
-export async function onboard(page: Page): Promise<string> {
+export async function onboard(
+  page: Page,
+  email: string = ACCOUNT.email,
+): Promise<string> {
   await page.goto("/welcome");
-  await page.getByLabel("Email").fill(ACCOUNT.email);
+  await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(ACCOUNT.password);
   await page.getByRole("button", { name: "Create account" }).click();
   await page.getByRole("button", { name: "I've opened the link" }).click();

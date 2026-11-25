@@ -85,6 +85,16 @@ def configure_logging(level: int = logging.INFO) -> None:
         logger.addHandler(handler)
 
 
+def log_failure(event: str) -> None:
+    """Record that something went wrong, by a fixed name and nothing else.
+
+    Args:
+        event: A fixed name from the code, such as ``sync.last_sync_failed``.
+            Never text from a request or an exception.
+    """
+    get_logger().warning(event, extra={"fields": {"event": event}})
+
+
 def log_request(
     *, event_id: str, method: str, route: str, status: int, duration_ms: float
 ) -> None:

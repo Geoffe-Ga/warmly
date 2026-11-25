@@ -21,6 +21,7 @@ from tests.api.conftest import (
     InMemoryDeviceStore,
     InMemoryEnrollmentStore,
     InMemoryRecoveryStore,
+    InMemoryRequestCounters,
 )
 from tests.api.test_devices import SIGNED_CASES
 from tests.auth.devices import (
@@ -302,6 +303,7 @@ def test_the_password_window_is_judged_by_the_servers_clock(
         recovery_store=recovery_store,
         device_store=device_store,
         enrollment_store=enrollment_store,
+        request_counters=InMemoryRequestCounters(),
         clock=lambda: clock[0],
     )
     token = signer.token(amr=[{"method": "password", "timestamp": entered}])

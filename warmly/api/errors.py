@@ -36,6 +36,13 @@ SIGNED_IN_RESPONSES: dict[int | str, dict[str, Any]] = INVALID_REQUEST_RESPONSES
             "by one of the account's devices"
         ),
     },
+    429: {
+        "model": Problem,
+        "description": (
+            "Too many requests from this account or device; try again after "
+            "the number of seconds in Retry-After"
+        ),
+    },
     503: {"model": Problem, "description": "Sign-in cannot be checked right now"},
 }
 
@@ -55,17 +62,22 @@ class ProblemError(Exception):
     so nothing private can leak through it.
     """
 
-    def __init__(self, status: HTTPStatus, code: str) -> None:
+    def __init__(
+        self, status: HTTPStatus, code: str, headers: dict[str, str] | None = None
+    ) -> None:
         """Create the error.
 
         Args:
             status: The HTTP status to answer with.
             code: Stable machine-readable code, for example
                 ``recovery.not_found``.
+            headers: Fixed response headers the status calls for, such as
+                ``Retry-After``. Never request data.
         """
         super().__init__(code)
         self.status = status
         self.code = code
+        self.headers = headers
 
 
 def problem_response(
@@ -199,7 +211,8 @@ async def handle_error(_request: object, exc: Exception) -> JSONResponse:
     """
     if isinstance(exc, ProblemError):
         return problem_response(
-            Problem(title=exc.status.phrase, status=exc.status, code=exc.code)
+            Problem(title=exc.status.phrase, status=exc.status, code=exc.code),
+            exc.headers,
         )
     if isinstance(exc, DeviceAuthorizationError):
         return problem_response(

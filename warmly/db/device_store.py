@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
+import psycopg
 from psycopg import errors
 
 from warmly.db.recovery_store import OwnerTransactions
@@ -43,12 +44,15 @@ _RENAME = """
 """
 
 # A revoked device never reaches this: its requests are refused first. The
-# condition is here so that stays true whatever calls it.
+# condition is here so that stays true whatever calls it. The time is shown
+# to a person, to the minute at best, so it is not rewritten on every poll.
 _MARK_SYNCED = """
     UPDATE warmly_private.devices
        SET last_sync_at = now()
      WHERE id = %s
        AND revoked_at IS NULL
+       AND (last_sync_at IS NULL
+            OR last_sync_at < now() - interval '5 minutes')
 """
 
 # Revoking twice changes nothing: the first time stands.
@@ -222,15 +226,27 @@ class PostgresDeviceStore:
             row = await cursor.fetchone()
         return None if row is None else _device(row, current)
 
-    async def mark_synced(self, owner_id: UUID, device_id: UUID) -> None:
+    async def mark_synced(self, owner_id: UUID, device_id: UUID) -> bool:
         """Record that a device has just caught up with the change feed.
+
+        The stored time is left alone if it is less than five minutes old.
 
         Args:
             owner_id: The verified owner.
             device_id: The device that made the request.
+
+        Returns:
+            ``False`` if the database could not store it. It never raises
+            for that: the caller's own work has already succeeded.
         """
-        async with self._database.as_owner(owner_id) as tx:
-            await tx.execute(_MARK_SYNCED, (device_id,))
+        try:
+            async with self._database.as_owner(owner_id) as tx:
+                await tx.execute(_MARK_SYNCED, (device_id,))
+        except psycopg.Error:
+            # The time is shown to a person and nothing depends on it, so a
+            # failure to store it is reported, not raised.
+            return False
+        return True
 
     async def revoke(
         self, owner_id: UUID, device_id: UUID, current: UUID
