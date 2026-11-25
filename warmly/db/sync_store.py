@@ -15,7 +15,20 @@ from psycopg import AsyncConnection
 from psycopg.rows import TupleRow
 
 from warmly.db.recovery_store import OwnerTransactions
-from warmly.schemas.sync import OperationResult, SyncOperation, refusal_for
+from warmly.schemas.sync import (
+    Change,
+    ChangesResponse,
+    OperationResult,
+    SyncOperation,
+    refusal_for,
+)
+
+# The most records one page of the feed carries.
+PAGE_SIZE = 100
+# A page stops growing once the payloads before a record reach this many
+# characters, so a page of large records stays a reasonable response. The
+# first record always fits, so the feed always moves forward.
+PAGE_CHARACTERS = 4_000_000
 
 # Take the account's counter row, creating it at 0 if this is the account's
 # first operation. Holding the row lock until the transaction ends makes the
@@ -79,6 +92,39 @@ _WRITE_RECEIPT = """
 """
 
 
+_READ_LAST_SEQUENCE = """
+    SELECT last_sequence
+      FROM warmly_private.owner_sequences
+     WHERE owner_id = %s
+"""
+
+# The innermost query takes the next records in feed order, one more than a
+# page holds, without reading their payloads. The middle one counts them and
+# adds up the payload sizes before each. The outer one keeps the records
+# that fit and only then reads their payloads.
+_READ_CHANGES = """
+    SELECT record_id, type, revision, sequence, schema_version, tombstone,
+           etag, payload, candidates
+      FROM (SELECT next.*,
+                   count(*) OVER () AS candidates,
+                   coalesce(
+                       sum(char_length(payload)) OVER (
+                           ORDER BY sequence
+                           ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+                       ),
+                       0
+                   ) AS characters_before
+              FROM (SELECT *
+                      FROM warmly_private.records
+                     WHERE owner_id = %s
+                       AND sequence > %s
+                  ORDER BY sequence
+                     LIMIT %s) AS next) AS sized
+     WHERE characters_before < %s
+  ORDER BY sequence
+"""
+
+
 def etag_of(payload: str | None) -> str:
     """Hash a stored payload, without decoding it.
 
@@ -89,6 +135,7 @@ def etag_of(payload: str | None) -> str:
     Returns:
         SHA-256 of the text, in lower-case hex.
     """
+    # A payload is base64 (the ``Ciphertext`` wire type), so it is ASCII.
     return hashlib.sha256((payload or "").encode("ascii")).hexdigest()
 
 
@@ -103,13 +150,69 @@ async def _one(
 class PostgresSyncStore:
     """The records, sequence and receipt tables."""
 
-    def __init__(self, database: OwnerTransactions) -> None:
+    def __init__(
+        self,
+        database: OwnerTransactions,
+        *,
+        page_size: int = PAGE_SIZE,
+        page_characters: int = PAGE_CHARACTERS,
+    ) -> None:
         """Create the store.
 
         Args:
             database: Where owner-scoped transactions come from.
+            page_size: The most records one page of the feed carries.
+            page_characters: The payload size at which a page stops growing.
         """
         self._database = database
+        self._page_size = page_size
+        self._page_characters = page_characters
+
+    async def changes(self, owner_id: UUID, after: int) -> ChangesResponse | None:
+        """Return one page of the owner's records that changed after a cursor.
+
+        Each record appears once, as it is now, at the place of its latest
+        change. An account's changes are committed one at a time and in
+        sequence order (``apply`` holds the account's lock until it commits),
+        so a reader never sees a later change without every earlier one: a
+        cursor it has reached has nothing unseen behind it.
+
+        Args:
+            owner_id: The verified owner.
+            after: The last sequence the device has applied; 0 to start.
+
+        Returns:
+            The page, or ``None`` when the cursor is past anything this
+            account has ever been given.
+        """
+        async with self._database.as_owner(owner_id) as tx:
+            last = await _one(tx, _READ_LAST_SEQUENCE, (owner_id,))
+            if after > (0 if last is None else last[0]):
+                return None
+            cursor = await tx.execute(
+                _READ_CHANGES,
+                (owner_id, after, self._page_size + 1, self._page_characters),
+            )
+            rows = await cursor.fetchall()
+        page = rows[: self._page_size]
+        candidates = rows[0][8] if rows else 0
+        return ChangesResponse(
+            changes=[
+                Change(
+                    record_id=row[0],
+                    type=row[1],
+                    revision=row[2],
+                    sequence=row[3],
+                    schema_version=row[4],
+                    tombstone=row[5],
+                    etag=row[6],
+                    payload=row[7],
+                )
+                for row in page
+            ],
+            next_cursor=str(page[-1][3] if page else after),
+            has_more=candidates > len(page),
+        )
 
     async def apply(self, owner_id: UUID, operation: SyncOperation) -> OperationResult:
         """Apply one operation, or say why not, in one transaction.

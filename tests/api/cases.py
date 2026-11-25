@@ -72,7 +72,6 @@ class Case:
     model: type[BaseModel]
     status: int = 200
     body: dict[str, Any] | None = None
-    stub: bool = True
     id: str = field(default="")
     # A device that signs this request itself, for the one route a device
     # calls before it is registered. Otherwise the client's device signs.
@@ -98,24 +97,22 @@ class Case:
 
 
 CASES = [
-    Case("GET", "/v1/health", Health, stub=False),
-    Case("GET", "/v1/ready", Readiness, stub=False),
+    Case("GET", "/v1/health", Health),
+    Case("GET", "/v1/ready", Readiness),
     Case("GET", "/v1/sync/changes?cursor=0", ChangesResponse),
     Case(
         "POST",
         "/v1/sync/operations",
         OperationsResponse,
         body={"operations": [OPERATION]},
-        stub=False,
     ),
-    Case("GET", "/v1/devices", DeviceList, stub=False),
+    Case("GET", "/v1/devices", DeviceList),
     Case(
         "POST",
         "/v1/devices",
         Device,
         status=201,
         body=NEW_DEVICE.registration(),
-        stub=False,
         signed_by=NEW_DEVICE,
     ),
     Case(
@@ -123,9 +120,8 @@ CASES = [
         f"/v1/devices/{REGISTERED_DEVICE_ID}",
         Device,
         body={"name_ciphertext": CIPHERTEXT},
-        stub=False,
     ),
-    Case("POST", f"/v1/devices/{REGISTERED_DEVICE_ID}/revoke", Device, stub=False),
+    Case("POST", f"/v1/devices/{REGISTERED_DEVICE_ID}/revoke", Device),
     Case(
         "POST",
         "/v1/enrollments",
@@ -136,34 +132,30 @@ CASES = [
             "public_key": CIPHERTEXT,
             "commitment": commitment(DEVICE_ID, CIPHERTEXT, BYTES32),
         },
-        stub=False,
     ),
-    Case("GET", "/v1/enrollments/open", Enrollment, stub=False),
-    Case("GET", f"/v1/enrollments/{ENROLLMENT_ID}", Enrollment, stub=False),
-    Case("POST", CLAIM[0], Enrollment, body=CLAIM[1], stub=False),
-    Case("POST", REVEAL[0], Enrollment, body=REVEAL[1], stub=False, before=(CLAIM,)),
-    Case("POST", f"/v1/enrollments/{ENROLLMENT_ID}/cancel", Enrollment, stub=False),
+    Case("GET", "/v1/enrollments/open", Enrollment),
+    Case("GET", f"/v1/enrollments/{ENROLLMENT_ID}", Enrollment),
+    Case("POST", CLAIM[0], Enrollment, body=CLAIM[1]),
+    Case("POST", REVEAL[0], Enrollment, body=REVEAL[1], before=(CLAIM,)),
+    Case("POST", f"/v1/enrollments/{ENROLLMENT_ID}/cancel", Enrollment),
     Case(
         "POST",
         f"/v1/enrollments/{ENROLLMENT_ID}/approve",
         Enrollment,
         body={"wrapped_key": CIPHERTEXT},
-        stub=False,
         before=(CLAIM, REVEAL),
     ),
     Case(
         "POST",
         f"/v1/enrollments/{ENROLLMENT_ID}/reject",
         Enrollment,
-        stub=False,
         before=(CLAIM,),
     ),
-    Case("GET", "/v1/recovery-envelope", RecoveryEnvelope, stub=False),
+    Case("GET", "/v1/recovery-envelope", RecoveryEnvelope),
     Case(
         "PUT",
         "/v1/recovery-envelope",
         RecoveryEnvelope,
         body={"expected_version": 1, "format_version": 1, "wrapped_key": CIPHERTEXT},
-        stub=False,
     ),
 ]

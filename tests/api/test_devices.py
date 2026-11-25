@@ -18,6 +18,7 @@ from tests.api.conftest import (
     FakeDatabase,
     InMemoryDeviceStore,
     InMemoryRecoveryStore,
+    InMemorySyncStore,
 )
 from tests.auth.devices import (
     DEVICE_ID,
@@ -334,6 +335,7 @@ def test_the_device_check_uses_the_servers_clock(
         token_verifier=verifier,
         recovery_store=InMemoryRecoveryStore(),
         device_store=device_store,
+        sync_store=InMemorySyncStore(),
         clock=lambda: 2_000_000_000.0,
     )
     client = TestClient(app, headers={"Authorization": f"Bearer {signer.token()}"})

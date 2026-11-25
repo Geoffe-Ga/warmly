@@ -15,7 +15,6 @@ from tests.api.conftest import InMemoryRecoveryStore
 from tests.auth.devices import ENROLLMENT_VERIFIER
 from tests.auth.tokens import OTHER_OWNER_ID, OWNER_ID, Signer
 from warmly.api.errors import PROBLEM_MEDIA_TYPE
-from warmly.api.stub import STUB_HEADER
 
 URL = "/v1/recovery-envelope"
 WRAPPED_A = "QUFBQQ=="
@@ -51,7 +50,6 @@ def test_a_new_account_has_no_envelope(
     assert response.status_code == 404
     assert response.headers["content-type"] == PROBLEM_MEDIA_TYPE
     assert response.json()["code"] == "recovery.not_found"
-    assert STUB_HEADER not in response.headers
 
 
 def test_creating_stores_version_one_and_reads_back_unchanged(
@@ -183,12 +181,6 @@ def test_a_malformed_envelope_is_refused_and_never_echoed(
     assert response.status_code == 422
     assert "not base64!" not in response.text
     assert not empty.envelopes
-
-
-def test_the_routes_are_no_longer_stubs(client: TestClient) -> None:
-    """Real storage must not carry the stub marker."""
-    assert STUB_HEADER not in client.get(URL).headers
-    assert STUB_HEADER not in client.put(URL, json={}).headers
 
 
 def test_creating_needs_the_enrollment_verifier_and_rotating_must_not_send_one(

@@ -430,3 +430,50 @@ async def test_browser_roles_cannot_read_the_ledger(
     ):
         conn.execute(f"SET ROLE {role}")
         conn.execute("SELECT 1 FROM warmly_private.device_revocations")
+
+
+async def test_marking_a_device_synced_sets_its_last_sync_time_only(
+    store: PostgresDeviceStore,
+) -> None:
+    """Manage Devices shows when each device last caught up (DEV-002)."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    await store.register(OWNER_A, _registration(DEVICE_2, "b3RoZXI="))
+    before = {device.id: device for device in await store.list(OWNER_A, DEVICE_1)}
+    assert before[DEVICE_1].last_sync_at is None
+
+    await store.mark_synced(OWNER_A, DEVICE_1)
+
+    after = {device.id: device for device in await store.list(OWNER_A, DEVICE_1)}
+    synced = after[DEVICE_1].last_sync_at
+    assert synced is not None
+    assert synced >= after[DEVICE_1].created_at
+    assert after[DEVICE_1] == before[DEVICE_1].model_copy(
+        update={"last_sync_at": synced}
+    )
+    assert after[DEVICE_2] == before[DEVICE_2]
+
+
+async def test_another_owner_cannot_mark_a_device_synced(
+    store: PostgresDeviceStore,
+) -> None:
+    """Row-level security keeps the update to the caller's own devices."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+
+    await store.mark_synced(OWNER_B, DEVICE_1)
+
+    (device,) = await store.list(OWNER_A, DEVICE_1)
+    assert device.last_sync_at is None
+
+
+async def test_a_revoked_device_is_never_marked_synced(
+    store: PostgresDeviceStore,
+) -> None:
+    """A device that was removed stops showing activity."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    await store.register(OWNER_A, _registration(DEVICE_2, "b3RoZXI="))
+    await store.revoke(OWNER_A, DEVICE_2, DEVICE_1)
+
+    await store.mark_synced(OWNER_A, DEVICE_2)
+
+    devices = {device.id: device for device in await store.list(OWNER_A, DEVICE_1)}
+    assert devices[DEVICE_2].last_sync_at is None

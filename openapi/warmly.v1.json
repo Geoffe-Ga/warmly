@@ -1986,7 +1986,7 @@
     },
     "/v1/sync/changes": {
       "get": {
-        "description": "Return the records that changed after ``cursor``.\n\nStub: always an empty page that echoes the cursor back.\n\nArgs:\n    cursor: The caller's position in its change feed.\n\nReturns:\n    An empty page of changes.",
+        "description": "Return the caller's records that changed after ``cursor``.\n\nEach record appears once, as it is now, in the order of its latest\nchange, deleted records included. Ask again with ``next_cursor`` while\n``has_more`` is true. When a device reaches the end of the feed, the\ntime is recorded as its last sync.\n\nA cursor this account was never given is refused with\n``sync.cursor_unknown``: start again from ``0``.\n\nArgs:\n    caller: The verified account and device.\n    store: Where records are kept.\n    devices: Where the device's last sync is recorded.\n    cursor: The caller's position in its change feed.\n\nReturns:\n    One page of changes.\n\nRaises:\n    ProblemError: 409 when the cursor was never issued to this account.",
         "operationId": "get_changes_v1_sync_changes_get",
         "parameters": [
           {
@@ -2025,6 +2025,16 @@
             },
             "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The cursor was never given to this account; start again from 0"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -2059,7 +2069,7 @@
     },
     "/v1/sync/operations": {
       "post": {
-        "description": "Apply an idempotent batch of record operations.\n\nEach operation is applied on its own, in request order: one that is\nrefused does not stop the others. A change is stored only when it was\nmade on top of the record's current revision. The server never merges\nand never lets the latest writer win. Sending an operation that was\nalready applied again changes nothing and reports ``duplicate``.\n\nThe payloads are opaque: they are stored as sent and never decoded.\n\nArgs:\n    request: The batch to apply.\n    caller: The verified account and device.\n    store: Where records are kept.\n\nReturns:\n    One result per operation, in request order.",
+        "description": "Apply an idempotent batch of record operations.\n\nEach operation is applied on its own, in request order: one that is\nrefused does not stop the others. A change is stored only when it was\nmade on top of the record's current revision. The server never merges\nand never lets the latest writer win. Sending an operation that was\nalready applied again changes nothing and reports ``duplicate``.\n\nA batch is not all-or-nothing. If the request fails part-way, the\noperations already applied stay applied, and sending the batch again\nreports them as ``duplicate``.\n\nThe payloads are opaque: they are stored as sent and never decoded.\n\nArgs:\n    request: The batch to apply.\n    caller: The verified account and device.\n    store: Where records are kept.\n\nReturns:\n    One result per operation, in request order.",
         "operationId": "post_operations_v1_sync_operations_post",
         "requestBody": {
           "content": {

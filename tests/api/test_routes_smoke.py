@@ -1,7 +1,7 @@
 """Smoke tests: every /v1 route answers with a schema-valid body (SYNC-002).
 
-The skeleton routes are stubs. Each test checks the status code, validates the
-body against the response model, and checks the stub marker header.
+Each test checks the status code and validates the body against the
+response model. The behaviour of each route is tested in its own module.
 """
 
 import pytest
@@ -15,7 +15,6 @@ from tests.api.cases import (
 )
 from tests.auth.devices import DEVICE_ID as REGISTERED_DEVICE_ID
 from warmly import __version__
-from warmly.api.stub import STUB_HEADER
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda c: f"{c.method} {c.path}")
@@ -25,16 +24,6 @@ def test_route_returns_a_schema_valid_body(client: TestClient, case: Case) -> No
 
     assert response.status_code == case.status
     case.model.model_validate(response.json())
-
-
-@pytest.mark.parametrize("case", CASES, ids=lambda c: f"{c.method} {c.path}")
-def test_stub_routes_are_marked_and_real_routes_are_not(
-    client: TestClient, case: Case
-) -> None:
-    """A stub must say it is a stub; a real route must not claim to be one."""
-    response = case.send(client)
-
-    assert (response.headers.get(STUB_HEADER) == "true") is case.stub
 
 
 def test_smoke_cases_cover_every_documented_operation(client: TestClient) -> None:
@@ -63,13 +52,3 @@ def _template(path: str) -> str:
 def test_health_reports_the_package_version(client: TestClient) -> None:
     """Health carries the running version."""
     assert client.get("/v1/health").json() == {"status": "ok", "version": __version__}
-
-
-def test_changes_echo_the_cursor_and_default_to_zero(client: TestClient) -> None:
-    """The stub feed is empty and hands the cursor straight back."""
-    assert client.get("/v1/sync/changes?cursor=41").json() == {
-        "changes": [],
-        "next_cursor": "41",
-        "has_more": False,
-    }
-    assert client.get("/v1/sync/changes").json()["next_cursor"] == "0"

@@ -22,10 +22,17 @@ from tests.auth.tokens import AUDIENCE, ISSUER, OWNER_ID, Signer
 from warmly.app import create_app
 from warmly.auth.keys import StaticKeySource
 from warmly.auth.verifier import TokenVerifier
+from warmly.db.sync_store import etag_of
 from warmly.schemas.devices import Device, RegisterDeviceRequest
 from warmly.schemas.enrollment import Enrollment, StartEnrollmentRequest
 from warmly.schemas.recovery import PutRecoveryEnvelopeRequest, RecoveryEnvelope
-from warmly.schemas.sync import OperationResult, SyncOperation, refusal_for
+from warmly.schemas.sync import (
+    Change,
+    ChangesResponse,
+    OperationResult,
+    SyncOperation,
+    refusal_for,
+)
 
 
 class FakeDatabase:
@@ -181,6 +188,12 @@ class InMemoryDeviceStore:
         )
         return stored.device.model_copy(update={"is_current": device_id == current})
 
+    async def mark_synced(self, owner_id: UUID, device_id: UUID) -> None:
+        """Record that a device has just caught up with the change feed."""
+        stored = self._own(owner_id, device_id)
+        if stored is not None and not stored.revoked:
+            stored.device = stored.device.model_copy(update={"last_sync_at": SYNCED_AT})
+
     async def revoke(
         self, owner_id: UUID, device_id: UUID, current: UUID
     ) -> Device | None:
@@ -215,6 +228,8 @@ SEEDED_ENROLLMENT_ID = UUID("44444444-4444-4444-8444-444444444444")
 SEEDED_DEVICE_ID = "11111111-1111-4111-8111-111111111111"
 SEEDED_PUBLIC_KEY = "cHVibGljLWtleQ=="
 _SEED_TIME = datetime(2026, 11, 25, tzinfo=UTC)
+# When the in-memory device store says a device last caught up.
+SYNCED_AT = datetime(2026, 11, 27, tzinfo=UTC)
 
 
 @dataclass
@@ -388,11 +403,32 @@ class InMemoryEnrollmentStore:
 class InMemorySyncStore:
     """Synced records in memory, following ADR-0006 like the real store."""
 
-    def __init__(self) -> None:
+    def __init__(self, page_size: int = 100) -> None:
         """Start with no records."""
-        # (owner, record) -> (type, revision, tombstone, payload)
-        self.records: dict[tuple[UUID, UUID], tuple[int, int, bool, str | None]] = {}
+        self.page_size = page_size
+        # (owner, record) -> the record's current state
+        self.records: dict[tuple[UUID, UUID], Change] = {}
         self.receipts: dict[tuple[UUID, UUID], int] = {}
+        self.sequences: dict[UUID, int] = {}
+
+    async def changes(self, owner_id: UUID, after: int) -> ChangesResponse | None:
+        """Return a page of the owner's changes after a cursor."""
+        if after > self.sequences.get(owner_id, 0):
+            return None
+        found = sorted(
+            (
+                change
+                for (owner, _), change in self.records.items()
+                if owner == owner_id and change.sequence > after
+            ),
+            key=lambda change: change.sequence,
+        )
+        page = found[: self.page_size]
+        return ChangesResponse(
+            changes=page,
+            next_cursor=str(page[-1].sequence if page else after),
+            has_more=len(found) > len(page),
+        )
 
     async def apply(self, owner_id: UUID, operation: SyncOperation) -> OperationResult:
         """Apply one operation, or say why it was not applied."""
@@ -402,15 +438,26 @@ class InMemorySyncStore:
             return OperationResult(op_id=op_id, status="duplicate", revision=earlier)
         key = (owner_id, operation.record_id)
         stored = self.records.get(key)
-        refusal = refusal_for(operation, None if stored is None else stored[:3])
+        refusal = refusal_for(
+            operation,
+            None
+            if stored is None
+            else (stored.type, stored.revision, stored.tombstone),
+        )
         if refusal is not None:
             return refusal
         revision = operation.base_revision + 1
-        self.records[key] = (
-            operation.type,
-            revision,
-            operation.tombstone,
-            operation.payload,
+        self.sequences[owner_id] = self.sequences.get(owner_id, 0) + 1
+        payload = None if operation.tombstone else operation.payload
+        self.records[key] = Change(
+            record_id=operation.record_id,
+            type=operation.type,
+            revision=revision,
+            sequence=self.sequences[owner_id],
+            schema_version=operation.schema_version,
+            tombstone=operation.tombstone,
+            etag=etag_of(payload),
+            payload=payload,
         )
         self.receipts[(owner_id, op_id)] = revision
         return OperationResult(op_id=op_id, status="applied", revision=revision)
