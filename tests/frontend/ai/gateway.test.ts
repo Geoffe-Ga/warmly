@@ -416,6 +416,24 @@ describe("one attempt, no retry, no other provider (AI-014, invariant 2)", () =>
     expect(provider.calls).toEqual([]);
   });
 
+  it("a token spent on a request that was too large cannot be used again", async () => {
+    const { gateway, provider } = connected();
+    const huge: ReflectRequest = {
+      kind: "reflect",
+      question: "Synthetic",
+      entries: many(400),
+    };
+    const token = grantConsent(huge);
+
+    await expect(gateway.reflect(huge, token)).rejects.toThrow(
+      RequestTooLargeError,
+    );
+    await expect(gateway.reflect(huge, token)).rejects.toThrow(
+      ConsentRequiredError,
+    );
+    expect(provider.calls).toEqual([]);
+  });
+
   it("refuses a request larger than the provider accepts, before sending anything", async () => {
     const { gateway, provider } = connected();
     const huge: ReflectRequest = {
