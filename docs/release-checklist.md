@@ -27,3 +27,11 @@ the whole product; items are added here as the work that creates them lands.
       in #61.
 - [ ] **A build made with `--mode e2e` cannot be published.** It contains the
       in-memory test doubles. Tracked in #61.
+
+## Trusted-device unlock (issue #20, `docs/adr/0004-trusted-device-unlock.md`)
+
+- [ ] **Checked on a real iPhone**, in Safari and as an installed app: set a
+      device passphrase, lock, unlock; reload; leave the app in the background
+      for more than 30 minutes and confirm it is locked on return. The
+      automated tests use the WebKit engine, not Safari on iOS. Tracked in
+      #66.

@@ -17,7 +17,11 @@ import type {
   StoredRecoveryEnvelope,
 } from "../api/recovery-envelope-store";
 import type { AuthClient, AuthSession } from "../auth/auth-client";
-import type { DeviceKeyStore } from "./device-key-store";
+import {
+  DevicePassphraseError,
+  DeviceStoreDamagedError,
+  type DeviceKeyStore,
+} from "./device-key-store";
 import { VaultError, type KeyVault } from "./key-vault";
 import {
   RECOVERY_FORMAT_VERSION,
@@ -57,12 +61,19 @@ export class AccountVault implements KeyVault {
   readonly #device: DeviceKeyStore | undefined;
   #root: RootKey | undefined;
   #pending: Pending | undefined;
+  /**
+   * Root-key material held just after the vault was opened with the recovery
+   * key, so the user can choose to trust this device. It is wiped as soon as
+   * they decide, and on lock.
+   */
+  #toTrust:
+    { userId: string; rootKeyBytes: Uint8Array<ArrayBuffer> } | undefined;
 
   /**
    * @param auth - Says who is signed in.
    * @param envelopes - Where the recovery envelope is kept.
-   * @param device - This device's key store, if it has one. Without it,
-   *   unlocking always takes the recovery key.
+   * @param device - This device's key store. Without one, unlocking always
+   *   takes the recovery key.
    */
   constructor(
     auth: AuthClient,
@@ -90,15 +101,24 @@ export class AccountVault implements KeyVault {
     }
   }
 
+  #dropToTrust(): void {
+    if (this.#toTrust !== undefined) {
+      zero(this.#toTrust.rootKeyBytes);
+      this.#toTrust = undefined;
+    }
+  }
+
+  /** Hold the root key in memory and, optionally, offer to trust the device. */
   async #adopt(
     userId: string,
     rootKeyBytes: Uint8Array<ArrayBuffer>,
+    offerTrust: boolean,
   ): Promise<void> {
     this.#root = await importRootKey(rootKeyBytes);
-    // Remembering the key on this device is a convenience. If it cannot be
-    // saved, the journal is still open, and the device simply needs the
-    // recovery key next time.
-    await this.#device?.save(userId, rootKeyBytes).catch(() => undefined);
+    this.#dropToTrust();
+    if (offerTrust && this.#device !== undefined) {
+      this.#toTrust = { userId, rootKeyBytes: rootKeyBytes.slice() };
+    }
   }
 
   /** Open the stored envelope with a typed recovery key. */
@@ -144,7 +164,7 @@ export class AccountVault implements KeyVault {
     if (session === undefined || this.#device === undefined) {
       return false;
     }
-    return (await this.#device.load(session.userId)) !== undefined;
+    return this.#device.has(session.userId);
   }
 
   async accountHasKeys(): Promise<boolean> {
@@ -169,24 +189,64 @@ export class AccountVault implements KeyVault {
     await this.#confirm("create", "keys_already_exist");
   }
 
-  async unlock(): Promise<void> {
+  async unlock(devicePassphrase: string): Promise<void> {
     const session = await this.#session();
-    const rootKeyBytes = await this.#device?.load(session.userId);
-    if (rootKeyBytes === undefined) {
+    if (
+      this.#device === undefined ||
+      !(await this.#device.has(session.userId))
+    ) {
       throw new VaultError("no_keys_on_device");
     }
+    let rootKeyBytes: Uint8Array<ArrayBuffer>;
     try {
-      this.#root = await importRootKey(rootKeyBytes);
+      rootKeyBytes = await this.#device.open(session.userId, devicePassphrase);
+    } catch (error) {
+      if (error instanceof DevicePassphraseError) {
+        throw new VaultError("wrong_device_passphrase");
+      }
+      if (error instanceof DeviceStoreDamagedError) {
+        // An unusable record is removed, so the app stops offering a way to
+        // unlock that cannot work. The recovery key still does.
+        await this.#device.forget(session.userId);
+        throw new VaultError("device_store_damaged");
+      }
+      throw error;
+    }
+    try {
+      await this.#adopt(session.userId, rootKeyBytes, false);
     } finally {
       zero(rootKeyBytes);
     }
+  }
+
+  deviceTrustPending(): boolean {
+    return this.#toTrust !== undefined;
+  }
+
+  async trustThisDevice(devicePassphrase: string): Promise<void> {
+    const session = await this.#session();
+    const toTrust = this.#toTrust;
+    if (this.#device === undefined || toTrust?.userId !== session.userId) {
+      throw new VaultError("nothing_to_trust");
+    }
+    // If saving fails the material is kept, so the user can try again.
+    await this.#device.enrol(
+      session.userId,
+      toTrust.rootKeyBytes,
+      devicePassphrase,
+    );
+    this.#dropToTrust();
+  }
+
+  skipDeviceTrust(): void {
+    this.#dropToTrust();
   }
 
   async unlockWithRecoveryKey(recoveryKey: string): Promise<void> {
     const session = await this.#session();
     const { rootKeyBytes } = await this.#open(session, recoveryKey);
     try {
-      await this.#adopt(session.userId, rootKeyBytes);
+      await this.#adopt(session.userId, rootKeyBytes, true);
     } finally {
       zero(rootKeyBytes);
     }
@@ -244,10 +304,14 @@ export class AccountVault implements KeyVault {
       throw new VaultError(conflict);
     }
     // The change is now on the server, so it is no longer pending whatever
-    // happens next. Trying it again would be refused as a conflict with
-    // itself, and would wrongly report that another device got there first.
+    // happens next. A new account is offered device trust. Replacing the
+    // recovery key changes nothing about this device, so it is not asked.
     try {
-      await this.#adopt(session.userId, pending.rootKeyBytes);
+      await this.#adopt(
+        session.userId,
+        pending.rootKeyBytes,
+        kind === "create",
+      );
     } finally {
       this.#dropPending();
     }
@@ -260,5 +324,6 @@ export class AccountVault implements KeyVault {
   lock(): void {
     this.#root = undefined;
     this.#dropPending();
+    this.#dropToTrust();
   }
 }

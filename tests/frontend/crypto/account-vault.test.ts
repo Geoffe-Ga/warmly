@@ -6,10 +6,13 @@ import type {
 } from "../../../src/api/recovery-envelope-store";
 import type { AuthSession } from "../../../src/auth/auth-client";
 import { AccountVault } from "../../../src/crypto/account-vault";
+import {
+  DeviceStoreDamagedError,
+  IndexedDbDeviceKeyStore,
+} from "../../../src/crypto/device-key-store";
 import { toBase64 } from "../../../src/crypto/encoding";
 import { VaultError } from "../../../src/crypto/key-vault";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
-import { FakeDeviceKeyStore } from "../../../src/testing/fake-device-key-store";
 import {
   FAKE_RECOVERY_STORAGE_KEY,
   FakeRecoveryEnvelopeStore,
@@ -255,7 +258,7 @@ describe("recovering on a new device (DEV-001 path B)", () => {
 
     expect(localStorage.getItem(FAKE_RECOVERY_STORAGE_KEY)).toBe(before);
     expect(await second.hasKeysOnThisDevice()).toBe(false);
-    expect(await code(second.unlock())).toBe("no_keys_on_device");
+    expect(await code(second.unlock(NEW_PHRASE))).toBe("no_keys_on_device");
     expect(await code(second.unlockWithRecoveryKey(NEW_PHRASE))).toBe(
       "recovery_key_malformed",
     );
@@ -274,61 +277,207 @@ describe("recovering on a new device (DEV-001 path B)", () => {
   });
 });
 
-describe("a trusted device", () => {
-  it("can unlock again without the recovery key once it has a device store", async () => {
+describe("a trusted device (DEV-005, ADR-0004)", () => {
+  const PASSPHRASE = ["lamp", "river", "kettle"].join(" ");
+  let databases = 0;
+
+  /** A device with its own key store. Few iterations keep the tests fast. */
+  function deviceStore(): IndexedDbDeviceKeyStore {
+    databases += 1;
+    return new IndexedDbDeviceKeyStore(
+      `vault-test-${String(databases)}-${crypto.randomUUID()}`,
+      1_000,
+    );
+  }
+
+  it("is offered trust after onboarding, and is not trusted until a passphrase is set", async () => {
     await signUp();
-    const store = new FakeDeviceKeyStore();
-    const vault = new AccountVault(auth, server, store);
+    const vault = new AccountVault(auth, server, deviceStore());
     await vault.createAccountKeys();
-    expect(await vault.hasKeysOnThisDevice()).toBe(false);
+    expect(vault.deviceTrustPending()).toBe(false);
+
     await vault.confirmRecoveryKey();
-    const fingerprint = await vault.fingerprint();
-    vault.lock();
 
-    expect(await vault.hasKeysOnThisDevice()).toBe(true);
-    const reloaded = new AccountVault(auth, server, store);
-    await reloaded.unlock();
-
-    expect(await reloaded.fingerprint()).toBe(fingerprint);
+    expect(vault.deviceTrustPending()).toBe(true);
+    expect(await vault.hasKeysOnThisDevice()).toBe(false);
   });
 
-  it("remembers the key after a recovery, and only for that account", async () => {
+  it("unlocks again with the device passphrase, across a reload", async () => {
+    await signUp();
+    const store = deviceStore();
+    const vault = new AccountVault(auth, server, store);
+    await vault.createAccountKeys();
+    await vault.confirmRecoveryKey();
+    const fingerprint = await vault.fingerprint();
+
+    await vault.trustThisDevice(PASSPHRASE);
+    expect(vault.deviceTrustPending()).toBe(false);
+    vault.lock();
+    expect(await vault.hasKeysOnThisDevice()).toBe(true);
+
+    const reloaded = new AccountVault(auth, server, store);
+    await reloaded.unlock(PASSPHRASE);
+
+    expect(await reloaded.fingerprint()).toBe(fingerprint);
+    // Unlocking with the passphrase does not ask about trust again.
+    expect(reloaded.deviceTrustPending()).toBe(false);
+  });
+
+  it("stays locked for a wrong passphrase, and the right one still works", async () => {
+    await signUp();
+    const vault = new AccountVault(auth, server, deviceStore());
+    await vault.createAccountKeys();
+    await vault.confirmRecoveryKey();
+    await vault.trustThisDevice(PASSPHRASE);
+    vault.lock();
+
+    expect(await code(vault.unlock("not the passphrase"))).toBe(
+      "wrong_device_passphrase",
+    );
+    expect(await code(vault.unlock(PHRASE))).toBe("wrong_device_passphrase");
+    expect(await vault.fingerprint()).toBeUndefined();
+
+    await expect(vault.unlock(PASSPHRASE)).resolves.toBeUndefined();
+  });
+
+  it("the account password is not the device passphrase (DEV-006)", async () => {
+    await signUp();
+    const vault = new AccountVault(auth, server, deviceStore());
+    await vault.createAccountKeys();
+    await vault.confirmRecoveryKey();
+    await vault.trustThisDevice(PASSPHRASE);
+    vault.lock();
+
+    expect(await code(vault.unlock(PHRASE))).toBe("wrong_device_passphrase");
+  });
+
+  it("is offered trust again after a recovery, and only for that account", async () => {
     const { key } = await onboarded();
-    const store = new FakeDeviceKeyStore();
+    const store = deviceStore();
     const vault = new AccountVault(auth, server, store);
     await vault.unlockWithRecoveryKey(key);
+    expect(vault.deviceTrustPending()).toBe(true);
+    await vault.trustThisDevice(PASSPHRASE);
     vault.lock();
-    await expect(vault.unlock()).resolves.toBeUndefined();
+    await expect(vault.unlock(PASSPHRASE)).resolves.toBeUndefined();
 
     await auth.signOut();
     await signUp(OTHER_EMAIL);
 
     expect(await vault.hasKeysOnThisDevice()).toBe(false);
-    expect(await code(vault.unlock())).toBe("no_keys_on_device");
+    expect(await code(vault.unlock(PASSPHRASE))).toBe("no_keys_on_device");
   });
 
-  it("still finishes setting up when the device cannot remember the key", async () => {
-    await signUp();
-    const store = new FakeDeviceKeyStore();
-    store.save = () => Promise.reject(new Error("storage full"));
-    const vault = new AccountVault(auth, server, store);
-    const key = await vault.createAccountKeys();
+  it("declining leaves the device needing the recovery key", async () => {
+    const { key } = await onboarded();
+    const vault = new AccountVault(auth, server, deviceStore());
+    await vault.unlockWithRecoveryKey(key);
 
-    await expect(vault.confirmRecoveryKey()).resolves.toBeUndefined();
+    vault.skipDeviceTrust();
 
-    expect(await vault.fingerprint()).toMatch(/^[0-9a-f]{16}$/);
+    expect(vault.deviceTrustPending()).toBe(false);
     expect(await vault.hasKeysOnThisDevice()).toBe(false);
-    // The change is not pending any more, and is not reported as a conflict.
-    expect(await code(vault.confirmRecoveryKey())).toBe("nothing_to_confirm");
-    await expect(device().unlockWithRecoveryKey(key)).resolves.toBeUndefined();
+    expect(await code(vault.trustThisDevice(PASSPHRASE))).toBe(
+      "nothing_to_trust",
+    );
   });
 
-  it("without a device store, always needs the recovery key", async () => {
+  it("locking withdraws a pending offer", async () => {
+    const { key } = await onboarded();
+    const vault = new AccountVault(auth, server, deviceStore());
+    await vault.unlockWithRecoveryKey(key);
+
+    vault.lock();
+
+    expect(vault.deviceTrustPending()).toBe(false);
+    expect(await code(vault.trustThisDevice(PASSPHRASE))).toBe(
+      "nothing_to_trust",
+    );
+  });
+
+  it("an offer made to one account cannot be taken up by another", async () => {
+    const { key } = await onboarded();
+    const vault = new AccountVault(auth, server, deviceStore());
+    await vault.unlockWithRecoveryKey(key);
+    await auth.signOut();
+    await signUp(OTHER_EMAIL);
+
+    expect(await code(vault.trustThisDevice(PASSPHRASE))).toBe(
+      "nothing_to_trust",
+    );
+  });
+
+  it("can be retried when saving the device key fails", async () => {
+    const { key } = await onboarded();
+    const store = deviceStore();
+    const enrol = store.enrol.bind(store);
+    let failing = true;
+    store.enrol = (...args) =>
+      failing ? Promise.reject(new Error("storage full")) : enrol(...args);
+    const vault = new AccountVault(auth, server, store);
+    await vault.unlockWithRecoveryKey(key);
+
+    await expect(vault.trustThisDevice(PASSPHRASE)).rejects.toThrow(
+      "storage full",
+    );
+    expect(vault.deviceTrustPending()).toBe(true);
+
+    failing = false;
+    await vault.trustThisDevice(PASSPHRASE);
+    vault.lock();
+    await expect(vault.unlock(PASSPHRASE)).resolves.toBeUndefined();
+  });
+
+  it("removes a damaged device record and points to the recovery key", async () => {
+    const { key } = await onboarded();
+    const store = deviceStore();
+    const vault = new AccountVault(auth, server, store);
+    await vault.unlockWithRecoveryKey(key);
+    await vault.trustThisDevice(PASSPHRASE);
+    vault.lock();
+    store.open = () => Promise.reject(new DeviceStoreDamagedError());
+
+    expect(await code(vault.unlock(PASSPHRASE))).toBe("device_store_damaged");
+
+    expect(await vault.hasKeysOnThisDevice()).toBe(false);
+    await expect(vault.unlockWithRecoveryKey(key)).resolves.toBeUndefined();
+  });
+
+  it("does not hide an unexpected storage failure", async () => {
+    const { key } = await onboarded();
+    const store = deviceStore();
+    const vault = new AccountVault(auth, server, store);
+    await vault.unlockWithRecoveryKey(key);
+    await vault.trustThisDevice(PASSPHRASE);
+    vault.lock();
+    store.open = () => Promise.reject(new Error("quota"));
+
+    await expect(vault.unlock(PASSPHRASE)).rejects.toThrow("quota");
+  });
+
+  it("replacing the recovery key does not ask about this device again", async () => {
+    const { vault, key } = await onboarded();
+    const trusted = new AccountVault(auth, server, deviceStore());
+    await trusted.unlockWithRecoveryKey(key);
+    trusted.skipDeviceTrust();
+
+    await trusted.beginRecoveryKeyRotation(key);
+    await trusted.confirmRecoveryKeyRotation();
+
+    expect(trusted.deviceTrustPending()).toBe(false);
+    expect(await trusted.fingerprint()).toBe(await vault.fingerprint());
+  });
+
+  it("without a device store, always needs the recovery key and offers no trust", async () => {
     const { vault } = await onboarded();
+    expect(vault.deviceTrustPending()).toBe(false);
     vault.lock();
 
     expect(await vault.hasKeysOnThisDevice()).toBe(false);
-    expect(await code(vault.unlock())).toBe("no_keys_on_device");
+    expect(await code(vault.unlock(PASSPHRASE))).toBe("no_keys_on_device");
+    expect(await code(vault.trustThisDevice(PASSPHRASE))).toBe(
+      "nothing_to_trust",
+    );
   });
 });
 

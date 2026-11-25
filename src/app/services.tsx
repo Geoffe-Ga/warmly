@@ -14,10 +14,12 @@ import {
   readSupabaseAuthConfig,
 } from "../auth/supabase-auth-client";
 import { AccountVault } from "../crypto/account-vault";
-import type { DeviceKeyStore } from "../crypto/device-key-store";
+import {
+  IndexedDbDeviceKeyStore,
+  type DeviceKeyStore,
+} from "../crypto/device-key-store";
 import { UnavailableKeyVault, type KeyVault } from "../crypto/key-vault";
 import { FakeAuthClient } from "../testing/fake-auth-client";
-import { FakeDeviceKeyStore } from "../testing/fake-device-key-store";
 import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
@@ -66,11 +68,10 @@ export function createAuthClient(
  * Choose the key vault for a build.
  *
  * With doubles available (every build but production), the real vault runs
- * on an in-memory "server" and device store, so the real cryptography is
- * exercised in development and in the browser tests. A production build
- * configured with a Supabase project gets the real vault on the Warmly API,
- * with no device store until trusted-device unlock lands (issue #20). An
- * unconfigured production build gets the "unavailable" stand-in.
+ * on an in-memory "server", so the real cryptography and the real device
+ * store are exercised in development and in the browser tests. A production
+ * build configured with a Supabase project gets the real vault on the Warmly
+ * API. An unconfigured production build gets the "unavailable" stand-in.
  *
  * @param env - The build-time variables.
  * @param auth - The auth client the vault asks who is signed in.
@@ -104,7 +105,27 @@ export function createKeyVault(
     new ApiRecoveryEnvelopeStore(apiOrigin, (input, init) =>
       fetch(input, init),
     ),
+    new IndexedDbDeviceKeyStore(),
   );
+}
+
+const TAB_ID_KEY = "warmly.fake.tab";
+
+/**
+ * The device-store database for this tab, in builds that use the in-memory
+ * "server". Each tab gets its own, so a second tab behaves like a second
+ * device: IndexedDB is otherwise shared by every tab. Production uses one
+ * database for the whole browser.
+ *
+ * @returns The database name.
+ */
+export function tabDeviceDatabase(): string {
+  let tab = sessionStorage.getItem(TAB_ID_KEY);
+  if (tab === null) {
+    tab = crypto.randomUUID();
+    sessionStorage.setItem(TAB_ID_KEY, tab);
+  }
+  return `warmly-device-${tab}`;
 }
 
 /**
@@ -131,7 +152,7 @@ export function createServices(): Services {
       import.meta.env.MODE !== "production"
         ? {
             envelopes: new FakeRecoveryEnvelopeStore(),
-            device: new FakeDeviceKeyStore(),
+            device: new IndexedDbDeviceKeyStore(tabDeviceDatabase()),
           }
         : undefined,
     ),

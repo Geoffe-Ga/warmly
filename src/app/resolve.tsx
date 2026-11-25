@@ -17,6 +17,7 @@ import { Register } from "../ui/screens/account/Register";
 import { ResetPassword } from "../ui/screens/account/ResetPassword";
 import { RotateRecoveryKey } from "../ui/screens/account/RotateRecoveryKey";
 import { SignIn } from "../ui/screens/account/SignIn";
+import { TrustDevice } from "../ui/screens/account/TrustDevice";
 import { VerifyEmail } from "../ui/screens/account/VerifyEmail";
 import { redirectFor } from "./access";
 import { matchRoute } from "./router";
@@ -45,6 +46,7 @@ const SCREENS: Readonly<Partial<Record<RouteId, () => JSX.Element>>> = {
   "reset-password": ResetPassword,
   "new-password": NewPassword,
   recover: Recover,
+  "trust-device": TrustDevice,
   locked: Locked,
 };
 

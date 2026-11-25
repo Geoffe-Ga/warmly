@@ -162,6 +162,13 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   confirmed the recovery key (`KeyVault.confirmRecoveryKey`). Never upload a
   recovery envelope before that, and never log, store or put a recovery key
   in a URL.
+- Lock through `lockNow` (`src/app/SessionControls.tsx`), never by changing
+  the session directly: it lets registered flush hooks save work that needs
+  the keys before they are dropped (ADR-0004). Code that holds unsaved
+  private content registers a hook with `services.lockHooks`.
+- Nothing that can decrypt goes in `localStorage` or `sessionStorage`. A
+  trusted device keeps its wrapped key in IndexedDB through
+  `src/crypto/device-key-store.ts` only.
 - External services (auth, key vault) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.

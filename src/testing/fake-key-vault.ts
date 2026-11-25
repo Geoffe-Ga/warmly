@@ -15,6 +15,8 @@ const ACCOUNT_SLOT = "warmly.fake.vault.account";
 
 /** The recovery key every fake account starts with. */
 export const FAKE_RECOVERY_KEY = "FAKE-KEY0-NOT0-REAL-0000-TEST";
+/** A device passphrase for tests. Synthetic, like everything here. */
+export const FAKE_DEVICE_PASSPHRASE = ["lamp", "river", "kettle"].join(" ");
 /** The recovery key a fake account has after replacing it. */
 export const FAKE_ROTATED_RECOVERY_KEY = "FAKE-KEY0-NOT0-REAL-0000-NEXT";
 
@@ -23,6 +25,7 @@ export class FakeKeyVault implements KeyVault {
   readonly #storage: Storage;
   #unlocked = false;
   #pending: string | undefined;
+  #trustPending = false;
 
   constructor(storage: Storage = sessionStorage) {
     this.#storage = storage;
@@ -70,12 +73,33 @@ export class FakeKeyVault implements KeyVault {
     return this.#confirm(FAKE_RECOVERY_KEY);
   }
 
-  unlock(): Promise<void> {
-    if (this.#storage.getItem(DEVICE_SLOT) === null) {
+  unlock(devicePassphrase: string): Promise<void> {
+    const stored = this.#storage.getItem(DEVICE_SLOT);
+    if (stored === null) {
       return Promise.reject(new VaultError("no_keys_on_device"));
+    }
+    if (stored !== devicePassphrase) {
+      return Promise.reject(new VaultError("wrong_device_passphrase"));
     }
     this.#unlocked = true;
     return Promise.resolve();
+  }
+
+  deviceTrustPending(): boolean {
+    return this.#trustPending;
+  }
+
+  trustThisDevice(devicePassphrase: string): Promise<void> {
+    if (!this.#trustPending) {
+      return Promise.reject(new VaultError("nothing_to_trust"));
+    }
+    this.#storage.setItem(DEVICE_SLOT, devicePassphrase);
+    this.#trustPending = false;
+    return Promise.resolve();
+  }
+
+  skipDeviceTrust(): void {
+    this.#trustPending = false;
   }
 
   unlockWithRecoveryKey(recoveryKey: string): Promise<void> {
@@ -84,7 +108,7 @@ export class FakeKeyVault implements KeyVault {
     } catch (error) {
       return Promise.reject(error as Error);
     }
-    this.#storage.setItem(DEVICE_SLOT, "trusted");
+    this.#trustPending = true;
     this.#unlocked = true;
     return Promise.resolve();
   }
@@ -108,7 +132,7 @@ export class FakeKeyVault implements KeyVault {
       return Promise.reject(new VaultError("nothing_to_confirm"));
     }
     this.#storage.setItem(ACCOUNT_SLOT, expected);
-    this.#storage.setItem(DEVICE_SLOT, "trusted");
+    this.#trustPending = expected === FAKE_RECOVERY_KEY;
     this.#pending = undefined;
     this.#unlocked = true;
     return Promise.resolve();
@@ -121,6 +145,7 @@ export class FakeKeyVault implements KeyVault {
   lock(): void {
     this.#unlocked = false;
     this.#pending = undefined;
+    this.#trustPending = false;
   }
 }
 

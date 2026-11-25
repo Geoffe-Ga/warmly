@@ -1,14 +1,13 @@
 import type { JSX } from "preact";
 import { useContext, useState } from "preact/hooks";
 
-import { HOME_PATH } from "../../../app/access";
 import { Link, NavigationContext } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import { Button } from "../../components/Button";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
-import { AccountForm, useAction } from "./shared";
+import { AccountForm, afterRecoveryKey, useAction } from "./shared";
 
 /**
  * Unlock on a device that has no stored key, using the recovery key.
@@ -43,7 +42,7 @@ export function Recover(): JSX.Element {
             return;
           }
           session.unlock();
-          navigate(HOME_PATH);
+          navigate(afterRecoveryKey(vault));
         }}
       >
         <TextField

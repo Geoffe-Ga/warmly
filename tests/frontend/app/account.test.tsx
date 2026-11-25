@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { VaultError } from "../../../src/crypto/key-vault";
 import {
+  FAKE_DEVICE_PASSPHRASE,
   FAKE_RECOVERY_KEY,
   FAKE_ROTATED_RECOVERY_KEY,
 } from "../../../src/testing/fake-key-vault";
@@ -26,7 +27,8 @@ afterEach(() => {
 });
 
 async function fill(label: string, value: string): Promise<void> {
-  await userEvent.type(screen.getByLabelText(label), value);
+  // Waits for the field: some screens show it only after an async check.
+  await userEvent.type(await screen.findByLabelText(label), value);
 }
 
 async function press(name: string): Promise<void> {
@@ -43,6 +45,13 @@ async function onHeading(text: string): Promise<void> {
     expect(heading().textContent).toBe(text);
     expect(document.activeElement).toBe(heading());
   });
+}
+
+/** Arrive at the offer to trust this device, decline it, and reach Home. */
+async function declineDeviceTrust(): Promise<void> {
+  await onHeading("Unlock this device more easily");
+  await press("Not now");
+  await onHeading("Warmly");
 }
 
 describe("onboarding (AC-01, DEV-006)", () => {
@@ -63,7 +72,7 @@ describe("onboarding (AC-01, DEV-006)", () => {
 
     await fill("Type the last group of your key", "test");
     await press("I've saved my key");
-    await onHeading("Warmly");
+    await declineDeviceTrust();
 
     expect(services.session.state).toBe("unlocked");
     expect(window.location.pathname).toBe("/");
@@ -232,7 +241,7 @@ describe("the recovery key never outlives its onboarding (DEV-006)", () => {
     expect(await services.vault.accountHasKeys()).toBe(false);
 
     await press("I've saved my key");
-    await onHeading("Warmly");
+    await declineDeviceTrust();
     expect(services.session.state).toBe("unlocked");
   });
 
@@ -248,7 +257,7 @@ describe("the recovery key never outlives its onboarding (DEV-006)", () => {
 
     await fill("Type the last group of your key", "test");
     await press("I've saved my key");
-    await onHeading("Warmly");
+    await declineDeviceTrust();
 
     expect(services.onboarding.recoveryKey).toBeUndefined();
   });
@@ -277,6 +286,7 @@ describe("sign in, unlock and recover", () => {
     await onHeading("Warmly is locked");
     expect(services.session.state).toBe("signed_in_locked");
 
+    await fill("Device passphrase", FAKE_DEVICE_PASSPHRASE);
     await press("Unlock");
     await onHeading("Warmly");
 
@@ -294,7 +304,7 @@ describe("sign in, unlock and recover", () => {
 
     await fill("Recovery key", " fake-key0-not0-real-0000-test ");
     await press("Unlock");
-    await onHeading("Warmly");
+    await declineDeviceTrust();
 
     expect(services.session.state).toBe("unlocked");
   });
@@ -343,7 +353,7 @@ describe("sign in, unlock and recover", () => {
     expect(await services.vault.accountHasKeys()).toBe(false);
     await fill("Type the last group of your key", "TEST");
     await press("I've saved my key");
-    await onHeading("Warmly");
+    await declineDeviceTrust();
     expect(await services.vault.accountHasKeys()).toBe(true);
   });
 
@@ -377,15 +387,16 @@ describe("sign in, unlock and recover", () => {
       await setUpKeys(services.vault);
       services.vault.lock();
       const open = services.vault[method].bind(services.vault);
-      services.vault[method] = async (key: string = FAKE_RECOVERY_KEY) => {
+      services.vault[method] = async (key: string) => {
         await open(key);
         // A sign-out lands while the keys are being opened.
         services.session.signOut();
       };
       await renderApp(path, services);
-      if (path === "/recover") {
-        await fill("Recovery key", FAKE_RECOVERY_KEY);
-      }
+      await fill(
+        path === "/recover" ? "Recovery key" : "Device passphrase",
+        path === "/recover" ? FAKE_RECOVERY_KEY : FAKE_DEVICE_PASSPHRASE,
+      );
 
       await press(button);
 
@@ -396,13 +407,62 @@ describe("sign in, unlock and recover", () => {
     },
   );
 
-  it("explains a device that cannot unlock on its own", async () => {
+  it("offers only the recovery key on a device that cannot unlock on its own", async () => {
     await renderApp("/locked", testServices("signed_in_locked"));
 
+    expect(
+      await screen.findByText("This device needs your recovery key to unlock."),
+    ).toBeDefined();
+    expect(screen.queryByLabelText("Device passphrase")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Unlock" })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Unlock with your recovery key" })
+        .getAttribute("href"),
+    ).toBe("/recover");
+  });
+
+  it("refuses a wrong device passphrase and stays locked", async () => {
+    const services = testServices("signed_in_locked");
+    await setUpKeys(services.vault);
+    services.vault.lock();
+    await renderApp("/locked", services);
+
+    await fill("Device passphrase", "not the passphrase");
     await press("Unlock");
 
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Use your recovery key instead");
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "didn't unlock this device",
+    );
+    expect(services.session.state).toBe("signed_in_locked");
+    expect(services.vault.isUnlocked).toBe(false);
+  });
+
+  it("asks for the device passphrase before trying", async () => {
+    const services = testServices("signed_in_locked");
+    await setUpKeys(services.vault);
+    services.vault.lock();
+    await renderApp("/locked", services);
+
+    await userEvent.click(
+      await screen.findByRole("button", { name: "Unlock" }),
+    );
+
+    expect(screen.getByText("Enter this device's passphrase.")).toBeDefined();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("falls back to the recovery key if the device cannot be checked", async () => {
+    const services = testServices("signed_in_locked");
+    services.vault.hasKeysOnThisDevice = () =>
+      Promise.reject(new Error("storage blocked"));
+    await renderApp("/locked", services);
+
+    expect(
+      await screen.findByRole("link", {
+        name: "Unlock with your recovery key",
+      }),
+    ).toBeDefined();
   });
 
   it("gives the same message for a wrong password and an unknown email", async () => {
@@ -556,14 +616,19 @@ describe("choosing a new password from the emailed link (DEV-006)", () => {
 
 describe("the locked screen shows nothing private (UI-008)", () => {
   it("has no navigation into private screens and no entry details", async () => {
-    await renderApp("/locked", testServices("signed_in_locked"));
+    const services = testServices("signed_in_locked");
+    await setUpKeys(services.vault);
+    services.vault.lock();
+    await renderApp("/locked", services);
 
     expect(screen.queryByRole("navigation")).toBeNull();
     expect(
       screen.queryByRole("link", { name: /journal|reflect|prepare/i }),
     ).toBeNull();
     expect(
-      screen.getByRole("link", { name: "Use your recovery key instead" }),
+      await screen.findByRole("link", {
+        name: "Use your recovery key instead",
+      }),
     ).toBeDefined();
   });
 });
@@ -680,6 +745,84 @@ describe("replacing the recovery key (SEC-003)", () => {
 
   it("is a private screen", async () => {
     await renderApp("/settings/recovery-key", testServices("signed_in_locked"));
+
+    expect(window.location.pathname).toBe("/locked");
+  });
+});
+
+describe("trusting this device (DEV-005, ADR-0004)", () => {
+  async function atTrustScreen() {
+    const services = testServices("signed_in_locked");
+    await setUpKeys(services.vault);
+    services.vault.forgetThisDevice();
+    await renderApp("/recover", services);
+    await fill("Recovery key", FAKE_RECOVERY_KEY);
+    await press("Unlock");
+    await onHeading("Unlock this device more easily");
+    return services;
+  }
+
+  it("is offered after the recovery key opens the journal", async () => {
+    const services = await atTrustScreen();
+
+    expect(services.session.state).toBe("unlocked");
+    expect(screen.getByText(/It is not your account\s+password/)).toBeDefined();
+    expect(
+      screen.getByText(/recovery key still opens your journal/),
+    ).toBeDefined();
+  });
+
+  it("sets a passphrase that then unlocks this device", async () => {
+    const services = await atTrustScreen();
+
+    await fill("Device passphrase", FAKE_DEVICE_PASSPHRASE);
+    await fill("Type it again", FAKE_DEVICE_PASSPHRASE);
+    await press("Trust this device");
+    await onHeading("Warmly");
+    expect(await services.vault.hasKeysOnThisDevice()).toBe(true);
+
+    await press("Lock");
+    await onHeading("Warmly is locked");
+    await fill("Device passphrase", FAKE_DEVICE_PASSPHRASE);
+    await press("Unlock");
+    await onHeading("Warmly");
+  });
+
+  it("checks the length and that both entries match, and saves nothing until they do", async () => {
+    const services = await atTrustScreen();
+
+    await fill("Device passphrase", "short");
+    await fill("Type it again", "shorter");
+    await press("Trust this device");
+
+    expect(screen.getByText("Use at least 8 characters.")).toBeDefined();
+    expect(screen.getByText(/two passphrases don't match/)).toBeDefined();
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Device passphrase"),
+    );
+    expect(await services.vault.hasKeysOnThisDevice()).toBe(false);
+  });
+
+  it("can be declined, leaving the device needing the recovery key", async () => {
+    const services = await atTrustScreen();
+
+    await press("Not now");
+    await onHeading("Warmly");
+
+    expect(services.vault.deviceTrustPending()).toBe(false);
+    expect(await services.vault.hasKeysOnThisDevice()).toBe(false);
+  });
+
+  it("says so when there is nothing to set up", async () => {
+    const services = testServices("unlocked");
+    await renderApp("/unlock/trust-device", services);
+
+    expect(screen.getByText(/Nothing to set up right now/)).toBeDefined();
+    expect(screen.queryByLabelText("Device passphrase")).toBeNull();
+  });
+
+  it("is a private screen", async () => {
+    await renderApp("/unlock/trust-device", testServices("signed_in_locked"));
 
     expect(window.location.pathname).toBe("/locked");
   });

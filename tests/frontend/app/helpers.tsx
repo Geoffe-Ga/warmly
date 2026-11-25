@@ -7,7 +7,10 @@ import { createOnboarding } from "../../../src/app/onboarding";
 import type { Services } from "../../../src/app/services";
 import { createSession, type SessionState } from "../../../src/app/session";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
-import { FakeKeyVault } from "../../../src/testing/fake-key-vault";
+import {
+  FAKE_DEVICE_PASSPHRASE,
+  FakeKeyVault,
+} from "../../../src/testing/fake-key-vault";
 
 /** Services built on the in-memory doubles, with the doubles exposed. */
 export interface TestServices extends Services {
@@ -52,6 +55,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
 export async function setUpKeys(vault: FakeKeyVault): Promise<void> {
   await vault.createAccountKeys();
   await vault.confirmRecoveryKey();
+  await vault.trustThisDevice(FAKE_DEVICE_PASSPHRASE);
 }
 
 /** Point the browser at a path before the app renders. */

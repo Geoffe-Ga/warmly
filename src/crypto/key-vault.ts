@@ -13,6 +13,9 @@ export type VaultErrorCode =
   | "recovery_key_mistyped"
   | "recovery_key_malformed"
   | "no_keys_on_device"
+  | "wrong_device_passphrase"
+  | "device_store_damaged"
+  | "nothing_to_trust"
   | "no_account_keys"
   | "keys_already_exist"
   | "recovery_key_changed_elsewhere"
@@ -54,11 +57,26 @@ export interface KeyVault {
    */
   confirmRecoveryKey(): Promise<void>;
   /**
-   * Unlock using this trusted device's stored key.
+   * Unlock using this trusted device's stored key and its passphrase.
    *
-   * @throws VaultError `no_keys_on_device`.
+   * @throws VaultError `no_keys_on_device`, `wrong_device_passphrase` or
+   *   `device_store_damaged`.
    */
-  unlock(): Promise<void>;
+  unlock(devicePassphrase: string): Promise<void>;
+  /**
+   * Whether the vault has just been opened with the recovery key and can
+   * make this device trusted. True only until the user decides.
+   */
+  deviceTrustPending(): boolean;
+  /**
+   * Make this device trusted: from now on it unlocks with this passphrase
+   * instead of the recovery key.
+   *
+   * @throws VaultError `nothing_to_trust`.
+   */
+  trustThisDevice(devicePassphrase: string): Promise<void>;
+  /** Decline to trust this device. It will need the recovery key each time. */
+  skipDeviceTrust(): void;
   /**
    * Unlock on a device that has no stored key.
    *
@@ -116,6 +134,18 @@ export class UnavailableKeyVault implements KeyVault {
 
   unlock(): Promise<void> {
     return Promise.reject(new VaultError("unavailable"));
+  }
+
+  deviceTrustPending(): boolean {
+    return false;
+  }
+
+  trustThisDevice(): Promise<void> {
+    return Promise.reject(new VaultError("unavailable"));
+  }
+
+  skipDeviceTrust(): void {
+    // Nothing is ever pending.
   }
 
   unlockWithRecoveryKey(): Promise<void> {

@@ -5,8 +5,14 @@
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
+import { HOME_PATH } from "../../../app/access";
+import { pathFor } from "../../../app/routes";
 import { AuthError, type AuthErrorCode } from "../../../auth/auth-client";
-import { VaultError, type VaultErrorCode } from "../../../crypto/key-vault";
+import {
+  VaultError,
+  type KeyVault,
+  type VaultErrorCode,
+} from "../../../crypto/key-vault";
 import { StatusBanner } from "../../components/StatusBanner";
 
 // Keyed by every error code, so adding a code without wording is a type error.
@@ -23,6 +29,12 @@ const MESSAGES: Readonly<Record<AuthErrorCode | VaultErrorCode, string>> = {
     "That doesn't look like a recovery key. It is 14 groups of 4 letters and numbers.",
   no_keys_on_device:
     "This device can't unlock on its own. Use your recovery key instead.",
+  wrong_device_passphrase:
+    "That passphrase didn't unlock this device. Check it and try again, or use your recovery key instead.",
+  device_store_damaged:
+    "This device's saved key can't be used any more, so it has been removed. Use your recovery key to unlock; you can then set this device up again.",
+  nothing_to_trust:
+    "That step has expired. Unlock with your recovery key to set this device up.",
   no_account_keys:
     "This account hasn't finished setting up yet. Sign out and sign in again to create your recovery key.",
   keys_already_exist:
@@ -173,6 +185,17 @@ export function sameLastGroup(typed: string, recoveryKey: string): boolean {
   return (
     lastGroup !== "" && typed.trim().toUpperCase() === lastGroup.toUpperCase()
   );
+}
+
+/**
+ * Where to go once the vault has been opened with the recovery key: to the
+ * offer to trust this device if one is pending, otherwise Home.
+ *
+ * @param vault - The key vault.
+ * @returns The path to go to.
+ */
+export function afterRecoveryKey(vault: KeyVault): string {
+  return vault.deviceTrustPending() ? pathFor("trust-device") : HOME_PATH;
 }
 
 /** Shortest password the app accepts. */

@@ -11,11 +11,12 @@ import {
 } from "../../../src/auth/auth-client";
 import { SupabaseAuthClient } from "../../../src/auth/supabase-auth-client";
 import { AccountVault } from "../../../src/crypto/account-vault";
+import { IndexedDbDeviceKeyStore } from "../../../src/crypto/device-key-store";
 import { UnavailableKeyVault, VaultError } from "../../../src/crypto/key-vault";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
-import { FakeDeviceKeyStore } from "../../../src/testing/fake-device-key-store";
 import { FakeRecoveryEnvelopeStore } from "../../../src/testing/fake-recovery-envelope-store";
 import {
+  FAKE_DEVICE_PASSPHRASE,
   FAKE_RECOVERY_KEY,
   FAKE_ROTATED_RECOVERY_KEY,
   FakeKeyVault,
@@ -177,9 +178,13 @@ describe("FakeKeyVault", () => {
     expect(await vault.hasKeysOnThisDevice()).toBe(false);
     expect(await vault.accountHasKeys()).toBe(false);
     expect(await vault.fingerprint()).toBeUndefined();
-    await expect(vault.unlock()).rejects.toMatchObject({
+    expect(vault.deviceTrustPending()).toBe(false);
+    await expect(vault.unlock(FAKE_DEVICE_PASSPHRASE)).rejects.toMatchObject({
       code: "no_keys_on_device",
     });
+    await expect(
+      vault.trustThisDevice(FAKE_DEVICE_PASSPHRASE),
+    ).rejects.toMatchObject({ code: "nothing_to_trust" });
     await expect(
       vault.unlockWithRecoveryKey(FAKE_RECOVERY_KEY),
     ).rejects.toMatchObject({ code: "no_account_keys" });
@@ -219,16 +224,47 @@ describe("FakeKeyVault", () => {
     });
   });
 
-  it("locks and unlocks on a trusted device", async () => {
+  it("is trusted only once a device passphrase is set", async () => {
     const vault = new FakeKeyVault();
     await vault.createAccountKeys();
     await vault.confirmRecoveryKey();
+    expect(vault.deviceTrustPending()).toBe(true);
+    expect(await vault.hasKeysOnThisDevice()).toBe(false);
+
+    await vault.trustThisDevice(FAKE_DEVICE_PASSPHRASE);
+
+    expect(vault.deviceTrustPending()).toBe(false);
+    expect(await new FakeKeyVault().hasKeysOnThisDevice()).toBe(true);
+  });
+
+  it("locks and unlocks on a trusted device with its passphrase", async () => {
+    const vault = new FakeKeyVault();
+    await vault.createAccountKeys();
+    await vault.confirmRecoveryKey();
+    await vault.trustThisDevice(FAKE_DEVICE_PASSPHRASE);
 
     vault.lock();
     expect(vault.isUnlocked).toBe(false);
-    await vault.unlock();
+    await expect(vault.unlock("not the passphrase")).rejects.toMatchObject({
+      code: "wrong_device_passphrase",
+    });
+    expect(vault.isUnlocked).toBe(false);
+    await vault.unlock(FAKE_DEVICE_PASSPHRASE);
     expect(vault.isUnlocked).toBe(true);
-    expect(await new FakeKeyVault().hasKeysOnThisDevice()).toBe(true);
+  });
+
+  it("stays untrusted when the offer is declined or the app locks first", async () => {
+    const declined = new FakeKeyVault();
+    await declined.createAccountKeys();
+    await declined.confirmRecoveryKey();
+    declined.skipDeviceTrust();
+    expect(declined.deviceTrustPending()).toBe(false);
+    expect(await declined.hasKeysOnThisDevice()).toBe(false);
+
+    await declined.unlockWithRecoveryKey(FAKE_RECOVERY_KEY);
+    expect(declined.deviceTrustPending()).toBe(true);
+    declined.lock();
+    expect(declined.deviceTrustPending()).toBe(false);
   });
 
   it("starts locked after a reload even on a trusted device", async () => {
@@ -249,7 +285,7 @@ describe("FakeKeyVault", () => {
     await vault.unlockWithRecoveryKey("  fake-key0-not0-real-0000-test ");
 
     expect(vault.isUnlocked).toBe(true);
-    expect(await vault.hasKeysOnThisDevice()).toBe(true);
+    expect(vault.deviceTrustPending()).toBe(true);
   });
 
   it("rejects a wrong recovery key and stays locked", async () => {
@@ -278,6 +314,8 @@ describe("FakeKeyVault", () => {
     await vault.unlockWithRecoveryKey(FAKE_RECOVERY_KEY);
 
     await vault.confirmRecoveryKeyRotation();
+    // Replacing the recovery key does not ask about this device.
+    expect(vault.deviceTrustPending()).toBe(false);
 
     await expect(
       vault.unlockWithRecoveryKey(FAKE_RECOVERY_KEY),
@@ -316,11 +354,16 @@ describe("stand-ins for builds without real services", () => {
       vault.lock();
     }).not.toThrow();
     expect(await vault.fingerprint()).toBeUndefined();
+    expect(vault.deviceTrustPending()).toBe(false);
+    expect(() => {
+      vault.skipDeviceTrust();
+    }).not.toThrow();
     for (const attempt of [
       vault.accountHasKeys(),
       vault.createAccountKeys(),
       vault.confirmRecoveryKey(),
       vault.unlock(),
+      vault.trustThisDevice(),
       vault.unlockWithRecoveryKey(),
       vault.beginRecoveryKeyRotation(),
       vault.confirmRecoveryKeyRotation(),
@@ -389,7 +432,7 @@ describe("createKeyVault", () => {
   it("runs the real vault on the in-memory stores when they are supplied", () => {
     const vault = createKeyVault(CONFIGURED, auth, {
       envelopes: new FakeRecoveryEnvelopeStore(),
-      device: new FakeDeviceKeyStore(),
+      device: new IndexedDbDeviceKeyStore("warmly-device-test"),
     });
 
     expect(vault).toBeInstanceOf(AccountVault);
@@ -445,6 +488,9 @@ describe("describeError", () => {
     [new VaultError("recovery_key_mistyped"), "has a typo somewhere"],
     [new VaultError("recovery_key_malformed"), "14 groups of 4"],
     [new VaultError("no_account_keys"), "hasn't finished setting up"],
+    [new VaultError("wrong_device_passphrase"), "didn't unlock this device"],
+    [new VaultError("device_store_damaged"), "has been removed"],
+    [new VaultError("nothing_to_trust"), "set this device up"],
     [new VaultError("keys_already_exist"), "already set up on another device"],
     [
       new VaultError("recovery_key_changed_elsewhere"),
