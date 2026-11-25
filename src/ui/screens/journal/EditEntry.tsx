@@ -14,11 +14,13 @@ import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { AccountForm, useAction } from "../account/shared";
 import { EntryFields, OutOfDate } from "./EntryFields";
+import { describeOpenFailure } from "../../storage-messages";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
 
 /** What the screen has found out about the entry to edit. */
 type Found =
-  | { readonly kind: "loading" | "missing" | "failed" }
+  | { readonly kind: "loading" | "missing" }
+  | { readonly kind: "failed"; readonly message: string }
   | { readonly kind: "entry"; readonly entry: JournalEntry };
 
 function contentOf(entry: JournalEntry): EntryContent {
@@ -85,9 +87,9 @@ export function EditEntry(props: {
           show(entry);
         }
       },
-      () => {
+      (error: unknown) => {
         if (current) {
-          setFound({ kind: "failed" });
+          setFound({ kind: "failed", message: describeOpenFailure(error) });
         }
       },
     );
@@ -107,7 +109,7 @@ export function EditEntry(props: {
     return (
       <PageLayout title="Edit journal entry">
         <StatusBanner tone={notice.tone} label={notice.label}>
-          {notice.text}
+          {found.kind === "failed" ? found.message : notice.text}
         </StatusBanner>
         {back}
       </PageLayout>

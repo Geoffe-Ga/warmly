@@ -206,6 +206,17 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   A `put` based on an out-of-date copy is refused (`StaleRecordError`):
   never catch it and write again without reading the newer record. Offer
   the person the newer version (`RecordStore.reload`) instead.
+- Storage failures are typed (`src/storage/errors.ts`): full, unavailable,
+  blocked, newer. Everything that touches IndexedDB turns browser errors
+  into these. A screen says what happened and what to do next with
+  `src/ui/storage-messages.ts`, keeps what the person typed on the page,
+  and never shows browser error text. Never drop data silently.
+- The app asks the browser to keep its data (`services.persistence`) on
+  unlock, and Settings reports the browser's answer as it is. Never claim
+  data is kept when the browser has not agreed.
+- The offline notice in the app shell (`OfflineNotice`, `src/app/App.tsx`)
+  is fixed text only. Never put private text, counts or sync details that
+  could reveal content in it.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

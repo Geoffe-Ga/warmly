@@ -9,7 +9,7 @@ import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { ResultCount, useJournalSearch } from "./Search";
-import { CANNOT_OPEN, formatEntryDate, useJournalEntries } from "./shared";
+import { formatEntryDate, useJournalEntries } from "./shared";
 
 function EntryLink(props: {
   readonly entry: JournalEntry;
@@ -105,7 +105,7 @@ export function Timeline(): JSX.Element {
       )}
       {journal.state === "failed" && (
         <StatusBanner tone="error" label="Couldn't open your journal">
-          {CANNOT_OPEN}
+          {journal.message}
         </StatusBanner>
       )}
       {unreadable > 0 && (

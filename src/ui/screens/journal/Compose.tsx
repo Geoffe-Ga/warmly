@@ -11,6 +11,7 @@ import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { AccountForm, useAction } from "../account/shared";
 import { EntryFields, OutOfDate } from "./EntryFields";
+import { describeStorageError } from "../../storage-messages";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
 import { useDraft } from "./useDraft";
 
@@ -25,14 +26,20 @@ export const DRAFT_NOT_SAVED =
  * screen reader: "Saving" comes and goes with every pause in typing, so it
  * is shown but not read out.
  */
-function SaveStatus(props: { readonly state: SaveState }): JSX.Element {
+function SaveStatus(props: {
+  readonly state: SaveState;
+  /** What the last failed save threw. */
+  readonly error: unknown;
+}): JSX.Element {
   // The last settled message stays in the live region while a save is
   // under way, so it is not announced again after every pause.
   const settled = useRef("");
   if (props.state === "saved") {
     settled.current = DRAFT_SAVED;
   } else if (props.state === "failed") {
-    settled.current = DRAFT_NOT_SAVED;
+    // A known storage failure gets its own words and next step.
+    settled.current =
+      describeStorageError(props.error, "save") ?? DRAFT_NOT_SAVED;
   } else if (props.state === "idle") {
     settled.current = "";
   }
@@ -78,7 +85,7 @@ export function Compose(): JSX.Element {
           </StatusBanner>
         ) : (
           <StatusBanner tone="error" label="Couldn't open your journal">
-            {CANNOT_OPEN}
+            {form.openFailure ?? CANNOT_OPEN}
           </StatusBanner>
         )}
         <p>
@@ -141,7 +148,7 @@ export function Compose(): JSX.Element {
           missing={missing}
           onChange={form.change}
         />
-        <SaveStatus state={form.saveState} />
+        <SaveStatus state={form.saveState} error={form.saveError} />
         <div class="button-row">
           <Button type="submit" variant="primary" disabled={action.busy}>
             Save entry

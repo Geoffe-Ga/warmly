@@ -7,6 +7,11 @@
  * "CAFÉ" and "cafe" followed by a combining accent are the same word, and
  * full-width or ligature forms match their ordinary spelling. Accents are
  * kept: "cafe" and "café" are different words.
+ *
+ * A known limit: writing that puts no spaces between words, such as Chinese
+ * and Japanese, comes out as one long "word" per phrase. Such text can be
+ * found by how a phrase begins, not by a word inside it. Splitting it into
+ * words needs a dictionary, which the MVP leaves out.
  */
 
 /** A run of letters, numbers and the marks that combine with them. */

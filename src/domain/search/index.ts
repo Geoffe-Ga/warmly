@@ -11,6 +11,8 @@
  */
 import { parseQuery, tokenize, type Query, type Token } from "./tokenize";
 
+export { parseQuery } from "./tokenize";
+
 /** Something that can be searched. */
 export interface SearchDocument {
   /** Identifies the document; adding the same ID again replaces it. */
@@ -69,15 +71,17 @@ function wanted(word: string, query: Query): boolean {
 function excerpt(text: string, token: Token): string {
   let start = Math.max(0, token.start - SNIPPET_BEFORE);
   let end = Math.min(text.length, token.end + SNIPPET_AFTER);
-  // Move in to the nearest space, so the snippet does not start or end in
-  // the middle of a word.
+  // Move in to the nearest white space, so the snippet does not start or
+  // end in the middle of a word. A line break counts: answers are often
+  // written over several lines.
   if (start > 0) {
-    const space = text.indexOf(" ", start);
-    start = space !== -1 && space < token.start ? space + 1 : start;
+    const gap = text.slice(start, token.start).search(/\s/);
+    start = gap === -1 ? start : start + gap + 1;
   }
   if (end < text.length) {
-    const space = text.lastIndexOf(" ", end);
-    end = space > token.end ? space : end;
+    const tail = text.slice(token.end, end);
+    const gap = tail.search(/\s\S*$/);
+    end = gap <= 0 ? end : token.end + gap;
   }
   const middle = text.slice(start, end).replace(/\s+/g, " ").trim();
   return `${start > 0 ? "…" : ""}${middle}${end < text.length ? "…" : ""}`;

@@ -342,6 +342,20 @@ textarea.field__control {
   display: none;
 }
 
+/* Offline notice: one line under the header; empty while online */
+.offline-notice {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-left: var(--space-2) solid var(--color-border-strong);
+  border-radius: var(--radius-small);
+  background: var(--color-blush);
+  font-size: var(--font-size-small);
+}
+
+.offline-notice:empty {
+  display: none;
+}
+
 /* Save status: where a draft stands, under the form */
 
 .save-status {

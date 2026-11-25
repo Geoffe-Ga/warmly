@@ -21,6 +21,7 @@ import {
   type DeviceErrorCode,
 } from "../../../devices/this-device";
 import { StatusBanner } from "../../components/StatusBanner";
+import { describeStorageError } from "../../storage-messages";
 
 // Keyed by every error code, so adding a code without wording is a type error.
 const MESSAGES: Readonly<
@@ -111,6 +112,10 @@ const UNEXPECTED = MESSAGES.unexpected;
  * @returns A sentence or two to show in an alert.
  */
 export function describeError(error: unknown): string {
+  const storage = describeStorageError(error, "save");
+  if (storage !== undefined) {
+    return storage;
+  }
   if (
     error instanceof AuthError ||
     error instanceof VaultError ||

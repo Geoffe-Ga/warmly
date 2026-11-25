@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { sealJson } from "../../../src/crypto/envelope";
 import { importRootKey, type RootKey } from "../../../src/crypto/root-key";
 import { newEntry, type JournalEntry } from "../../../src/domain/journal/types";
+import { StorageUnavailableError } from "../../../src/storage/errors";
 import {
   NewerDatabaseError,
   OUTBOX,
@@ -662,7 +663,36 @@ describe("a database this code must not touch (§13.6)", () => {
       };
     });
 
-    await expect(store.put("journal-entry", await entry())).rejects.toThrow();
+    // The failure says a newer version is in use, so the person is told to
+    // reload, not sent looking for a private window.
+    await expect(
+      store.put("journal-entry", await entry()),
+    ).rejects.toBeInstanceOf(NewerDatabaseError);
+    await expect(store.delete("journal-entry", "any")).rejects.toBeInstanceOf(
+      NewerDatabaseError,
+    );
+    await expect(store.reload("journal-entry", "any")).rejects.toBeInstanceOf(
+      NewerDatabaseError,
+    );
     expect(await readRows(name, RECORDS)).toHaveLength(1);
+  });
+
+  it("is unavailable, not superseded, when the database is deleted under it", async () => {
+    const { store, name } = await unlockedStore();
+    await store.put("journal-entry", await entry());
+
+    await new Promise<void>((resolve, reject) => {
+      const removing = indexedDB.deleteDatabase(name);
+      removing.onsuccess = () => {
+        resolve();
+      };
+      removing.onblocked = () => {
+        reject(new Error("the deletion was blocked"));
+      };
+    });
+
+    await expect(
+      store.put("journal-entry", await entry()),
+    ).rejects.toBeInstanceOf(StorageUnavailableError);
   });
 });

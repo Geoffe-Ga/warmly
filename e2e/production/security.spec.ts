@@ -64,6 +64,59 @@ test.describe("security headers (SEC-007)", () => {
   });
 });
 
+test.describe("the service worker caches the public app shell only (SYNC-001)", () => {
+  test("the precache list holds static files, and no API route or runtime caching", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    const worker = await (await page.request.get("/sw.js")).text();
+
+    // Every precached URL is a static file of the build.
+    const urls = [...worker.matchAll(/url:\s*"([^"]+)"/g)].map(
+      (match) => match[1] ?? "",
+    );
+    expect(urls.length).toBeGreaterThan(0);
+    for (const url of urls) {
+      expect(url).toMatch(/\.(js|css|html|svg|webmanifest)$/);
+      expect(url).not.toContain("/v1/");
+    }
+    // Nothing is cached as the app runs: no runtime routes for the API or
+    // anything else, only the navigation fallback to the shell.
+    expect(worker).not.toContain("/v1/");
+    expect(worker).not.toMatch(/StaleWhileRevalidate|NetworkFirst|CacheFirst/);
+  });
+
+  test("after a visit, Cache Storage holds only this origin's static files", async ({
+    page,
+  }) => {
+    await page.goto("/");
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    await expect
+      .poll(async () => page.evaluate(async () => (await caches.keys()).length))
+      .toBeGreaterThan(0);
+
+    const cached = await page.evaluate(async () => {
+      const urls: string[] = [];
+      for (const name of await caches.keys()) {
+        for (const request of await (await caches.open(name)).keys()) {
+          urls.push(request.url);
+        }
+      }
+      return urls;
+    });
+
+    const origin = new URL(page.url()).origin;
+    for (const each of cached) {
+      const url = new URL(each);
+      expect(url.origin).toBe(origin);
+      expect(url.pathname).not.toMatch(/^\/v1\//);
+      expect(url.pathname).toMatch(/\.(js|css|html|svg|webmanifest)$/);
+    }
+  });
+});
+
 test.describe("the policy is enforced by the browser", () => {
   test.use({ expectCspViolation: true });
 

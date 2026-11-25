@@ -19,6 +19,7 @@ import {
 import type { EntryDate, JournalEntry } from "../../../domain/journal/types";
 import { deleteEntry } from "../../../domain/journal/delete";
 import { StaleRecordError } from "../../../storage/record-store";
+import { describeOpenFailure } from "../../storage-messages";
 
 /** The compose form, as the screen sees it. */
 export interface DraftForm {
@@ -29,7 +30,11 @@ export interface DraftForm {
   readonly resumed: EntryDate | undefined;
   /** Whether a draft is stored for this form. */
   readonly hasDraft: boolean;
+  /** Why the stored draft could not be looked for, when `status` is failed. */
+  readonly openFailure: string | undefined;
   readonly saveState: SaveState;
+  /** What the last failed save threw, while `saveState` is failed. */
+  readonly saveError: unknown;
   /**
    * Whether a save was refused because the draft has been changed
    * elsewhere, for example in another tab, since this screen read it.
@@ -75,6 +80,8 @@ export function useDraft(): DraftForm {
   const [hasDraft, setHasDraft] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [outOfDate, setOutOfDate] = useState(false);
+  const [openFailure, setOpenFailure] = useState<string | undefined>(undefined);
+  const [saveError, setSaveError] = useState<unknown>(undefined);
   const [draftGone, setDraftGone] = useState(false);
   const draft = useRef<JournalEntry | undefined>(undefined);
   const autosave = useRef<Autosave<EntryContent> | undefined>(undefined);
@@ -101,8 +108,9 @@ export function useDraft(): DraftForm {
         try {
           await records.put("journal-entry", next);
         } catch (error) {
-          if (error instanceof StaleRecordError && mounted) {
-            setOutOfDate(true);
+          if (mounted) {
+            setOutOfDate(error instanceof StaleRecordError);
+            setSaveError(error);
           }
           throw error;
         }
@@ -139,8 +147,9 @@ export function useDraft(): DraftForm {
         }
         setStatus("ready");
       },
-      () => {
+      (error: unknown) => {
         if (mounted) {
+          setOpenFailure(describeOpenFailure(error));
           setStatus("failed");
         }
       },
@@ -180,7 +189,9 @@ export function useDraft(): DraftForm {
     content,
     resumed,
     hasDraft,
+    openFailure,
     saveState,
+    saveError,
     change: (next) => {
       setContent(next);
       setDraftGone(false);

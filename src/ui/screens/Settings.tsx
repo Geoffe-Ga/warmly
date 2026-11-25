@@ -4,19 +4,48 @@ import { useEffect, useState } from "preact/hooks";
 import { Link } from "../../app/navigation";
 import { pathFor } from "../../app/routes";
 import { useServices } from "../../app/services";
+import type { Persistence } from "../../storage/persistence";
 import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { StatusBanner } from "../components/StatusBanner";
 
 /**
- * Account settings. For now it covers the recovery key and shows the account
- * key's fingerprint; the remaining settings arrive with their own issues.
+ * What Settings says about whether the browser will keep the data saved on
+ * this device (PRD AC-28). Each line is what the browser reported, said
+ * plainly: none promises more than the browser did.
+ */
+export const STORAGE_KEPT: Record<Persistence, string> = {
+  persistent:
+    "This browser has agreed to keep what Warmly saves on this device. It won't clear it to make room for other things.",
+  "best-effort":
+    "This browser may clear what Warmly saves on this device if the device runs short of space, or if Warmly isn't opened for a long time. Opening Warmly often, or adding it to your home screen, makes that less likely.",
+  unsupported:
+    "This browser doesn't say whether it will keep what Warmly saves on this device, so it may clear it if the device runs short of space.",
+};
+
+/**
+ * Account settings. For now it covers the recovery key, the account key's
+ * fingerprint and whether the browser will keep this device's data; the
+ * remaining settings arrive with their own issues.
  *
  * @returns The settings screen.
  */
 export function Settings(): JSX.Element {
-  const { vault } = useServices();
+  const { vault, persistence } = useServices();
   const [fingerprint, setFingerprint] = useState<string | undefined>(undefined);
+  const [kept, setKept] = useState<Persistence | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+    void persistence.state().then((state) => {
+      if (!cancelled) {
+        setKept(state);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [persistence]);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +89,15 @@ export function Settings(): JSX.Element {
             Every device signed in to your account and unlocked shows the same
             fingerprint. It is a label for comparing devices. It is not a secret
             and cannot open anything.
+          </p>
+        </Card>
+      )}
+      {kept !== undefined && (
+        <Card heading="Storage on this device">
+          <p data-testid="storage-persistence">{STORAGE_KEPT[kept]}</p>
+          <p>
+            What you write is encrypted before it is saved here. Clearing this
+            browser's site data for Warmly removes what is saved on this device.
           </p>
         </Card>
       )}

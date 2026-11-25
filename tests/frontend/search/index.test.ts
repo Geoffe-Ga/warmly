@@ -131,6 +131,17 @@ describe("a search snippet (JR-010)", () => {
     ).toMatch(/^…(filler )+needle$/);
   });
 
+  it("treats a line break as a word boundary when cutting", () => {
+    const before = "alpha\n".repeat(20);
+    const after = "\nomega".repeat(30);
+
+    const snippet =
+      indexOf({ e1: [`${before}needle${after}`] }).search("needle")[0]
+        ?.snippet ?? "";
+
+    expect(snippet).toMatch(/^…(alpha )+needle( omega)+…$/);
+  });
+
   it("puts line breaks and runs of spaces on one line", () => {
     expect(
       indexOf({ e1: ["one\n\ntwo   needle\tthree"] }).search("needle")[0]
