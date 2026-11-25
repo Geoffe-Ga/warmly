@@ -143,10 +143,6 @@ attention". It is a count and a state, never anything private (SYNC-010).
 
 ### What is deliberately left to later issues
 
-- The server's change feed (#34). Until then `GET /v1/sync/changes` is a
-  stub marked `Warmly-Stub: true`; the client treats a stub as "sync is not
-  available" and keeps changes queued. `POST /v1/sync/operations` is real
-  (see "The server's side" below).
 - A persisted cursor, retry with backoff, and partial-failure handling (#35).
 - Keeping and resolving both versions of a conflict (#36).
 - Tombstone retention, compaction and a deletion ledger (#37, #65).
@@ -192,3 +188,25 @@ never decodes a payload.
 
 One operation per transaction means a batch is not all-or-nothing: each
 operation gets its own answer, which is what the client's outbox expects.
+
+#### The change feed
+
+`GET /v1/sync/changes` reads the caller's records with a sequence above the
+cursor, in sequence order.
+
+- **Nothing is skipped.** Step 1 above means one account's changes commit
+  one at a time and in sequence order. A reader therefore never sees
+  sequence 6 while 5 is still uncommitted, so a cursor it has reached has
+  nothing unseen behind it. A database sequence would not give this: two
+  transactions could take 5 and 6 and commit in the other order. A change
+  that is rolled back gives its number back, so there are no gaps either.
+- **Pages are limited twice:** at most 100 records, and a page closes once
+  the payloads in it reach about 4 million characters. The first record of
+  a page always fits, so the feed always moves forward.
+- **An unknown cursor is refused.** A cursor above the highest sequence
+  the account has been given gets `409 sync.cursor_unknown`, and the
+  client starts again from 0. Answering with an empty page would leave a
+  device believing it was up to date.
+- **Last sync.** When a device is given the final page (`has_more` false),
+  the server records the time as that device's `last_sync_at`, which
+  Manage Devices shows (PRD DEV-002). It is a time and nothing else.

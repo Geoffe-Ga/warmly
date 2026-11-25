@@ -494,15 +494,27 @@ export interface paths {
     };
     /**
      * List changes after a cursor
-     * @description Return the records that changed after ``cursor``.
+     * @description Return the caller's records that changed after ``cursor``.
      *
-     *     Stub: always an empty page that echoes the cursor back.
+     *     Each record appears once, as it is now, in the order of its latest
+     *     change, deleted records included. Ask again with ``next_cursor`` while
+     *     ``has_more`` is true. When a device reaches the end of the feed, the
+     *     time is recorded as its last sync.
+     *
+     *     A cursor this account was never given is refused with
+     *     ``sync.cursor_unknown``: start again from ``0``.
      *
      *     Args:
+     *         caller: The verified account and device.
+     *         store: Where records are kept.
+     *         devices: Where the device's last sync is recorded.
      *         cursor: The caller's position in its change feed.
      *
      *     Returns:
-     *         An empty page of changes.
+     *         One page of changes.
+     *
+     *     Raises:
+     *         ProblemError: 409 when the cursor was never issued to this account.
      */
     get: operations["get_changes_v1_sync_changes_get"];
     put?: never;
@@ -531,6 +543,10 @@ export interface paths {
      *     made on top of the record's current revision. The server never merges
      *     and never lets the latest writer win. Sending an operation that was
      *     already applied again changes nothing and reports ``duplicate``.
+     *
+     *     A batch is not all-or-nothing. If the request fails part-way, the
+     *     operations already applied stay applied, and sending the batch again
+     *     reports them as ``duplicate``.
      *
      *     The payloads are opaque: they are stored as sent and never decoded.
      *
@@ -1908,6 +1924,15 @@ export interface operations {
       };
       /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The cursor was never given to this account; start again from 0 */
+      409: {
         headers: {
           [name: string]: unknown;
         };

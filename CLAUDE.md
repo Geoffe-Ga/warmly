@@ -12,14 +12,13 @@ Human-facing overview: [README.md](README.md).
 **Status:** walking skeleton in progress. `warmly/` (Python) verifies access
 tokens and device signatures on every `/v1` route but health, stores recovery
 envelopes and device identities, accepts sync operations (compare-and-swap
-on the revision, applied once), and serves the remaining routes as typed
-stubs. `src/` is a Preact shell with real account, recovery-key,
+on the revision, applied once), and serves each account's change feed. No
+route is a stub. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
 servers outside production) and a journal that can be written, listed, read,
 searched, edited in place and deleted for good, with drafts saved as they
 are typed, stored encrypted in IndexedDB. A sync engine sends the outbox
-and fetches changes (ADR-0006); the server's change feed is still a stub, so
-changes stay queued. Other routes render accessible placeholders.
+and fetches changes (ADR-0006). Other routes render accessible placeholders.
 
 ---
 
@@ -157,6 +156,13 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   stores nothing. The API role cannot delete a record, and a trigger keeps
   a tombstone deleted. The store and the in-memory test store must both
   pass `tests/fixtures/sync/scenarios-v1.json`.
+- The change feed (`PostgresSyncStore.changes`) depends on that lock: an
+  account's changes commit one at a time, in sequence order, so a reader
+  never sees a later change before an earlier one. Never give out a
+  sequence number any other way (no database sequence, no number taken
+  outside the locked transaction). A page is limited by count and by
+  payload size; a cursor the account was never given is refused with
+  `sync.cursor_unknown`, never answered with an empty page.
 - Database tests need `WARMLY_TEST_DATABASE_URL` (see README). They fail when it is
   missing; never mark them to skip.
 

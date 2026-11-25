@@ -42,6 +42,15 @@ _RENAME = """
  RETURNING id, name_ciphertext, public_key, created_at, last_sync_at, revoked_at
 """
 
+# A revoked device never reaches this: its requests are refused first. The
+# condition is here so that stays true whatever calls it.
+_MARK_SYNCED = """
+    UPDATE warmly_private.devices
+       SET last_sync_at = now()
+     WHERE id = %s
+       AND revoked_at IS NULL
+"""
+
 # Revoking twice changes nothing: the first time stands.
 _REVOKE = """
     UPDATE warmly_private.devices
@@ -212,6 +221,16 @@ class PostgresDeviceStore:
             cursor = await tx.execute(_RENAME, (name_ciphertext, device_id))
             row = await cursor.fetchone()
         return None if row is None else _device(row, current)
+
+    async def mark_synced(self, owner_id: UUID, device_id: UUID) -> None:
+        """Record that a device has just caught up with the change feed.
+
+        Args:
+            owner_id: The verified owner.
+            device_id: The device that made the request.
+        """
+        async with self._database.as_owner(owner_id) as tx:
+            await tx.execute(_MARK_SYNCED, (device_id,))
 
     async def revoke(
         self, owner_id: UUID, device_id: UUID, current: UUID

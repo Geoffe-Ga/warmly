@@ -12,7 +12,7 @@ from warmly.auth.device import DeviceKeys
 from warmly.schemas.devices import Device, RegisterDeviceRequest
 from warmly.schemas.enrollment import Enrollment, StartEnrollmentRequest
 from warmly.schemas.recovery import PutRecoveryEnvelopeRequest, RecoveryEnvelope
-from warmly.schemas.sync import OperationResult, SyncOperation
+from warmly.schemas.sync import ChangesResponse, OperationResult, SyncOperation
 
 
 class RecoveryStore(Protocol):
@@ -46,6 +46,9 @@ class DeviceStore(DeviceKeys, Protocol):
     ) -> Device | None:
         """Replace a device's encrypted name; ``None`` if it is not the owner's."""
 
+    async def mark_synced(self, owner_id: UUID, device_id: UUID) -> None:
+        """Record that a device has just caught up with the change feed."""
+
     async def revoke(
         self, owner_id: UUID, device_id: UUID, current: UUID
     ) -> Device | None:
@@ -54,6 +57,9 @@ class DeviceStore(DeviceKeys, Protocol):
 
 class SyncStore(Protocol):
     """One account's synced records (PRD SYNC-003, SYNC-008; ADR-0006)."""
+
+    async def changes(self, owner_id: UUID, after: int) -> ChangesResponse | None:
+        """Return a page of changes; ``None`` if the cursor was never issued."""
 
     async def apply(self, owner_id: UUID, operation: SyncOperation) -> OperationResult:
         """Apply one operation, or say why it was not applied."""

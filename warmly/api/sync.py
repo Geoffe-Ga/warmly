@@ -1,22 +1,39 @@
 """Sync routes (PRD SYNC-002, SYNC-003, SYNC-008; ADR-0006).
 
-``POST /v1/sync/operations`` stores ciphertext and assigns revisions. The
-change feed is still a stub and is marked as one.
+``POST /v1/sync/operations`` stores ciphertext and assigns revisions.
+``GET /v1/sync/changes`` returns what a device has not seen yet. Both act
+only on the verified caller's own records, and neither reads a payload.
 """
 
-from typing import Annotated
+from http import HTTPStatus
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from warmly.api.errors import SIGNED_IN_RESPONSES
-from warmly.api.ports import SyncStore
-from warmly.api.stub import mark_stub
+from warmly.api.errors import SIGNED_IN_RESPONSES, ProblemError
+from warmly.api.ports import DeviceStore, SyncStore
 from warmly.auth.device import CurrentCaller, require_device
+from warmly.schemas.problem import Problem
 from warmly.schemas.sync import (
     ChangesResponse,
     OperationsRequest,
     OperationsResponse,
 )
+
+CURSOR_UNKNOWN_CODE = "sync.cursor_unknown"
+
+# The largest sequence the database can hold. A cursor beyond it was never
+# issued, and is refused before it reaches a query.
+_LARGEST_SEQUENCE = 2**63 - 1
+
+_RESYNC: dict[int | str, dict[str, Any]] = {
+    409: {
+        "model": Problem,
+        "description": (
+            "The cursor was never given to this account; start again from 0"
+        ),
+    }
+}
 
 router = APIRouter(
     prefix="/sync",
@@ -32,7 +49,14 @@ def _store(request: Request) -> SyncStore:
     return store
 
 
+def _devices(request: Request) -> DeviceStore:
+    """Return the application's device store."""
+    store: DeviceStore = request.app.state.device_store
+    return store
+
+
 Store = Annotated[SyncStore, Depends(_store)]
+Devices = Annotated[DeviceStore, Depends(_devices)]
 
 Cursor = Annotated[
     str,
@@ -44,23 +68,41 @@ Cursor = Annotated[
 ]
 
 
-@router.get(
-    "/changes",
-    summary="List changes after a cursor",
-    dependencies=[Depends(mark_stub)],
-)
-def get_changes(cursor: Cursor = "0") -> ChangesResponse:
-    """Return the records that changed after ``cursor``.
+@router.get("/changes", summary="List changes after a cursor", responses=_RESYNC)
+async def get_changes(
+    caller: CurrentCaller, store: Store, devices: Devices, cursor: Cursor = "0"
+) -> ChangesResponse:
+    """Return the caller's records that changed after ``cursor``.
 
-    Stub: always an empty page that echoes the cursor back.
+    Each record appears once, as it is now, in the order of its latest
+    change, deleted records included. Ask again with ``next_cursor`` while
+    ``has_more`` is true. When a device reaches the end of the feed, the
+    time is recorded as its last sync.
+
+    A cursor this account was never given is refused with
+    ``sync.cursor_unknown``: start again from ``0``.
 
     Args:
+        caller: The verified account and device.
+        store: Where records are kept.
+        devices: Where the device's last sync is recorded.
         cursor: The caller's position in its change feed.
 
     Returns:
-        An empty page of changes.
+        One page of changes.
+
+    Raises:
+        ProblemError: 409 when the cursor was never issued to this account.
     """
-    return ChangesResponse(changes=[], next_cursor=cursor, has_more=False)
+    after = int(cursor)
+    page = None
+    if after <= _LARGEST_SEQUENCE:
+        page = await store.changes(caller.owner.id, after)
+    if page is None:
+        raise ProblemError(HTTPStatus.CONFLICT, CURSOR_UNKNOWN_CODE)
+    if not page.has_more:
+        await devices.mark_synced(caller.owner.id, caller.device_id)
+    return page
 
 
 @router.post("/operations", summary="Apply a batch of operations")
@@ -74,6 +116,10 @@ async def post_operations(
     made on top of the record's current revision. The server never merges
     and never lets the latest writer win. Sending an operation that was
     already applied again changes nothing and reports ``duplicate``.
+
+    A batch is not all-or-nothing. If the request fails part-way, the
+    operations already applied stay applied, and sending the batch again
+    reports them as ``duplicate``.
 
     The payloads are opaque: they are stored as sent and never decoded.
 

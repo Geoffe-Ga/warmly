@@ -32,6 +32,8 @@ NAMES = {
     sync_store._CREATE_RECORD: "create",
     sync_store._REPLACE_RECORD: "replace",
     sync_store._WRITE_RECEIPT: "write receipt",
+    sync_store._READ_LAST_SEQUENCE: "last sequence",
+    sync_store._READ_CHANGES: "read changes",
 }
 WRITES = {"next sequence", "create", "replace", "write receipt"}
 
@@ -45,6 +47,10 @@ class _Cursor:
     async def fetchone(self) -> tuple[Any, ...] | None:
         """Return the row."""
         return self._row
+
+    async def fetchall(self) -> list[tuple[Any, ...]]:
+        """Return the rows of a query that was scripted with a list."""
+        return list(self._row or ())
 
 
 class _Database:
@@ -184,3 +190,55 @@ async def test_a_refused_operation_runs_no_statement_that_writes(
     assert result.status == status
     assert WRITES.isdisjoint(database.names)
     assert database.names == ["lock", "read receipt", "read record"]
+
+
+def _row(sequence: int, candidates: int) -> tuple[Any, ...]:
+    """Build a feed row as the query returns it."""
+    return (RECORD, 1, 1, sequence, 1, False, etag_of(PAYLOAD), PAYLOAD, candidates)
+
+
+async def test_the_feed_asks_for_one_record_more_than_a_page_holds() -> None:
+    """The extra record is how the store knows whether there is more."""
+    rows = [_row(5, 3), _row(6, 3), _row(8, 3)]
+    database = _Database(last_sequence=(9,), read_changes=tuple(rows))
+    store = PostgresSyncStore(database, page_size=2, page_characters=50)
+
+    page = await store.changes(OWNER, 4)
+
+    assert database.owners == [OWNER]
+    assert database.names == ["last sequence", "read changes"]
+    assert database.params("read changes") == (OWNER, 4, 3, 50)
+    assert page is not None
+    assert [change.sequence for change in page.changes] == [5, 6]
+    assert (page.next_cursor, page.has_more) == ("6", True)
+
+
+async def test_the_feed_has_more_when_the_size_mark_cut_the_page_short() -> None:
+    """Fewer rows came back than the query found: the rest is still to come."""
+    database = _Database(last_sequence=(9,), read_changes=(_row(5, 3),))
+
+    page = await PostgresSyncStore(database).changes(OWNER, 4)
+
+    assert page is not None
+    assert (page.next_cursor, page.has_more) == ("5", True)
+
+
+async def test_an_empty_page_keeps_the_cursor() -> None:
+    """Nothing new: the device stays where it is."""
+    database = _Database(last_sequence=(4,), read_changes=())
+
+    page = await PostgresSyncStore(database).changes(OWNER, 4)
+
+    assert page is not None
+    assert (page.changes, page.next_cursor, page.has_more) == ([], "4", False)
+
+
+@pytest.mark.parametrize("last", [None, (3,)])
+async def test_a_cursor_that_was_never_given_reads_no_records(
+    last: tuple[int] | None,
+) -> None:
+    """The store stops before the feed query."""
+    database = _Database(last_sequence=last)
+
+    assert await PostgresSyncStore(database).changes(OWNER, 4) is None
+    assert database.names == ["last sequence"]

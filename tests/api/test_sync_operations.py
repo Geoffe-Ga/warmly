@@ -14,7 +14,6 @@ from tests.api.cases import CIPHERTEXT, OPERATION
 from tests.api.conftest import InMemorySyncStore
 from tests.auth.tokens import OWNER_ID
 from tests.sync_scenarios import SCENARIO_IDS, SCENARIOS, expected, wire
-from warmly.api.stub import STUB_HEADER
 from warmly.schemas.sync import MAX_OPERATIONS_PER_BATCH
 
 URL = "/v1/sync/operations"
@@ -41,14 +40,6 @@ def test_the_route_follows_the_adr_0006_scenario_table(
     """Each scenario gets the statuses the protocol defines, step by step."""
     for step in steps:
         assert _send(client, wire(step["operation"])) == [expected(step)], name
-
-
-def test_a_real_route_is_not_marked_as_a_stub(client: TestClient) -> None:
-    """Operations are stored now, so the stub marker is gone."""
-    response = client.post(URL, json={"operations": [OPERATION]})
-
-    assert STUB_HEADER not in response.headers
-    assert response.json()["results"][0]["status"] == "applied"
 
 
 def test_a_batch_is_answered_in_order_and_each_operation_stands_alone(
@@ -119,7 +110,7 @@ def test_the_payload_is_stored_exactly_as_sent(
     _send(client, _op(1))
 
     ((_owner, _record), stored) = next(iter(sync_store.records.items()))
-    assert stored == (1, 1, False, CIPHERTEXT)
+    assert (stored.revision, stored.tombstone, stored.payload) == (1, False, CIPHERTEXT)
 
 
 def test_records_belong_to_the_account_in_the_token(
