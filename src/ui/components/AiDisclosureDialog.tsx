@@ -1,4 +1,5 @@
 import type { JSX } from "preact";
+import { useMemo } from "preact/hooks";
 
 import { grantConsent, type ConsentToken } from "../../ai/consent";
 import type { Disclosure } from "../../ai/gateway";
@@ -23,6 +24,10 @@ export interface AiDisclosureDialogProps {
   readonly onConfirm: (consent: ConsentToken) => void;
   readonly onCancel: () => void;
 }
+
+/** Said when a request cannot be described, so cannot be agreed to. */
+export const CANNOT_DESCRIBE =
+  "Warmly couldn't prepare this request, so nothing was sent. Check in Settings that an AI provider is connected, then try again.";
 
 function entriesText(count: number): string {
   if (count === 0) {
@@ -57,20 +62,49 @@ export function describeSent(disclosure: Disclosure): string {
  *
  * @param props - See {@link AiDisclosureDialogProps}.
  * @returns The dialog, or `null` when closed.
- * @throws NoProviderError if it is opened with no provider connected.
+ * If the request cannot be described (no provider is connected, or the
+ * provider cannot size it), it says so and offers nothing to agree to.
+ *
  */
 export function AiDisclosureDialog(
   props: AiDisclosureDialogProps,
 ): JSX.Element | null {
   const { ai } = useServices();
-  const { request } = props;
-  if (!props.open) {
+  const { request, open } = props;
+  // Worked out once for each request that is shown, not on every render:
+  // a real provider's count may be slow.
+  const disclosure = useMemo(() => {
+    if (!open) {
+      return undefined;
+    }
+    try {
+      return ai.disclose(request);
+    } catch {
+      // No provider, or the request could not be described. Either way
+      // there is nothing the person can safely agree to.
+      return "failed" as const;
+    }
+  }, [ai, request, open]);
+
+  if (disclosure === undefined) {
     return null;
   }
-  const disclosure = ai.disclose(request);
+  if (disclosure === "failed") {
+    return (
+      <ConfirmDialog
+        open
+        title="This can't be sent"
+        cancelLabel="Close"
+        onConfirm={props.onCancel}
+        onCancel={props.onCancel}
+      >
+        <p>{CANNOT_DESCRIBE}</p>
+      </ConfirmDialog>
+    );
+  }
   return (
     <ConfirmDialog
-      open={props.open}
+      open
       title={`Send this to ${disclosure.provider}?`}
       confirmLabel={`Send to ${disclosure.provider}`}
       cancelLabel="Don't send"

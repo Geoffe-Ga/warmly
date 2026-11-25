@@ -161,6 +161,8 @@ export class AiGateway {
    * The checks every call makes before anything is sent, in this order: a
    * provider, the person's agreement to this request, and a size the
    * provider accepts. The token is used up even if a later check fails.
+   * If the provider throws while sizing the request, the call is refused
+   * with that error after the token has been used, and nothing is sent.
    */
   #admit(request: AiRequest, consent: ConsentToken): AIProvider {
     const provider = this.#need();

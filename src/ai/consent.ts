@@ -22,6 +22,9 @@ export interface ConsentToken {
   readonly [consent]: true;
 }
 
+// A request is strings and arrays of plain objects. If it ever carries a
+// typed array or another exotic object, freezing it here would throw: that
+// kind of value needs its own handling first.
 function deepFreeze(value: unknown, seen: WeakSet<object>): void {
   // An object that is already frozen is still looked into: being frozen
   // itself says nothing about what it holds. `seen` stops a loop.

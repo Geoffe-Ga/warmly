@@ -60,6 +60,9 @@ export default tseslint.config(
     },
   },
   {
+    // For the files it matches, this block's `no-restricted-imports`
+    // replaces the block above (later config wins), which is why it lists
+    // the provider modules again.
     // A consent token is made in one place: the confirm button of the
     // disclosure dialog (PRD SEC-009). Nothing else may import the module
     // that makes them.

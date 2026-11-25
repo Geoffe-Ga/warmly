@@ -13,6 +13,7 @@ import type {
 import { ServicesProvider } from "../../../src/app/services";
 import {
   AiDisclosureDialog,
+  CANNOT_DESCRIBE,
   describeSent,
 } from "../../../src/ui/components/AiDisclosureDialog";
 import { NO_PROVIDER } from "../../../src/ui/screens/settings/AiProvider";
@@ -170,6 +171,61 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
 
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(estimate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["no provider is connected", () => new AiGateway(undefined)],
+    [
+      "the provider cannot size the request",
+      () => {
+        const provider = exampleAi();
+        provider.estimateTokens = () => {
+          throw new Error("synthetic CANARY failure");
+        };
+        return new AiGateway(provider);
+      },
+    ],
+  ])("offers nothing to agree to when %s (SEC-009)", async (_name, make) => {
+    const { confirmed, cancelled } = open({ gateway: make() });
+
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toContain("This can't be sent");
+    expect(dialog.textContent).toContain(CANNOT_DESCRIBE);
+    expect(dialog.textContent).not.toContain("CANARY");
+    expect(within(dialog).getAllByRole("button")).toHaveLength(1);
+
+    await userEvent
+      .setup()
+      .click(within(dialog).getByRole("button", { name: "Close" }));
+
+    expect(cancelled).toHaveBeenCalledTimes(1);
+    expect(confirmed).not.toHaveBeenCalled();
+  });
+
+  it("sizes a request once while it is shown, not on every render", () => {
+    const provider = exampleAi();
+    const estimate = vi.spyOn(provider, "estimateTokens");
+    const services = {
+      ...testServices("unlocked"),
+      ai: new AiGateway(provider),
+    };
+    const asked = request(2);
+    const view = (
+      <ServicesProvider value={services}>
+        <AiDisclosureDialog
+          open
+          request={asked}
+          onConfirm={vi.fn()}
+          onCancel={vi.fn()}
+        />
+      </ServicesProvider>
+    );
+
+    const { rerender } = render(view);
+    rerender(view);
+    rerender(view);
+
+    expect(estimate).toHaveBeenCalledTimes(1);
   });
 
   it("describes the very request it asks about, whatever the screen might have said (SEC-009)", () => {

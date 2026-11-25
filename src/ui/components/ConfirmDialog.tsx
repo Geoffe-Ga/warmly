@@ -10,8 +10,11 @@ export interface ConfirmDialogProps {
   readonly title: string;
   /** What will happen, in plain words, including anything irreversible. */
   readonly children: ComponentChildren;
-  /** Names the action, for example "Delete entry". Avoid a bare "OK". */
-  readonly confirmLabel: string;
+  /**
+   * Names the action, for example "Delete entry". Avoid a bare "OK".
+   * Without it there is nothing to confirm: only the cancel button shows.
+   */
+  readonly confirmLabel?: string;
   readonly cancelLabel?: string;
   /** Style the confirm button as destructive. */
   readonly destructive?: boolean;
@@ -115,12 +118,14 @@ export function ConfirmDialog(props: ConfirmDialogProps): JSX.Element | null {
           <Button onClick={props.onCancel}>
             {props.cancelLabel ?? "Cancel"}
           </Button>
-          <Button
-            variant={props.destructive === true ? "danger" : "primary"}
-            onClick={props.onConfirm}
-          >
-            {props.confirmLabel}
-          </Button>
+          {props.confirmLabel !== undefined && (
+            <Button
+              variant={props.destructive === true ? "danger" : "primary"}
+              onClick={props.onConfirm}
+            >
+              {props.confirmLabel}
+            </Button>
+          )}
         </div>
       </div>
     </div>
