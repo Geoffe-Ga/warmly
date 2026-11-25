@@ -14,7 +14,11 @@ import {
 
 import { PAGE_HEADING_ATTRIBUTE } from "../ui/components/PageHeading";
 import { PageLayout } from "../ui/components/PageLayout";
-import { SessionControls, useInactivityLock } from "./SessionControls";
+import {
+  SessionControls,
+  endRevokedDevice,
+  useInactivityLock,
+} from "./SessionControls";
 import { Link, NavigationContext, type Navigation } from "./navigation";
 import { APP_NAME, resolve } from "./resolve";
 import { normalisePath } from "./router";
@@ -103,6 +107,15 @@ export function App(props: AppProps): JSX.Element {
   }, []);
 
   useInactivityLock(services, state, navigate);
+
+  // The server can refuse this device as revoked on any request.
+  useEffect(
+    () =>
+      services.revocation.subscribe(() => {
+        void endRevokedDevice(services, navigate);
+      }),
+    [services, navigate],
+  );
 
   const resolution = useMemo(() => resolve(path, state), [path, state]);
 

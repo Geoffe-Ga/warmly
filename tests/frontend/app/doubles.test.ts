@@ -94,6 +94,23 @@ describe("FakeAuthClient", () => {
     },
   );
 
+  it("checks the password again only for the account that is signed in", async () => {
+    const auth = new FakeAuthClient();
+    await expect(auth.reauthenticate("a long password")).rejects.toMatchObject({
+      code: "invalid_credentials",
+    });
+    await auth.register("a@example.com", "a long password");
+    await auth.completeVerification();
+
+    await expect(
+      auth.reauthenticate("a long password"),
+    ).resolves.toBeUndefined();
+    await expect(auth.reauthenticate("another one")).rejects.toMatchObject({
+      code: "invalid_credentials",
+    });
+    expect(await auth.isSignedIn()).toBe(true);
+  });
+
   it("reports nothing to verify when no registration is pending", async () => {
     expect(await new FakeAuthClient().completeVerification()).toBe(false);
   });
@@ -359,6 +376,7 @@ describe("stand-ins for builds without real services", () => {
       auth.register(),
       auth.completeVerification(),
       auth.signIn(),
+      auth.reauthenticate(),
       auth.requestPasswordReset(),
       auth.completePasswordReset(),
     ]) {
@@ -540,6 +558,55 @@ describe("createKeyServices", () => {
     },
   );
 
+  it("can forget this device: its stored key and its identity, for the signed-in account", async () => {
+    const auth = new FakeAuthClient();
+    await auth.register("sam@example.com", PHRASE);
+    await auth.completeVerification();
+    const parts = doubles();
+    const services = createKeyServices({}, auth, parts);
+    await services.vault.createAccountKeys();
+    await services.vault.confirmRecoveryKey();
+    await services.vault.trustThisDevice(["lamp", "river", "kettle"].join(" "));
+    const [before] = await services.devices.list();
+    const userId = (await auth.currentSession())?.userId ?? "";
+    expect(await services.vault.hasKeysOnThisDevice()).toBe(true);
+
+    await services.forgetThisDevice();
+
+    expect(await services.vault.hasKeysOnThisDevice()).toBe(false);
+    expect(await parts.identities.get(userId)).toBeUndefined();
+    // Coming back, it registers as a new device.
+    const again = await services.devices.list();
+    expect(again).toHaveLength(2);
+    expect(again.find((d) => d.isCurrent)?.id).not.toBe(before?.id);
+  });
+
+  it("forgetting does nothing when nobody is signed in, or with no backend", async () => {
+    const services = createKeyServices({}, new FakeAuthClient(), doubles());
+
+    await expect(services.forgetThisDevice()).resolves.toBeUndefined();
+    await expect(
+      createKeyServices({}, new FakeAuthClient()).forgetThisDevice(),
+    ).resolves.toBeUndefined();
+  });
+
+  it("passes on the news that this device was revoked", async () => {
+    const auth = new FakeAuthClient();
+    await auth.register("sam@example.com", PHRASE);
+    await auth.completeVerification();
+    let reports = 0;
+    const services = createKeyServices({}, auth, doubles(), () => {
+      reports += 1;
+    });
+    await services.vault.createAccountKeys();
+    await services.vault.confirmRecoveryKey();
+    const [mine] = await services.devices.list();
+
+    await services.devices.revoke(mine?.id ?? "", PHRASE);
+
+    expect(reports).toBe(1);
+  });
+
   it("is unavailable in a production build with no backend configured", () => {
     const services = createKeyServices({}, new FakeAuthClient());
 
@@ -573,6 +640,12 @@ describe("createServices", () => {
     expect(services.devices).toBeInstanceOf(AccountDevices);
     expect(services.session.state).toBe("signed_out");
     expect(services.onboarding.recoveryKey).toBeUndefined();
+    let heard = 0;
+    services.revocation.subscribe(() => {
+      heard += 1;
+    });
+    services.revocation.report();
+    expect(heard).toBe(1);
   });
 });
 
@@ -610,6 +683,8 @@ describe("describeError", () => {
     ],
     [new ApiError("clock_wrong"), "Set the date and time to automatic"],
     [new ApiError("unexpected"), "Something went wrong"],
+    [new ApiError("device_revoked"), "has been removed from your account"],
+    [new ApiError("reauthentication_required"), "entered again"],
     [new DeviceError("locked"), "Unlock it and try again"],
     [new DeviceError("not_found"), "no longer on your account"],
     [new DeviceError("invalid_name"), "1 to 60 characters"],

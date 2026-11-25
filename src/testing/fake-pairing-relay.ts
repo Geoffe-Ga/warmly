@@ -128,6 +128,18 @@ export class FakePairingRelay implements PairingRelay {
     );
   }
 
+  cancel(session: AuthSession, id: string): Promise<void> {
+    const all = this.#all();
+    const stored = all.find(
+      (entry) => entry.owner === session.userId && entry.request.id === id,
+    );
+    if (stored !== undefined && OPEN.includes(stored.request.status)) {
+      stored.expires = Math.min(stored.expires, this.#now());
+      this.#save(all);
+    }
+    return Promise.resolve();
+  }
+
   openRequest(session: AuthSession): Promise<PairingRequest | undefined> {
     const waiting = this.#all().filter(
       (entry) =>

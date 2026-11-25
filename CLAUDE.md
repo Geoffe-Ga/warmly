@@ -13,7 +13,7 @@ Human-facing overview: [README.md](README.md).
 tokens and device signatures on every `/v1` route but health, stores recovery
 envelopes and device identities, and serves the remaining routes as typed
 stubs. `src/` is a Preact shell with real account, recovery-key,
-Manage Devices and device-pairing flows (real cryptography; in-memory doubles stand in for the
+Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
 servers outside production); other routes render accessible placeholders.
 
 ---
@@ -183,6 +183,10 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   signs it with this device's key (ADR-0005). Never call `fetch` for the API
   anywhere else. Never edit `tests/fixtures/signing/v1.json`: a change to the
   signed message adds a new version beside it.
+- A device learns it was revoked from `device.revoked` on any request. The
+  API client reports it through `services.revocation` and the app shell
+  ends the session (`endRevokedDevice`). Never handle it in a screen, and
+  never delete local records when it happens: only the keys go.
 - External services (auth, key vault, device directory) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.

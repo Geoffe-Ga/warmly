@@ -70,6 +70,62 @@ async function lockOnce(
   navigate(LOCKED_PATH);
 }
 
+/** Where a device that has been revoked is sent. */
+export const REVOKED_PATH = "/removed";
+
+/**
+ * Act on the news that this device has been revoked (PRD DEV-003, DEV-004).
+ *
+ * Unsaved work is given the chance to be encrypted and saved locally, as
+ * when locking. Then the keys are dropped from memory, this device's wrapped
+ * root key and its device key are deleted, the session ends, and the screen
+ * that explains what happened is shown. Nothing else stored on the device is
+ * touched: what was already saved stays, encrypted and unreadable here.
+ *
+ * @param services - The app's services.
+ * @param navigate - Moves to another in-app path.
+ */
+export function endRevokedDevice(
+  services: Services,
+  navigate: (path: string) => void,
+): Promise<void> {
+  // Several requests can find out at once; the device is ended once.
+  const underway = ENDINGS_UNDERWAY.get(services);
+  if (underway !== undefined) {
+    return underway;
+  }
+  const ending = endOnce(services, navigate).finally(() => {
+    ENDINGS_UNDERWAY.delete(services);
+  });
+  ENDINGS_UNDERWAY.set(services, ending);
+  return ending;
+}
+
+const ENDINGS_UNDERWAY = new WeakMap<Services, Promise<void>>();
+
+async function endOnce(
+  services: Services,
+  navigate: (path: string) => void,
+): Promise<void> {
+  // Read afresh each time: the session can change while this waits.
+  const state = (): SessionState => services.session.state;
+  if (state() === "signed_out") {
+    return;
+  }
+  if (state() === "unlocked") {
+    await services.lockHooks.flush().catch(() => undefined);
+  }
+  dropSecrets(services);
+  // Before the session ends: afterwards nobody is signed in to forget for.
+  // If the storage cannot be cleared, the server still refuses the device.
+  await services.forgetThisDevice().catch(() => undefined);
+  if (state() !== "signed_out") {
+    services.session.signOut();
+  }
+  navigate(REVOKED_PATH);
+  services.auth.signOut().catch(() => undefined);
+}
+
 /**
  * Lock the app after 30 minutes without input, for as long as it is unlocked.
  * A tab that was suspended past the limit locks as soon as it is seen again.

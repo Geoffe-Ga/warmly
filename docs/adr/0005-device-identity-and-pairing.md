@@ -97,18 +97,20 @@ has been verified. Nothing is stored for a request that fails one.
 
 1. The headers are present and well formed.
 2. The timestamp is within **5 minutes** of the server's clock.
-3. The device ID belongs to **the token's account** and is not revoked. A
-   device of another account is not found, exactly like one that does not
-   exist.
-4. The signature verifies under that device's registered public key.
+3. The device ID belongs to **the token's account**. A device of another
+   account is not found, exactly like one that does not exist.
+4. The signature verifies under that device's registered public key, and
+   the device has not been revoked.
 5. The nonce has not been used by that device before. Nonces are kept for 10
    minutes, which is longer than a timestamp can stay acceptable, so a
    captured request can never be replayed.
 
-A refusal is `401` with `device.missing_signature`, `device.stale_request`
-or `device.not_authorized`. The last one covers every other failure on
-purpose: the response does not say whether the device exists, belongs to
-someone else, is revoked, or signed badly.
+A refusal is `401` with `device.missing_signature`, `device.stale_request`,
+`device.not_authorized` or `device.revoked`. `device.not_authorized` covers
+every other failure on purpose: the response does not say whether the device
+exists, belongs to someone else, or signed badly. `device.revoked` is said
+only after the signature has verified, so only the revoked device itself is
+ever told.
 
 ### Registering a device
 
@@ -197,12 +199,64 @@ on this list.
 
 ### Revisit when
 
-- Revocation lands (#23): the revoked check already runs on every request;
-  the route, the ledger and the client's handling are added there.
 - Sync lands (epic 04): `last_sync_at` starts to be filled in.
 - Before real users: replace the stored HMAC verifier with a public key
   derived from the root key (see the limit above). Tracked in #84.
 - A passkey unlock is added (#80): it does not change the device identity.
+
+## Revocation
+
+How a device is removed from an account (PRD DEV-003, DEV-004; AC-20).
+
+### Decision
+
+- **Who may revoke.** `POST /v1/devices/{id}/revoke` needs a registered
+  device's signature and a session whose token shows the password was
+  entered in the last **5 minutes** (the `amr` claim's timed `password`
+  entry). The app asks for the account password in the confirmation dialog
+  and signs in again to get such a token. Someone who picks up an unlocked
+  device therefore cannot remove the owner's other devices, and a stolen
+  token alone cannot either.
+- **What it does.** In one transaction the device row gets `revoked_at` and
+  a row is added to `device_revocations`, an append-only ledger (no UPDATE
+  or DELETE is granted). A trigger refuses any later change to
+  `revoked_at`, so no code path can re-activate a device. Because device
+  rows are never deleted, the ID can never be registered again: coming back
+  means a new identity and a new enrollment.
+- **When it takes effect.** On the device's next request. The check runs on
+  every signed route, so a token that is still valid and a correct
+  signature no longer help.
+- **A device may revoke itself.** It is then signed out at once.
+
+### On the revoked device
+
+Whichever request is refused with `device.revoked`, the API client reports
+it to one place (`src/devices/revocation.ts`), and the app shell then:
+
+1. lets unsaved work be encrypted and saved locally, as when locking;
+2. drops the keys from memory;
+3. deletes the wrapped root key and the device's signing key from IndexedDB;
+4. ends the session and shows a screen that says what happened.
+
+Nothing else on the device is deleted. Records it had already saved stay in
+the browser's storage, encrypted, and the screen says so and says how to
+clear them. Deleting them silently could destroy work that never reached
+the server.
+
+### What revocation cannot do (DEV-004)
+
+- **It is not a remote wipe.** A revoked device that is offline keeps its
+  local copy and, if it is unlocked, whatever is on its screen, until it
+  next talks to the server. The confirmation dialog says this before the
+  person confirms.
+- **It does not change the keys.** A device that was unlocked had the root
+  key. If it may be in someone else's hands, the recovery key should be
+  replaced as well; rotating the root key itself is not in the MVP
+  (ADR-0003).
+- **It does not end the auth provider's session.** Doing so needs a service
+  credential the API does not hold. The session token decrypts nothing and,
+  without a registered device's signature, reaches nothing behind a signed
+  route.
 
 ## Pairing
 

@@ -34,6 +34,7 @@ export type RouteId =
   | "new-password"
   | "recover"
   | "add-device"
+  | "device-revoked"
   | "trust-device"
   | "locked";
 
@@ -236,6 +237,13 @@ export const ROUTES: readonly RouteDef[] = [
     summary:
       "Open your journal here with the help of a device you already use.",
     access: "locked",
+  },
+  {
+    id: "device-revoked",
+    path: "/removed",
+    title: "This device was removed",
+    summary: "This device can no longer open or sync your journal.",
+    access: "public",
   },
   {
     id: "trust-device",

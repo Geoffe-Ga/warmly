@@ -32,6 +32,10 @@ import {
 import { ApiPairingRelay, type PairingRelay } from "../devices/pairing-relay";
 import { ApiDeviceRegistry, type DeviceRegistry } from "../devices/registry";
 import {
+  createRevocationSignal,
+  type RevocationSignal,
+} from "../devices/revocation";
+import {
   AccountDevices,
   UnavailableDeviceDirectory,
   type DeviceDirectory,
@@ -52,6 +56,10 @@ export interface Services {
   readonly devices: DeviceDirectory;
   /** Handing the account key from an unlocked device to a new one. */
   readonly pairing: DevicePairing;
+  /** See {@link KeyServices.forgetThisDevice}. */
+  readonly forgetThisDevice: () => Promise<void>;
+  /** Reports that the server has refused this device as revoked. */
+  readonly revocation: RevocationSignal;
   readonly session: Session;
   /** In-memory state of an account being set up; see {@link Onboarding}. */
   readonly onboarding: Onboarding;
@@ -101,6 +109,12 @@ export interface KeyServices {
   readonly vault: KeyVault;
   readonly devices: DeviceDirectory;
   readonly pairing: DevicePairing;
+  /**
+   * Delete what makes this device able to unlock and to sign requests for
+   * the signed-in account: its wrapped root key and its device key. Used
+   * when the device has been revoked.
+   */
+  readonly forgetThisDevice: () => Promise<void>;
 }
 
 /**
@@ -115,15 +129,18 @@ export interface KeyServices {
  * @param env - The build-time variables.
  * @param auth - The auth client that says who is signed in.
  * @param doubles - The in-memory stores. Production builds pass nothing.
+ * @param onDeviceRevoked - Called when the server refuses this device as
+ *   revoked, or when the device revokes itself.
  * @returns The key vault and the device directory.
  */
 export function createKeyServices(
   env: Readonly<Record<string, unknown>>,
   auth: AuthClient,
   doubles?: KeyServiceDoubles,
+  onDeviceRevoked: () => void = () => undefined,
 ): KeyServices {
   if (doubles !== undefined) {
-    return assemble(auth, doubles);
+    return assemble(auth, doubles, onDeviceRevoked);
   }
   const apiOrigin = env["VITE_API_ORIGIN"];
   // Both must be configured. Without the API's origin the vault would send
@@ -138,17 +155,27 @@ export function createKeyServices(
       vault: new UnavailableKeyVault(),
       devices: new UnavailableDeviceDirectory(),
       pairing: new UnavailableDevicePairing(),
+      forgetThisDevice: () => Promise.resolve(),
     };
   }
-  const api = new ApiClient(apiOrigin, (input, init) => fetch(input, init));
+  const api = new ApiClient(
+    apiOrigin,
+    (input, init) => fetch(input, init),
+    () => Date.now(),
+    onDeviceRevoked,
+  );
   const identities = new IndexedDbDeviceIdentityStore();
-  return assemble(auth, {
-    envelopes: new ApiRecoveryEnvelopeStore(api, identities),
-    device: new IndexedDbDeviceKeyStore(),
-    identities,
-    registry: new ApiDeviceRegistry(api),
-    relay: new ApiPairingRelay(api),
-  });
+  return assemble(
+    auth,
+    {
+      envelopes: new ApiRecoveryEnvelopeStore(api, identities),
+      device: new IndexedDbDeviceKeyStore(),
+      identities,
+      registry: new ApiDeviceRegistry(api),
+      relay: new ApiPairingRelay(api),
+    },
+    onDeviceRevoked,
+  );
 }
 
 /**
@@ -156,7 +183,11 @@ export function createKeyServices(
  * the device if it is not registered yet, the directory reads the root key
  * from the vault, and pairing releases and accepts the key through it.
  */
-function assemble(auth: AuthClient, parts: KeyServiceDoubles): KeyServices {
+function assemble(
+  auth: AuthClient,
+  parts: KeyServiceDoubles,
+  onDeviceRevoked: () => void,
+): KeyServices {
   const vault: AccountVault = new AccountVault(
     auth,
     parts.envelopes,
@@ -170,11 +201,20 @@ function assemble(auth: AuthClient, parts: KeyServiceDoubles): KeyServices {
     parts.identities,
     parts.registry,
     () => vault.rootKey(),
+    () => new Date(),
+    onDeviceRevoked,
   );
   return {
     vault,
     devices,
     pairing: new AccountPairing(auth, parts.identities, parts.relay, vault),
+    forgetThisDevice: async () => {
+      const session = await auth.currentSession();
+      if (session !== undefined) {
+        await parts.device.forget(session.userId);
+        await parts.identities.forget(session.userId);
+      }
+    },
   };
 }
 
@@ -224,6 +264,7 @@ function tabId(): string {
  * @returns Fresh services with a signed-out session.
  */
 export function createServices(): Services {
+  const revocation = createRevocationSignal();
   const auth = createAuthClient(
     import.meta.env,
     import.meta.env.MODE !== "production"
@@ -240,11 +281,17 @@ export function createServices(): Services {
             envelopes: new FakeRecoveryEnvelopeStore(),
             device: new IndexedDbDeviceKeyStore(tabDeviceDatabase()),
             identities: new IndexedDbDeviceIdentityStore(tabIdentityDatabase()),
-            registry: new FakeDeviceRegistry(),
+            registry: new FakeDeviceRegistry(
+              localStorage,
+              () => new Date(),
+              revocation.report,
+            ),
             relay: new FakePairingRelay(),
           }
         : undefined,
+      revocation.report,
     ),
+    revocation,
     session: createSession(),
     onboarding: createOnboarding(),
     lockHooks: createLockHooks(),

@@ -92,6 +92,7 @@ function recording(failures = 0): DeviceRegistry & {
     list: (session, identity) => server.list(session, identity),
     rename: (session, identity, id, name) =>
       server.rename(session, identity, id, name),
+    revoke: (session, identity, id) => server.revoke(session, identity, id),
   };
 }
 
@@ -393,6 +394,116 @@ describe("renaming a device (DEV-003)", () => {
   });
 });
 
+describe("removing a device (DEV-003, DEV-004, AC-20)", () => {
+  /** A device that reports when it has revoked itself. */
+  function reporting(): { devices: AccountDevices; reports: () => number } {
+    let reports = 0;
+    return {
+      reports: () => reports,
+      devices: new AccountDevices(
+        auth,
+        new MemoryIdentityStore(),
+        new FakeDeviceRegistry(
+          localStorage,
+          () => NOW,
+          () => {
+            reports += 1;
+          },
+        ),
+        () => unlocked,
+        () => NOW,
+        () => {
+          reports += 1;
+        },
+      ),
+    };
+  }
+
+  it("revokes another device after the password is entered again; it is then refused", async () => {
+    const first = reporting();
+    const second = reporting();
+    await first.devices.list();
+    const [, theirs] = await second.devices.list();
+
+    await first.devices.revoke(theirs?.id ?? "", PHRASE);
+
+    const listed = await first.devices.list();
+    expect(listed.map((entry) => [entry.isCurrent, entry.revoked])).toEqual([
+      [true, false],
+      [false, true],
+    ]);
+    expect(first.reports()).toBe(0);
+    await expect(second.devices.list()).rejects.toMatchObject({
+      code: "device_revoked",
+    });
+    await expect(
+      second.devices.rename(theirs?.id ?? "", "Phone"),
+    ).rejects.toMatchObject({ code: "device_revoked" });
+    expect(second.reports()).toBe(2);
+  });
+
+  it("a wrong password revokes nothing", async () => {
+    const first = device();
+    const second = device();
+    await first.list();
+    const [, theirs] = await second.list();
+
+    await expect(
+      first.revoke(theirs?.id ?? "", "not the password"),
+    ).rejects.toMatchObject({ name: "AuthError", code: "invalid_credentials" });
+
+    expect((await second.list()).every((entry) => !entry.revoked)).toBe(true);
+  });
+
+  it("a device can revoke itself, and says so at once", async () => {
+    const { devices, reports } = reporting();
+    const [mine] = await devices.list();
+
+    await devices.revoke(mine?.id ?? "", PHRASE);
+
+    expect(reports()).toBe(1);
+    await expect(devices.list()).rejects.toMatchObject({
+      code: "device_revoked",
+    });
+  });
+
+  it("a revoked device cannot revoke the others", async () => {
+    const first = device();
+    const second = device();
+    const [mine] = await first.list();
+    const [, theirs] = await second.list();
+    await first.revoke(theirs?.id ?? "", PHRASE);
+
+    await expect(second.revoke(mine?.id ?? "", PHRASE)).rejects.toMatchObject({
+      code: "device_revoked",
+    });
+
+    expect((await first.list())[0]?.revoked).toBe(false);
+  });
+
+  it("reports a device that is not on the account as not found (DEV-010)", async () => {
+    await expect(
+      device().revoke("d0000000-0000-4000-8000-0000000000ff", PHRASE),
+    ).rejects.toMatchObject({ code: "not_found" });
+  });
+
+  it("asks nothing of the auth service while locked", async () => {
+    const devices = device();
+    const [mine] = await devices.list();
+    unlocked = undefined;
+    let asked = false;
+    auth.reauthenticate = () => {
+      asked = true;
+      return Promise.resolve();
+    };
+
+    await expect(devices.revoke(mine?.id ?? "", PHRASE)).rejects.toMatchObject({
+      code: "locked",
+    });
+    expect(asked).toBe(false);
+  });
+});
+
 describe("device names", () => {
   it("accepts a name of exactly the longest length, counting characters not bytes", () => {
     const longest = "é".repeat(MAX_DEVICE_NAME_LENGTH);
@@ -446,5 +557,6 @@ describe("a build with no backend", () => {
 
     expect(await devices.list()).toEqual([]);
     await expect(devices.rename()).rejects.toMatchObject({ code: "locked" });
+    await expect(devices.revoke()).rejects.toMatchObject({ code: "locked" });
   });
 });

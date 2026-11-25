@@ -21,6 +21,7 @@ import { TrustDevice } from "../ui/screens/account/TrustDevice";
 import { VerifyEmail } from "../ui/screens/account/VerifyEmail";
 import { AddDevice } from "../ui/screens/devices/AddDevice";
 import { ApproveDevice } from "../ui/screens/devices/ApproveDevice";
+import { DeviceRevoked } from "../ui/screens/devices/DeviceRevoked";
 import { ManageDevices } from "../ui/screens/devices/ManageDevices";
 import { redirectFor } from "./access";
 import { matchRoute } from "./router";
@@ -44,6 +45,7 @@ const SCREENS: Readonly<Partial<Record<RouteId, () => JSX.Element>>> = {
   devices: ManageDevices,
   "approve-device": ApproveDevice,
   "add-device": AddDevice,
+  "device-revoked": DeviceRevoked,
   "rotate-recovery-key": RotateRecoveryKey,
   onboarding: Register,
   "verify-email": VerifyEmail,

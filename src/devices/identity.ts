@@ -36,6 +36,11 @@ export interface DeviceIdentityStore {
   getOrCreate(userId: string): Promise<DeviceIdentity>;
   /** Record that the server has accepted the account's identity. */
   markRegistered(userId: string): Promise<void>;
+  /**
+   * Delete the account's identity from this device, private key included.
+   * A device that registers again afterwards does so as a new device.
+   */
+  forget(userId: string): Promise<void>;
 }
 
 /** One account's identity, as kept in IndexedDB. */
@@ -196,6 +201,13 @@ export class IndexedDbDeviceIdentityStore implements DeviceIdentityStore {
         }
         result(true);
       };
+    });
+  }
+
+  async forget(userId: string): Promise<void> {
+    await this.#run<true>("readwrite", (store, result) => {
+      store.delete(userId);
+      result(true);
     });
   }
 }

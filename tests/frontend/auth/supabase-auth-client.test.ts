@@ -32,7 +32,10 @@ const OFFLINE = new AuthRetryableFetchError("Failed to fetch", 0);
 /** A scripted stand-in for the provider. Records every call it receives. */
 class StubApi implements AuthApi {
   readonly calls: [method: string, ...args: unknown[]][] = [];
-  session: { access_token: string; user: { id: string } } | null = null;
+  session: {
+    access_token: string;
+    user: { id: string; email?: string };
+  } | null = null;
   errors: Partial<Record<keyof AuthApi, unknown>> = {};
 
   #answer(method: keyof AuthApi, args: unknown[]): { error: unknown } {
@@ -210,6 +213,48 @@ describe("registration (PRD §2.1)", () => {
       expect(error).not.toBeInstanceOf(AuthError);
     },
   );
+});
+
+describe("entering the password again (DEV-003)", () => {
+  it("signs in again as the signed-in account, so the token shows a fresh password entry", async () => {
+    api.session = { access_token: "t", user: { id: "u", email: EMAIL } };
+
+    await client.reauthenticate(PHRASE);
+
+    expect(api.called("signInWithPassword")).toEqual([
+      ["signInWithPassword", { email: EMAIL, password: PHRASE }],
+    ]);
+  });
+
+  it("reports a wrong password and leaves the session as it was", async () => {
+    api.session = { access_token: "t", user: { id: "u", email: EMAIL } };
+    api.errors.signInWithPassword = apiError("invalid_credentials");
+
+    const error = await failure(client.reauthenticate("not the password"));
+
+    expect(error).toMatchObject({ code: "invalid_credentials" });
+    expect(api.called("signOut")).toEqual([]);
+  });
+
+  it.each([
+    ["nobody is signed in", null],
+    ["the session names no email", { access_token: "t", user: { id: "u" } }],
+  ])("refuses when %s, without trying a password", async (_name, session) => {
+    api.session = session;
+
+    const error = await failure(client.reauthenticate(PHRASE));
+
+    expect(error).toMatchObject({ code: "invalid_credentials" });
+    expect(api.called("signInWithPassword")).toEqual([]);
+  });
+
+  it("reports being offline", async () => {
+    api.errors.getSession = OFFLINE;
+
+    expect(await failure(client.reauthenticate(PHRASE))).toMatchObject({
+      code: "offline",
+    });
+  });
 });
 
 describe("email verification", () => {

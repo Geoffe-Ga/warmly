@@ -175,6 +175,7 @@ describe("the API client explains a refusal without repeating the server's text"
     ["device.missing_signature", "device_not_authorized"],
     ["device.not_authorized", "device_not_authorized"],
     ["device.stale_request", "clock_wrong"],
+    ["device.revoked", "device_revoked"],
   ])("maps a 401 %s to %s", async (code, expected) => {
     const error = await refusedWith(() =>
       json(401, { code, detail: "private detail from the server" }),
@@ -183,6 +184,40 @@ describe("the API client explains a refusal without repeating the server's text"
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({ code: expected });
     expect(String(error)).not.toContain("private detail");
+  });
+
+  it("tells the app once, centrally, when this device has been revoked (AC-20)", async () => {
+    let reports = 0;
+    const revoked = new ApiClient(
+      "",
+      server(() => json(401, { code: "device.revoked" })).fetch,
+      () => NOW,
+      () => {
+        reports += 1;
+      },
+    );
+    const refused = new ApiClient(
+      "",
+      server(() => json(401, { code: "device.not_authorized" })).fetch,
+      () => NOW,
+      () => {
+        reports += 1;
+      },
+    );
+    const request = {
+      method: "GET",
+      path: "/v1/devices",
+      signedBy: undefined,
+    } as const;
+
+    await expect(refused.send(SESSION, request)).rejects.toMatchObject({
+      code: "device_not_authorized",
+    });
+    expect(reports).toBe(0);
+    await expect(revoked.send(SESSION, request)).rejects.toMatchObject({
+      code: "device_revoked",
+    });
+    expect(reports).toBe(1);
   });
 
   it.each([

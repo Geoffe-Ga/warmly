@@ -5,11 +5,15 @@
  * It keeps the devices in `localStorage`, playing the part of the server, so
  * a second tab sees the first tab's device as another device on the account.
  * It applies the same ownership rules as the real API: an account sees and
- * renames only its own devices, and a device ID can be registered once.
+ * renames only its own devices, a device ID can be registered once, and a
+ * revoked device is refused from then on and can never register again.
+ * It does not check that a password was entered recently before a
+ * revocation; `AccountDevices` asks the auth client for that first.
  *
  * It does not check signatures or enrollment proofs. Those are covered by
  * the API's own tests and by a fixture both sides verify.
  */
+import { ApiError } from "../api/client";
 import type { AuthSession } from "../auth/auth-client";
 import type { DeviceIdentity } from "../devices/identity";
 import type {
@@ -26,19 +30,39 @@ type Stored = [
   id: string,
   nameCiphertext: string,
   createdAt: string,
+  revoked?: boolean,
 ][];
 
 /** See the module comment. */
 export class FakeDeviceRegistry implements DeviceRegistry {
   readonly #storage: Storage;
   readonly #now: () => Date;
+  readonly #onDeviceRevoked: () => void;
 
+  /**
+   * @param storage - Where the fake server keeps its devices.
+   * @param now - The current time; tests pass their own.
+   * @param onDeviceRevoked - Called when a revoked device makes a request,
+   *   as the real API client does.
+   */
   constructor(
     storage: Storage = localStorage,
     now: () => Date = () => new Date(),
+    onDeviceRevoked: () => void = () => undefined,
   ) {
     this.#storage = storage;
     this.#now = now;
+    this.#onDeviceRevoked = onDeviceRevoked;
+  }
+
+  /** Refuse a request from a revoked device, as the server does. */
+  #refuseRevoked(all: Stored, identity: DeviceIdentity): void {
+    if (
+      all.some(([, id, , , revoked]) => id === identity.deviceId && revoked)
+    ) {
+      this.#onDeviceRevoked();
+      throw new ApiError("device_revoked");
+    }
   }
 
   #all(): Stored {
@@ -69,39 +93,60 @@ export class FakeDeviceRegistry implements DeviceRegistry {
     return Promise.resolve(true);
   }
 
-  list(
+  // Each method below is `async` so that a refusal is a rejected promise,
+  // as it is from the real register.
+  async list(
     session: AuthSession,
     identity: DeviceIdentity,
   ): Promise<RegisteredDevice[]> {
-    return Promise.resolve(
-      this.#all()
-        .filter(([owner]) => owner === session.userId)
-        .map(([, id, nameCiphertext, createdAt]) => ({
-          id,
-          nameCiphertext,
-          createdAt,
-          lastSyncAt: undefined,
-          revoked: false,
-          isCurrent: id === identity.deviceId,
-        })),
-    );
+    const all = await Promise.resolve(this.#all());
+    this.#refuseRevoked(all, identity);
+    return all
+      .filter(([owner]) => owner === session.userId)
+      .map(([, id, nameCiphertext, createdAt, revoked]) => ({
+        id,
+        nameCiphertext,
+        createdAt,
+        lastSyncAt: undefined,
+        revoked: revoked === true,
+        isCurrent: id === identity.deviceId,
+      }));
   }
 
-  rename(
+  async revoke(
     session: AuthSession,
-    _identity: DeviceIdentity,
+    identity: DeviceIdentity,
     deviceId: string,
-    nameCiphertext: string,
   ): Promise<boolean> {
-    const all = this.#all();
+    const all = await Promise.resolve(this.#all());
+    this.#refuseRevoked(all, identity);
     const device = all.find(
       ([owner, id]) => owner === session.userId && id === deviceId,
     );
     if (device === undefined) {
-      return Promise.resolve(false);
+      return false;
+    }
+    device[4] = true;
+    this.#save(all);
+    return true;
+  }
+
+  async rename(
+    session: AuthSession,
+    identity: DeviceIdentity,
+    deviceId: string,
+    nameCiphertext: string,
+  ): Promise<boolean> {
+    const all = await Promise.resolve(this.#all());
+    this.#refuseRevoked(all, identity);
+    const device = all.find(
+      ([owner, id]) => owner === session.userId && id === deviceId,
+    );
+    if (device === undefined) {
+      return false;
     }
     device[2] = nameCiphertext;
     this.#save(all);
-    return Promise.resolve(true);
+    return true;
   }
 }

@@ -102,6 +102,7 @@ describe("the pairing relay on the Warmly API (DEV-001 path A)", () => {
     const { calls, relay } = api(() => json(200, WIRE));
 
     await relay.read(SESSION, ID);
+    await relay.cancel(SESSION, ID);
     await relay.reveal(SESSION, ID, "ag==");
     await relay.openRequest(SESSION, identity);
     await relay.claim(SESSION, identity, ID, "YQ==");
@@ -117,6 +118,7 @@ describe("the pairing relay on the Warmly API (DEV-001 path A)", () => {
       ]),
     ).toEqual([
       ["GET", `/v1/enrollments/${ID}`, "", false],
+      ["POST", `/v1/enrollments/${ID}/cancel`, "", false],
       [
         "POST",
         `/v1/enrollments/${ID}/reveal`,
@@ -320,6 +322,29 @@ describe("the in-memory relay follows the server's rules", () => {
     expect((await relay.read(SESSION, mine.id))?.status).toBe("expired");
     expect((await relay.openRequest(SESSION))?.id).toBe(newer.id);
     expect((await relay.openRequest(OTHER))?.id).toBe(theirs.id);
+  });
+
+  it("lets the new device give up an open request, but not take back a finished one", async () => {
+    const approver = await testIdentity();
+    const open = await relay.start(SESSION, COMMITTED);
+
+    await relay.cancel(OTHER, open.id);
+    expect((await relay.read(SESSION, open.id))?.status).toBe("pending");
+    await relay.cancel(SESSION, open.id);
+    await relay.cancel(SESSION, "unknown");
+
+    expect((await relay.read(SESSION, open.id))?.status).toBe("expired");
+    expect(await relay.openRequest(SESSION)).toBeUndefined();
+
+    const finished = await relay.start(SESSION, COMMITTED);
+    await relay.claim(SESSION, approver, finished.id, "YQ==");
+    await relay.reveal(SESSION, finished.id, NONCE);
+    await relay.approve(SESSION, approver, finished.id, "dw==");
+    await relay.cancel(SESSION, finished.id);
+    expect(await relay.read(SESSION, finished.id)).toMatchObject({
+      status: "approved",
+      wrappedKey: "dw==",
+    });
   });
 
   it("keeps accounts apart", async () => {

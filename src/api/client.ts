@@ -16,6 +16,8 @@ export type ApiErrorCode =
   | "offline"
   | "signed_out"
   | "device_not_authorized"
+  | "device_revoked"
+  | "reauthentication_required"
   | "clock_wrong"
   | "unexpected";
 
@@ -46,6 +48,7 @@ export interface ApiRequest {
 
 const DEVICE_ERRORS: Readonly<Record<string, ApiErrorCode>> = {
   "device.stale_request": "clock_wrong",
+  "device.revoked": "device_revoked",
 };
 
 async function refusal(response: Response): Promise<ApiError> {
@@ -74,21 +77,26 @@ export class ApiClient {
   readonly #baseUrl: string;
   readonly #fetch: typeof fetch;
   readonly #now: () => number;
+  readonly #onDeviceRevoked: () => void;
 
   /**
    * @param baseUrl - Origin of the Warmly API; empty for the app's own origin.
    * @param fetchFn - The network function. Injected so tests never touch the
    *   network.
    * @param now - Milliseconds since the epoch; tests pass their own.
+   * @param onDeviceRevoked - Called when the server refuses this device as
+   *   revoked, whichever request found out.
    */
   constructor(
     baseUrl: string,
     fetchFn: typeof fetch,
     now: () => number = () => Date.now(),
+    onDeviceRevoked: () => void = () => undefined,
   ) {
     this.#baseUrl = baseUrl.replace(/\/+$/, "");
     this.#fetch = fetchFn;
     this.#now = now;
+    this.#onDeviceRevoked = onDeviceRevoked;
   }
 
   async #signature(
@@ -125,7 +133,8 @@ export class ApiClient {
    * @returns The response, for any status other than 401. The caller decides
    *   what each status means.
    * @throws ApiError `offline` if the server could not be reached, and
-   *   `signed_out`, `device_not_authorized` or `clock_wrong` for a 401.
+   *   `signed_out`, `device_not_authorized`, `device_revoked` or
+   *   `clock_wrong` for a 401.
    */
   async send(session: AuthSession, request: ApiRequest): Promise<Response> {
     const hasBody = request.body !== undefined;
@@ -151,7 +160,12 @@ export class ApiClient {
       throw new ApiError("offline");
     }
     if (response.status === 401) {
-      throw await refusal(response);
+      const error = await refusal(response);
+      if (error.code === "device_revoked") {
+        // Handled in one place, whichever screen made the request.
+        this.#onDeviceRevoked();
+      }
+      throw error;
     }
     return response;
   }
