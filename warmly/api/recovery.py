@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Request
 from warmly.api.errors import SIGNED_IN_RESPONSES, ProblemError
 from warmly.api.ports import RecoveryStore
 from warmly.auth.dependency import CurrentOwner
+from warmly.auth.device import DeviceVerifier, read_signed_request
 from warmly.schemas.problem import Problem
 from warmly.schemas.recovery import PutRecoveryEnvelopeRequest, RecoveryEnvelope
 
@@ -65,7 +66,10 @@ async def get_recovery_envelope(owner: CurrentOwner, store: Store) -> RecoveryEn
 
 @router.put("", summary="Create or rotate the recovery envelope", responses=_CONFLICT)
 async def put_recovery_envelope(
-    request: PutRecoveryEnvelopeRequest, owner: CurrentOwner, store: Store
+    request: PutRecoveryEnvelopeRequest,
+    http_request: Request,
+    owner: CurrentOwner,
+    store: Store,
 ) -> RecoveryEnvelope:
     """Create or rotate the wrapped root key with compare-and-swap.
 
@@ -73,8 +77,14 @@ async def put_recovery_envelope(
     other value replaces exactly that version. A failed attempt changes
     nothing, so an interrupted rotation leaves the old recovery key valid.
 
+    Creating the envelope happens before the account has any device, so it
+    needs only the session. Replacing it must be signed by one of the
+    account's devices: a stolen session token alone cannot swap the envelope
+    and lock the user out of recovery.
+
     Args:
         request: The new envelope and the version it replaces.
+        http_request: The request, for its device signature.
         owner: The verified caller.
         store: Where envelopes are kept.
 
@@ -84,6 +94,9 @@ async def put_recovery_envelope(
     Raises:
         ProblemError: 409 if the stored version is not the expected one.
     """
+    if request.expected_version > 0:
+        verifier: DeviceVerifier = http_request.app.state.device_verifier
+        await verifier.verify(owner, await read_signed_request(http_request))
     envelope = await store.write(owner.id, request)
     if envelope is None:
         raise ProblemError(HTTPStatus.CONFLICT, VERSION_CONFLICT_CODE)

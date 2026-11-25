@@ -14,6 +14,7 @@ from warmly.api.fixtures import (
 )
 from warmly.api.stub import mark_stub
 from warmly.auth.dependency import require_owner
+from warmly.auth.device import require_device
 from warmly.schemas.enrollment import (
     ApproveEnrollmentRequest,
     Enrollment,
@@ -74,7 +75,14 @@ def get_enrollment(enrollment_id: UUID) -> Enrollment:
     )
 
 
-@router.post("/{enrollment_id}/approve", summary="Approve an enrollment")
+@router.post(
+    "/{enrollment_id}/approve",
+    summary="Approve an enrollment",
+    # Approval comes from a device that is already registered. Starting and
+    # reading an enrollment come from one that is not yet, so they cannot be
+    # signed; the pairing issue decides how those two are protected.
+    dependencies=[Depends(require_device)],
+)
 def approve_enrollment(
     enrollment_id: UUID, request: ApproveEnrollmentRequest
 ) -> Enrollment:

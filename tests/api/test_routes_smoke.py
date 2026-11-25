@@ -14,6 +14,7 @@ from tests.api.cases import (
     ENROLLMENT_ID,
     OP_ID,
     OPERATION,
+    REGISTERED_DEVICE_ID,
     Case,
 )
 from warmly import __version__
@@ -23,7 +24,7 @@ from warmly.api.stub import STUB_HEADER
 @pytest.mark.parametrize("case", CASES, ids=lambda c: f"{c.method} {c.path}")
 def test_route_returns_a_schema_valid_body(client: TestClient, case: Case) -> None:
     """Each route returns its documented status and a valid response model."""
-    response = client.request(case.method, case.path, json=case.body)
+    response = case.send(client)
 
     assert response.status_code == case.status
     case.model.model_validate(response.json())
@@ -34,7 +35,7 @@ def test_stub_routes_are_marked_and_real_routes_are_not(
     client: TestClient, case: Case
 ) -> None:
     """A stub must say it is a stub; a real route must not claim to be one."""
-    response = client.request(case.method, case.path, json=case.body)
+    response = case.send(client)
 
     assert (response.headers.get(STUB_HEADER) == "true") is case.stub
 
@@ -57,6 +58,7 @@ def _template(path: str) -> str:
     return (
         path.split("?")[0]
         .replace(DEVICE_ID, "{device_id}")
+        .replace(REGISTERED_DEVICE_ID, "{device_id}")
         .replace(ENROLLMENT_ID, "{enrollment_id}")
     )
 
@@ -100,22 +102,6 @@ def test_stub_operations_never_claim_to_have_applied(client: TestClient) -> None
             },
         ]
     }
-
-
-def test_register_device_echoes_the_submitted_identity(client: TestClient) -> None:
-    """The registration stub reflects the caller's device as current."""
-    body = client.post(
-        "/v1/devices",
-        json={
-            "device_id": DEVICE_ID,
-            "public_key": CIPHERTEXT,
-            "name_ciphertext": CIPHERTEXT,
-        },
-    ).json()
-
-    assert body["id"] == DEVICE_ID
-    assert body["is_current"] is True
-    assert body["revoked_at"] is None
 
 
 def test_revoke_returns_a_revoked_device(client: TestClient) -> None:

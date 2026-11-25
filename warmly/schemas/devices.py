@@ -34,6 +34,12 @@ class RegisterDeviceRequest(ApiModel):
     device_id: UUID
     public_key: PublicKey
     name_ciphertext: SmallCiphertext
+    enrollment_proof: SmallCiphertext = Field(
+        description=(
+            "Proof that the registering device knows the account root key: "
+            "an HMAC over the device ID and public key."
+        )
+    )
 
 
 class RenameDeviceRequest(ApiModel):

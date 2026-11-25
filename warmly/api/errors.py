@@ -13,6 +13,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException
 
+from warmly.auth.device import DeviceAuthorizationError
 from warmly.auth.keys import KeysUnavailableError
 from warmly.auth.verifier import AuthenticationError
 from warmly.schemas.problem import FieldError, Problem
@@ -28,7 +29,13 @@ INVALID_REQUEST_RESPONSES: dict[int | str, dict[str, Any]] = {
 
 # OpenAPI entries shared by every route that needs a signed-in caller.
 SIGNED_IN_RESPONSES: dict[int | str, dict[str, Any]] = INVALID_REQUEST_RESPONSES | {
-    401: {"model": Problem, "description": "Missing or unacceptable access token"},
+    401: {
+        "model": Problem,
+        "description": (
+            "Missing or unacceptable access token, or a request not signed "
+            "by one of the account's devices"
+        ),
+    },
     503: {"model": Problem, "description": "Sign-in cannot be checked right now"},
 }
 
@@ -194,6 +201,14 @@ async def handle_error(_request: object, exc: Exception) -> JSONResponse:
         return problem_response(
             Problem(title=exc.status.phrase, status=exc.status, code=exc.code)
         )
+    if isinstance(exc, DeviceAuthorizationError):
+        return problem_response(
+            Problem(
+                title=HTTPStatus.UNAUTHORIZED.phrase,
+                status=HTTPStatus.UNAUTHORIZED,
+                code=exc.code,
+            )
+        )
     if isinstance(exc, AuthenticationError):
         return problem_response(auth_problem(exc), _CHALLENGE)
     if isinstance(exc, KeysUnavailableError):
@@ -212,6 +227,7 @@ def install_error_handlers(app: FastAPI) -> None:
         app: The FastAPI application to configure.
     """
     app.add_exception_handler(ProblemError, handle_error)
+    app.add_exception_handler(DeviceAuthorizationError, handle_error)
     app.add_exception_handler(AuthenticationError, handle_error)
     app.add_exception_handler(KeysUnavailableError, handle_error)
     app.add_exception_handler(RequestValidationError, handle_error)

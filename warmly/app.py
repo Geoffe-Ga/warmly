@@ -1,6 +1,7 @@
 """Application factory for the Warmly API."""
 
-from collections.abc import AsyncIterator
+import time
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import Protocol
 
@@ -9,11 +10,13 @@ from fastapi import FastAPI
 from warmly import __version__
 from warmly.api import API_PREFIX, build_api_router
 from warmly.api.errors import install_error_handlers
-from warmly.api.ports import RecoveryStore
+from warmly.api.ports import DeviceStore, RecoveryStore
+from warmly.auth.device import DeviceVerifier
 from warmly.auth.keys import remote_key_source
 from warmly.auth.verifier import TokenVerifier
 from warmly.config import Settings, load_settings
 from warmly.db.database import Database
+from warmly.db.device_store import PostgresDeviceStore
 from warmly.db.recovery_store import OwnerTransactions, PostgresRecoveryStore
 from warmly.middleware.body_limit import BodyLimitMiddleware
 from warmly.middleware.request_log import RequestLogMiddleware
@@ -57,6 +60,8 @@ def create_app(
     database: DatabaseLike | None = None,
     token_verifier: TokenVerifier | None = None,
     recovery_store: RecoveryStore | None = None,
+    device_store: DeviceStore | None = None,
+    clock: Callable[[], float] = time.time,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -72,6 +77,9 @@ def create_app(
             settings. Tests pass one that trusts a locally generated key.
         recovery_store: Where recovery envelopes are kept, instead of the
             database table. Tests that run without a database pass a double.
+        device_store: Where devices and used nonces are kept, instead of the
+            database tables.
+        clock: Seconds since the epoch, for judging request timestamps.
 
     Returns:
         The configured application.
@@ -103,6 +111,8 @@ def create_app(
     )
     app.state.token_verifier = token_verifier
     app.state.recovery_store = recovery_store or PostgresRecoveryStore(database)
+    app.state.device_store = device_store or PostgresDeviceStore(database)
+    app.state.device_verifier = DeviceVerifier(app.state.device_store, clock=clock)
     install_error_handlers(app)
     app.include_router(build_api_router({"database": database.ping}))
     # Starlette runs the middleware added last first. Order, outermost first:

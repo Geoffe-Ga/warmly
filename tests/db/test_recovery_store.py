@@ -29,7 +29,10 @@ TABLE = "warmly_private.recovery_envelopes"
 def _request(expected: int, wrapped: str = WRAPPED_A) -> PutRecoveryEnvelopeRequest:
     """Build a write request."""
     return PutRecoveryEnvelopeRequest(
-        expected_version=expected, format_version=1, wrapped_key=wrapped
+        expected_version=expected,
+        format_version=1,
+        wrapped_key=wrapped,
+        device_enrollment_verifier="dmVyaWZpZXI=" if expected == 0 else None,
     )
 
 

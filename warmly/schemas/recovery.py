@@ -1,6 +1,8 @@
 """Recovery envelope models (PRD SEC-003)."""
 
-from pydantic import Field
+from typing import Self
+
+from pydantic import Field, model_validator
 
 from warmly.schemas.common import ApiModel, SmallCiphertext
 
@@ -29,3 +31,23 @@ class PutRecoveryEnvelopeRequest(ApiModel):
     )
     format_version: int = Field(ge=1, le=LATEST_RECOVERY_FORMAT)
     wrapped_key: SmallCiphertext
+    device_enrollment_verifier: SmallCiphertext | None = Field(
+        default=None,
+        description=(
+            "Required when creating the envelope (expected_version 0) and "
+            "refused otherwise. A value derived one-way from the root key, "
+            "which a new device must prove it knows before it can register."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _verifier_only_on_create(self) -> Self:
+        """Require the verifier exactly when the envelope is being created."""
+        creating = self.expected_version == 0
+        if creating != (self.device_enrollment_verifier is not None):
+            msg = (
+                "device_enrollment_verifier is required when expected_version "
+                "is 0 and must be absent otherwise"
+            )
+            raise ValueError(msg)
+        return self
