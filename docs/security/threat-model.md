@@ -28,7 +28,8 @@ encrypted on the user's device and the backend stores ciphertext only.
 
 | Threat (PRD SEC-001) | Control | Status |
 | --- | --- | --- |
-| Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003); storage planned: #25 |
+| Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003); sync planned: #32 |
+| Someone reading the browser's storage on a locked or stolen device | Records are stored only as envelopes; the database holds IDs, type numbers and revisions but no content, hash or index; decrypted records live in memory only while unlocked (ADR-0014) | **In place** |
 | Backend or operator curiosity | Same, plus logs that cannot contain request content | Logging: **in place** (this issue) |
 | Cross-account access | Owner taken only from a verified token ([authentication](authentication.md)); owner-only database policies (ADR-0002) | **In place**; per-route ownership checks arrive with each route, rate limits: #38 |
 | Stolen session token | The auth library keeps the session in `localStorage`; strict CSP limits what script could read it; the token decrypts nothing by itself. Every request behind the token is also signed by a device key that cannot be copied off the device, and a new device can register only by proving it holds the root key (ADR-0005) | **In place** |

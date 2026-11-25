@@ -3,12 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { lockNow } from "../../../src/app/SessionControls";
-import { createServices } from "../../../src/app/services";
 import { PROMPTS, type JournalEntry } from "../../../src/domain/journal/types";
-import { MemoryRecordStore } from "../../../src/storage/record-store";
-import { seedJournal } from "../../../src/testing/seed-journal";
-
-const SEED_JOURNAL = seedJournal();
+import { CANNOT_OPEN } from "../../../src/ui/screens/journal/shared";
 import {
   formatEntryDate,
   inTimelineOrder,
@@ -107,14 +103,59 @@ describe("the journal timeline (JR-001)", () => {
     ).toBe("/journal/new");
   });
 
-  it("says plainly that entries are not saved for good yet", async () => {
+  it("no longer warns that entries are not saved", async () => {
     await renderApp("/journal", await unlockedWith());
+    await screen.findByText("You haven't written anything yet.");
 
-    expect(
-      (await screen.findByText(/kept only until Warmly locks/)).getAttribute(
-        "role",
-      ),
-    ).toBe("status");
+    expect(screen.queryByText(/not saved/i)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("says so, and shows no entries, when what is saved cannot be opened (§13.6)", async () => {
+    const services = testServices("unlocked");
+    services.records.list = () => Promise.reject(new Error("synthetic"));
+
+    await renderApp("/journal", services);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(CANNOT_OPEN);
+    expect(alert.textContent).toContain("Nothing has been changed or deleted");
+    expect(screen.queryByText("You haven't written anything yet.")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Entries" })).toBeNull();
+  });
+
+  it.each([
+    [1, "1 entry saved on this device can't be read"],
+    [3, "3 entries saved on this device can't be read"],
+  ])(
+    "says how many entries it could not read, and still lists the rest (%i)",
+    async (count, text) => {
+      const services = await unlockedWith(entry(1, "2026-11-03"));
+      services.records.unreadable = () => Promise.resolve(count);
+
+      await renderApp("/journal", services);
+
+      expect(
+        (await screen.findByText(text, { exact: false })).closest(
+          "[role=status]",
+        ),
+      ).not.toBeNull();
+      expect(entryLinks()).toHaveLength(1);
+    },
+  );
+
+  it("says so on an entry's page when what is saved cannot be opened", async () => {
+    const services = testServices("unlocked");
+    services.records.get = () => Promise.reject(new Error("synthetic"));
+
+    await renderApp(
+      "/journal/entries/00000000-0000-4000-8000-0000000000a1",
+      services,
+    );
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      CANNOT_OPEN,
+    );
   });
 
   it("narrows the list as the search box is typed in, ignoring case, without changing the address", async () => {
@@ -354,11 +395,4 @@ describe("journal content and the lock (DEV-005)", () => {
       }
     },
   );
-
-  it("a development build starts with the synthetic examples only", async () => {
-    const records = createServices().records;
-
-    expect(records).toBeInstanceOf(MemoryRecordStore);
-    expect(await records.list("journal-entry")).toEqual([...SEED_JOURNAL]);
-  });
 });

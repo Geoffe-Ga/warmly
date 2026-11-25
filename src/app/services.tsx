@@ -40,12 +40,14 @@ import {
   UnavailableDeviceDirectory,
   type DeviceDirectory,
 } from "../devices/this-device";
-import { MemoryRecordStore, type RecordStore } from "../storage/record-store";
+import type { RootKey } from "../crypto/root-key";
+import { recordsDatabaseName } from "../storage/db";
+import { EncryptedRecordStore } from "../storage/encrypted-record-store";
+import type { RecordStore } from "../storage/record-store";
 import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeDeviceRegistry } from "../testing/fake-device-registry";
 import { FakePairingRelay } from "../testing/fake-pairing-relay";
 import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
-import { seedJournal } from "../testing/seed-journal";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
@@ -135,6 +137,8 @@ export interface KeyServices {
  * @param doubles - The in-memory stores. Production builds pass nothing.
  * @param onDeviceRevoked - Called when the server refuses this device as
  *   revoked, or when the device revokes itself.
+ * @param onUnlock - Called each time the vault is unlocked, with the root
+ *   key and the account it belongs to. It must not throw.
  * @returns The key vault and the device directory.
  */
 export function createKeyServices(
@@ -142,9 +146,10 @@ export function createKeyServices(
   auth: AuthClient,
   doubles?: KeyServiceDoubles,
   onDeviceRevoked: () => void = () => undefined,
+  onUnlock: OnUnlock = () => undefined,
 ): KeyServices {
   if (doubles !== undefined) {
-    return assemble(auth, doubles, onDeviceRevoked);
+    return assemble(auth, doubles, onDeviceRevoked, onUnlock);
   }
   const apiOrigin = env["VITE_API_ORIGIN"];
   // Both must be configured. Without the API's origin the vault would send
@@ -179,8 +184,12 @@ export function createKeyServices(
       relay: new ApiPairingRelay(api),
     },
     onDeviceRevoked,
+    onUnlock,
   );
 }
+
+/** Told each time the vault is unlocked. */
+export type OnUnlock = (root: RootKey, owner: string) => void;
 
 /**
  * Join the vault, the device directory and pairing: each unlock registers
@@ -191,12 +200,14 @@ function assemble(
   auth: AuthClient,
   parts: KeyServiceDoubles,
   onDeviceRevoked: () => void,
+  onUnlock: OnUnlock,
 ): KeyServices {
   const vault: AccountVault = new AccountVault(
     auth,
     parts.envelopes,
     parts.device,
-    (root) => {
+    (root, owner) => {
+      onUnlock(root, owner);
       devices.registerInBackground(root);
     },
   );
@@ -249,6 +260,16 @@ export function tabIdentityDatabase(): string {
   return `warmly-identity-${tabId()}`;
 }
 
+/**
+ * The prefix of the records database for this tab; see
+ * {@link tabDeviceDatabase}.
+ *
+ * @returns The prefix.
+ */
+export function tabRecordsPrefix(): string {
+  return `warmly-${tabId()}`;
+}
+
 function tabId(): string {
   let tab = sessionStorage.getItem(TAB_ID_KEY);
   if (tab === null) {
@@ -269,6 +290,11 @@ function tabId(): string {
  */
 export function createServices(): Services {
   const revocation = createRevocationSignal();
+  const records = new EncryptedRecordStore((owner) =>
+    import.meta.env.MODE !== "production"
+      ? recordsDatabaseName(owner, tabRecordsPrefix())
+      : recordsDatabaseName(owner),
+  );
   const auth = createAuthClient(
     import.meta.env,
     import.meta.env.MODE !== "production"
@@ -294,12 +320,12 @@ export function createServices(): Services {
           }
         : undefined,
       revocation.report,
+      (root, owner) => {
+        records.unlock(root, owner);
+      },
     ),
     revocation,
-    // The example entries exist only outside production builds.
-    records: new MemoryRecordStore(
-      import.meta.env.MODE !== "production" ? seedJournal() : [],
-    ),
+    records,
     session: createSession(),
     onboarding: createOnboarding(),
     lockHooks: createLockHooks(),

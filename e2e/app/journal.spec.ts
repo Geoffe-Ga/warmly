@@ -1,9 +1,9 @@
 /**
  * The journal flow in the browser (PRD JR-001; AC-23).
  *
- * The `e2e` build's journal is held in memory and starts with two synthetic
- * example entries. Nothing here is saved for good yet, and nothing calls AI:
- * the fixture fails any test that contacts another host.
+ * Entries are encrypted and kept in IndexedDB (PRD SYNC-001), so they come
+ * back after a lock and after a reload. Nothing calls AI: the fixture fails
+ * any test that contacts another host.
  */
 import AxeBuilder from "@axe-core/playwright";
 
@@ -36,7 +36,10 @@ test.describe("the journal", () => {
 
     await page.getByRole("link", { name: "Journal", exact: true }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Journal");
-    await expect(entries(page)).toHaveCount(2);
+    await expect(
+      page.getByText("You haven't written anything yet."),
+    ).toBeVisible();
+    await expect(page.getByText(/not saved/i)).toHaveCount(0);
     await expectNoViolations(page);
 
     await page.getByRole("link", { name: "Write a new entry" }).click();
@@ -69,7 +72,9 @@ test.describe("the journal", () => {
 
     // Back in the timeline it is listed first, and search finds it.
     await page.getByRole("link", { name: "Back to your journal" }).click();
-    await expect(entries(page)).toHaveCount(3);
+    await expect(entries(page)).toHaveCount(1);
+    await page.getByLabel("Search your journal").fill("no such words");
+    await expect(page.getByText("No entry mentions that.")).toBeVisible();
     await page.getByLabel("Search your journal").fill("SYNTHETIC ANSWER 2");
     await expect(entries(page)).toHaveCount(1);
     await expect(page).toHaveURL(/\/journal$/);
@@ -83,33 +88,83 @@ test.describe("the journal", () => {
     ).toBeVisible();
   });
 
-  test("what was written is gone after a lock, and never touched web storage", async ({
+  test("an entry comes back after a lock and after a reload, and is stored only as ciphertext", async ({
     page,
   }) => {
     await onboard(page);
     await page.getByRole("link", { name: "Journal", exact: true }).click();
     await page.getByRole("link", { name: "Write a new entry" }).click();
-    await page.getByLabel(PROMPTS[0] ?? "").fill("Synthetic private sentence");
+    for (const prompt of PROMPTS) {
+      await page.getByLabel(prompt).fill("CANARY synthetic private sentence");
+    }
     await page.getByRole("button", { name: "Save entry" }).click();
-    await expect(page.getByText("Synthetic private sentence")).toBeVisible();
+    await expect(page.getByText("CANARY").first()).toBeVisible();
 
-    const stored = await page.evaluate(() =>
-      JSON.stringify([{ ...localStorage }, { ...sessionStorage }]),
-    );
-    expect(stored).not.toContain("Synthetic private sentence");
+    // Nothing the browser stores holds the words that were typed.
+    const stored = await page.evaluate(async () => {
+      const text = (bytes: ArrayBufferView): string =>
+        new TextDecoder("latin1").decode(bytes);
+      const dump: unknown[] = [{ ...localStorage }, { ...sessionStorage }];
+      let rows = 0;
+      for (const { name } of await indexedDB.databases()) {
+        const database = await new Promise<IDBDatabase>((resolve, reject) => {
+          const opening = indexedDB.open(name ?? "");
+          opening.onsuccess = () => {
+            resolve(opening.result);
+          };
+          opening.onerror = () => {
+            reject(new Error("could not open a database"));
+          };
+        });
+        for (const store of [...database.objectStoreNames]) {
+          const found = await new Promise<unknown[]>((resolve, reject) => {
+            const reading = database
+              .transaction(store)
+              .objectStore(store)
+              .getAll();
+            reading.onsuccess = () => {
+              resolve(reading.result);
+            };
+            reading.onerror = () => {
+              reject(new Error("could not read a store"));
+            };
+          });
+          rows += name?.includes("-records-") === true ? found.length : 0;
+          dump.push(name, store, found);
+        }
+        database.close();
+      }
+      return {
+        rows,
+        text: JSON.stringify(dump, (_key, value: unknown) =>
+          ArrayBuffer.isView(value) ? text(value) : value,
+        ),
+      };
+    });
+    // One record and one queued operation.
+    expect(stored.rows).toBe(2);
+    expect(stored.text).not.toContain("CANARY");
+    expect(stored.text).not.toContain("synthetic private sentence");
 
     await page.getByRole("button", { name: "Lock" }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Warmly is locked",
     );
-    await expect(page.getByText("Synthetic private sentence")).toHaveCount(0);
+    await expect(page.getByText("CANARY")).toHaveCount(0);
     await unlockThisDevice(page);
     await page.getByRole("link", { name: "Journal", exact: true }).click();
+    await expect(entries(page)).toHaveCount(1);
 
-    await expect(entries(page)).toHaveCount(2);
-    await expect(
-      page.getByText("Entries are kept only until Warmly locks"),
-    ).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Warmly is locked",
+    );
+    await unlockThisDevice(page);
+    await page.getByRole("link", { name: "Journal", exact: true }).click();
+    await expect(entries(page)).toHaveCount(1);
+    await entries(page).first().click();
+    await expect(page.getByText("CANARY").first()).toBeVisible();
+    await expectNoViolations(page);
   });
 
   test("an entry that is not on this device says so", async ({ page }) => {

@@ -7,8 +7,10 @@ import {
   createServices,
   tabDeviceDatabase,
   tabIdentityDatabase,
+  tabRecordsPrefix,
   type KeyServiceDoubles,
 } from "../../../src/app/services";
+import { dropSecrets } from "../../../src/app/SessionControls";
 import {
   AuthError,
   UnavailableAuthClient,
@@ -18,6 +20,11 @@ import { AccountVault } from "../../../src/crypto/account-vault";
 import { IndexedDbDeviceKeyStore } from "../../../src/crypto/device-key-store";
 import { UnavailableKeyVault, VaultError } from "../../../src/crypto/key-vault";
 import { IndexedDbDeviceIdentityStore } from "../../../src/devices/identity";
+import { newEntry } from "../../../src/domain/journal/types";
+import {
+  EncryptedRecordStore,
+  StoreLockedError,
+} from "../../../src/storage/encrypted-record-store";
 import {
   AccountPairing,
   PairingError,
@@ -605,6 +612,57 @@ describe("createKeyServices", () => {
     await services.devices.revoke(mine?.id ?? "", PHRASE);
 
     expect(reports).toBe(1);
+  });
+
+  it("tells the caller each time the vault is unlocked, with the key and its owner", async () => {
+    const auth = new FakeAuthClient();
+    await auth.register("sam@example.com", PHRASE);
+    await auth.completeVerification();
+    const owner = (await auth.currentSession())?.userId;
+    const unlocks: [unknown, string][] = [];
+    const services = createKeyServices(
+      {},
+      auth,
+      doubles(),
+      undefined,
+      (root, userId) => {
+        unlocks.push([root, userId]);
+      },
+    );
+
+    const key = await services.vault.createAccountKeys();
+    expect(unlocks).toEqual([]);
+    await services.vault.confirmRecoveryKey();
+    services.vault.lock();
+    await services.vault.unlockWithRecoveryKey(key);
+
+    expect(unlocks.map(([, userId]) => userId)).toEqual([owner, owner]);
+    expect(unlocks[1]?.[0]).toBeDefined();
+    expect(unlocks[1]?.[0]).not.toBe(unlocks[0]?.[0]);
+  });
+
+  it("the app's record store opens with the vault and closes with dropSecrets", async () => {
+    const services = createServices();
+    expect(services.records).toBeInstanceOf(EncryptedRecordStore);
+    await services.auth.register("sam@example.com", PHRASE);
+    await (services.auth as FakeAuthClient).completeVerification();
+    const written = await newEntry({ good: "a", improve: "b", loved: "c" });
+    await expect(
+      services.records.put("journal-entry", written),
+    ).rejects.toThrow(StoreLockedError);
+
+    const key = await services.vault.createAccountKeys();
+    await services.vault.confirmRecoveryKey();
+    await services.records.put("journal-entry", written);
+    expect(await services.records.list("journal-entry")).toEqual([written]);
+
+    dropSecrets(services);
+    expect(await services.records.list("journal-entry")).toEqual([]);
+
+    await services.vault.unlockWithRecoveryKey(key);
+    expect(await services.records.list("journal-entry")).toEqual([written]);
+    expect(tabRecordsPrefix()).toMatch(/^warmly-[0-9a-f-]{36}$/);
+    dropSecrets(services);
   });
 
   it("is unavailable in a production build with no backend configured", () => {

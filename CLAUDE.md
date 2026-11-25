@@ -15,8 +15,8 @@ envelopes and device identities, and serves the remaining routes as typed
 stubs. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
 servers outside production) and a journal that can be written, listed, read
-and searched but is held in memory only; other routes render accessible
-placeholders.
+and searched, stored encrypted in IndexedDB with an outbox that nothing
+sends yet; other routes render accessible placeholders.
 
 ---
 
@@ -76,7 +76,8 @@ openapi/                 Committed API contract; src/api/schema.d.ts is generate
                          (regenerate both with ./scripts/contract.sh, never by hand)
 src/                     TypeScript PWA: app/ (route table, router, shell), ui/ (screens,
                          components), domain/ (record types and rules), storage/
-                         (RecordStore), main.tsx (bootstrap + SW registration)
+                         (RecordStore, IndexedDB schema, outbox), main.tsx
+                         (bootstrap + SW registration)
 docs/adr/                Architecture Decision Records
 docs/security/           Threat model and security notes
 config/                  Build-time config shared with tests (security headers, CSP)
@@ -195,6 +196,12 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   never keeps its own copy beyond what it is showing, and never puts record
   text in a path, a query string or `localStorage`. The store's `lock()` is
   called by `dropSecrets`, so nothing decrypted outlives the keys.
+- IndexedDB holds records only as envelopes, through `EncryptedRecordStore`
+  (ADR-0014). Never store record content, a content hash, a search index or
+  a decrypted cache. Every change writes the record and its outbox operation
+  in one transaction. A schema change is a new step in `MIGRATIONS`
+  (`src/storage/db.ts`) and a new dump under `tests/fixtures/idb/`; never
+  edit a released step or an existing dump. Never write over a tombstone.
 - External services (auth, key vault, device directory) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.
