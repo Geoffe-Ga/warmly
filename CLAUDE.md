@@ -15,8 +15,9 @@ envelopes and device identities, and serves the remaining routes as typed
 stubs. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
 servers outside production) and a journal that can be written, listed, read
-and searched, stored encrypted in IndexedDB with an outbox that nothing
-sends yet; other routes render accessible placeholders.
+and searched, with drafts saved as they are typed, stored encrypted in
+IndexedDB with an outbox that nothing sends yet; other routes render
+accessible placeholders.
 
 ---
 
@@ -202,14 +203,23 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   in one transaction. A schema change is a new step in `MIGRATIONS`
   (`src/storage/db.ts`) and a new dump under `tests/fixtures/idb/`; never
   edit a released step or an existing dump. Never write over a tombstone.
+  A `put` based on an out-of-date copy is refused (`StaleRecordError`):
+  never catch it and write again without reading the newer record.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only
   from what the person ticks (`feelings.ts`); never infer one from text.
+- A draft is a journal entry with `status: "draft"`
+  (`src/domain/journal/drafts.ts`). The compose form saves through
+  `useDraft`, which registers its flush with `services.lockHooks` and also
+  flushes when the page is hidden or closed. Only the person finishing the
+  entry makes it complete. Autosave never calls AI or the network.
 - `contentHash` (`src/domain/journal/content-hash.ts`) covers the three
   answers only, never feelings (D-24). Changing its canonical form means a
   new `CONTENT_HASH_VERSION` and a new file beside
-  `tests/fixtures/journal/content-hash-v1.json`; never edit that file.
+  `tests/fixtures/journal/content-hash-v1.json`; never edit that file. The
+  hash is private: it stays inside the encrypted record and never becomes
+  sync metadata.
 - External services (auth, key vault, device directory) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.

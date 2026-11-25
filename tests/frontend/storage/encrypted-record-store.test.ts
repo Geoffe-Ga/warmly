@@ -12,6 +12,7 @@ import {
 import {
   EncryptedRecordStore,
   RecordDeletedError,
+  StaleRecordError,
   StoreLockedError,
 } from "../../../src/storage/encrypted-record-store";
 import type { OutboxOperation } from "../../../src/storage/outbox";
@@ -371,6 +372,53 @@ describe("the encrypted record store", () => {
     expect(await readRows(name, OUTBOX)).toHaveLength(1);
   });
 
+  it("refuses a write based on a copy another tab has since changed, and keeps the newer record (invariant 5)", async () => {
+    const { store: first, names, name, root } = await unlockedStore();
+    const written = await entry("Synthetic original");
+    await first.put("journal-entry", written);
+    const second = new EncryptedRecordStore(names);
+    second.unlock(root, OWNER);
+    await second.list("journal-entry");
+    const newer = { ...written, status: "draft" as const };
+    await first.put("journal-entry", newer);
+    const told = vi.fn();
+    second.subscribe(told);
+
+    await expect(
+      second.put("journal-entry", { ...written, feelings: ["sad"] }),
+    ).rejects.toThrow(StaleRecordError);
+
+    expect(told).not.toHaveBeenCalled();
+    expect(await readRows<StoredRecord>(name, RECORDS)).toMatchObject([
+      { id: written.id, localRevision: 2 },
+    ]);
+    expect(await readRows(name, OUTBOX)).toHaveLength(2);
+    // After unlocking again the second tab sees the newer record and can
+    // change it.
+    second.lock();
+    second.unlock(root, OWNER);
+    expect(await second.get("journal-entry", written.id)).toEqual(newer);
+    await second.put("journal-entry", { ...newer, feelings: ["sad"] });
+    expect(await readRows<StoredRecord>(name, RECORDS)).toMatchObject([
+      { localRevision: 3 },
+    ]);
+  });
+
+  it("refuses to create a record another tab already created with the same ID", async () => {
+    const { store: first, names, name, root } = await unlockedStore();
+    const second = new EncryptedRecordStore(names);
+    second.unlock(root, OWNER);
+    await second.list("journal-entry");
+    const written = await entry();
+    await first.put("journal-entry", written);
+
+    await expect(second.put("journal-entry", written)).rejects.toThrow(
+      StaleRecordError,
+    );
+
+    expect(await readRows(name, OUTBOX)).toHaveLength(1);
+  });
+
   it("keeps each account's records in its own database", async () => {
     const { store, names, root } = await unlockedStore();
     await store.put("journal-entry", await entry());
@@ -449,6 +497,25 @@ describe("records the store cannot read are left alone and counted (§13.6)", ()
     expect(await reloaded.list("journal-entry")).toEqual([good]);
     expect(await reloaded.unreadable("journal-entry")).toBe(4);
     expect(await readRows(name, RECORDS)).toHaveLength(6);
+  });
+
+  it("is never written over: a put with the same ID is refused and the row stays as it was", async () => {
+    const { store, names, name } = await unlockedStore();
+    const written = await entry();
+    await store.put("journal-entry", written);
+    store.lock();
+    const before = await readRows(name, RECORDS);
+    const other = new EncryptedRecordStore(names);
+    other.unlock(await rootKey(1), OWNER);
+    expect(await other.unreadable("journal-entry")).toBe(1);
+
+    await expect(other.put("journal-entry", written)).rejects.toThrow(
+      StaleRecordError,
+    );
+
+    expect(await other.unreadable("journal-entry")).toBe(1);
+    expect(await readRows(name, RECORDS)).toEqual(before);
+    expect(await readRows(name, OUTBOX)).toHaveLength(1);
   });
 
   it("stops counting one once it is deleted", async () => {

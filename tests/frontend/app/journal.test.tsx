@@ -1,16 +1,26 @@
-import { cleanup, screen, waitFor, within } from "@testing-library/preact";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { lockNow } from "../../../src/app/SessionControls";
+import { endRevokedDevice, lockNow } from "../../../src/app/SessionControls";
+import { AUTOSAVE_DELAY_MS } from "../../../src/domain/journal/drafts";
 import { FEELINGS } from "../../../src/domain/journal/feelings";
 import { PROMPTS, type JournalEntry } from "../../../src/domain/journal/types";
 import { ANSWER_NEEDED } from "../../../src/domain/journal/validation";
+import {
+  DRAFT_NOT_SAVED,
+  DRAFT_SAVED,
+} from "../../../src/ui/screens/journal/Compose";
 import { CANNOT_OPEN } from "../../../src/ui/screens/journal/shared";
 import {
   formatEntryDate,
   inTimelineOrder,
-  saveNewEntry,
 } from "../../../src/ui/screens/journal/shared";
 
 import { heading, renderApp, testServices, type TestServices } from "./helpers";
@@ -53,6 +63,18 @@ async function unlockedWith(...entries: JournalEntry[]): Promise<TestServices> {
   return services;
 }
 
+/** Open the compose screen and wait until its form is ready. */
+async function openCompose(
+  services?: TestServices | Promise<TestServices>,
+): Promise<TestServices> {
+  const opened = await renderApp(
+    "/journal/new",
+    (await services) ?? (await unlockedWith()),
+  );
+  await screen.findByRole("button", { name: "Save entry" });
+  return opened;
+}
+
 function entryLinks(): string[] {
   return within(screen.getByRole("navigation", { name: "Entries" }))
     .getAllByRole("link")
@@ -60,7 +82,7 @@ function entryLinks(): string[] {
 }
 
 describe("the journal timeline (JR-001)", () => {
-  it("lists entries newest first by their date, marking drafts", async () => {
+  it("lists completed entries newest first by their date, and shows the draft apart from them (JR-004)", async () => {
     await renderApp(
       "/journal",
       await unlockedWith(
@@ -74,10 +96,20 @@ describe("the journal timeline (JR-001)", () => {
 
     expect(heading().textContent).toBe("Journal");
     expect(entryLinks()).toEqual([
-      `${formatEntryDate({ date: "2026-11-10", timeZone: "UTC" })} (draft)`,
       formatEntryDate({ date: "2026-11-03", timeZone: "UTC" }),
       formatEntryDate({ date: "2026-10-01", timeZone: "UTC" }),
     ]);
+    const draft = within(
+      screen.getByRole("navigation", { name: "Draft" }),
+    ).getByRole("link");
+    expect(draft.textContent).toBe(
+      `Carry on with your draft from ${formatEntryDate({ date: "2026-11-10", timeZone: "UTC" })}`,
+    );
+    expect(draft.getAttribute("href")).toBe("/journal/new");
+    // With a draft under way there is one way in to writing, not two.
+    expect(
+      screen.queryByRole("link", { name: "Write a new entry" }),
+    ).toBeNull();
   });
 
   it("links each entry by its opaque ID, never by its text", async () => {
@@ -103,6 +135,19 @@ describe("the journal timeline (JR-001)", () => {
         .getByRole("link", { name: "Write a new entry" })
         .getAttribute("href"),
     ).toBe("/journal/new");
+  });
+
+  it("with only a draft, says no entry is finished yet rather than that nothing was written", async () => {
+    await renderApp(
+      "/journal",
+      await unlockedWith(entry(2, "2026-11-10", { status: "draft" })),
+    );
+
+    expect(
+      await screen.findByText("You haven't finished an entry yet."),
+    ).toBeTruthy();
+    expect(screen.queryByText("You haven't written anything yet.")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "Entries" })).toBeNull();
   });
 
   it("no longer warns that entries are not saved", async () => {
@@ -214,7 +259,7 @@ describe("the journal timeline (JR-001)", () => {
 
 describe("writing an entry (JR-001)", () => {
   it("shows the three prompts in PRD order, each with its own text box", async () => {
-    await renderApp("/journal/new", await unlockedWith());
+    await openCompose();
 
     const boxes = screen.getAllByRole("textbox");
 
@@ -228,7 +273,7 @@ describe("writing an entry (JR-001)", () => {
   });
 
   it("has no skip control, and says before the questions that an honest 'nothing' is a real answer (JR-002)", async () => {
-    await renderApp("/journal/new", await unlockedWith());
+    await openCompose();
 
     expect(screen.queryByRole("button", { name: /skip/i })).toBeNull();
     expect(screen.queryByRole("link", { name: /skip/i })).toBeNull();
@@ -251,7 +296,7 @@ describe("writing an entry (JR-001)", () => {
   });
 
   it("saves what was typed and opens the new entry", async () => {
-    const services = await renderApp("/journal/new", await unlockedWith());
+    const services = await openCompose();
 
     for (const [index, prompt] of PROMPTS.entries()) {
       await userEvent.type(
@@ -281,7 +326,7 @@ describe("writing an entry (JR-001)", () => {
   });
 
   it("saves nothing while an answer is blank or only spaces, and says so on each such field (AC-02)", async () => {
-    const services = await renderApp("/journal/new", await unlockedWith());
+    const services = await openCompose();
     const [good, improve, loved] = PROMPTS.map((prompt) =>
       screen.getByLabelText(prompt.label),
     );
@@ -312,7 +357,7 @@ describe("writing an entry (JR-001)", () => {
   });
 
   it("drops a field's message as soon as it has text, and then saves", async () => {
-    const services = await renderApp("/journal/new", await unlockedWith());
+    const services = await openCompose();
     const [good, improve, loved] = PROMPTS.map((prompt) =>
       screen.getByLabelText(prompt.label),
     );
@@ -343,7 +388,7 @@ describe("writing an entry (JR-001)", () => {
   });
 
   it("offers the feelings check-in as optional checkboxes, none chosen (JR-003)", async () => {
-    await renderApp("/journal/new", await unlockedWith());
+    await openCompose();
 
     const group = screen.getByRole("group", {
       name: "How are you feeling? (optional)",
@@ -357,7 +402,7 @@ describe("writing an entry (JR-001)", () => {
   });
 
   it("stores the feelings that were chosen, and never guesses any from the text", async () => {
-    const services = await renderApp("/journal/new", await unlockedWith());
+    const services = await openCompose();
     for (const prompt of PROMPTS) {
       await userEvent.type(
         screen.getByLabelText(prompt.label),
@@ -383,6 +428,465 @@ describe("writing an entry (JR-001)", () => {
       })
     ).closest("section");
     expect(noted?.textContent).toContain("calm, hopeful");
+  });
+});
+
+describe("drafts (JR-004)", () => {
+  const first = (): HTMLElement =>
+    screen.getByLabelText(PROMPTS[0]?.label ?? "");
+
+  /** Make the page look hidden, as when the tab is switched away from. */
+  function hidePage(): void {
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+  }
+
+  async function drafts(services: TestServices): Promise<JournalEntry[]> {
+    return (await services.records.list("journal-entry")).filter(
+      (each) => each.status === "draft",
+    );
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("saves what is typed as a draft a moment after typing stops, and says so", async () => {
+    const services = await openCompose();
+    expect(screen.getByRole("status").textContent).toBe("");
+
+    await userEvent.type(first(), "half a thought");
+    expect(await drafts(services)).toEqual([]);
+
+    await waitFor(
+      () => {
+        expect(screen.getByRole("status").textContent).toBe(DRAFT_SAVED);
+      },
+      { timeout: 3000 },
+    );
+    const [draft] = await drafts(services);
+    expect(draft?.responses.good).toBe("half a thought");
+    expect(draft?.status).toBe("draft");
+    expect(DRAFT_SAVED).toBe("Saved on this device");
+  });
+
+  it("saves at once when the page is hidden", async () => {
+    const services = await openCompose();
+    await userEvent.type(first(), "before switching away");
+
+    hidePage();
+
+    await waitFor(async () => {
+      expect((await drafts(services))[0]?.responses.good).toBe(
+        "before switching away",
+      );
+    });
+  });
+
+  it("does not save just because the page became visible again", async () => {
+    const services = await openCompose();
+    await userEvent.type(first(), "x");
+
+    document.dispatchEvent(new Event("visibilitychange"));
+    await Promise.resolve();
+
+    expect(await drafts(services)).toEqual([]);
+  });
+
+  it("saves at once when the page is being closed", async () => {
+    const services = await openCompose();
+    await userEvent.type(first(), "before closing");
+
+    window.dispatchEvent(new Event("pagehide"));
+
+    await waitFor(async () => {
+      expect((await drafts(services))[0]?.responses.good).toBe(
+        "before closing",
+      );
+    });
+  });
+
+  it("saves when the screen is left for another", async () => {
+    const services = await openCompose();
+    await userEvent.type(first(), "before leaving");
+
+    await userEvent.click(
+      screen.getByRole("link", { name: "Back to your journal" }),
+    );
+
+    expect(
+      (
+        await within(
+          await screen.findByRole("navigation", { name: "Draft" }),
+        ).findByRole("link")
+      ).textContent,
+    ).toContain("Carry on with your draft");
+    expect((await drafts(services))[0]?.responses.good).toBe("before leaving");
+  });
+
+  it("makes no draft from a blank form, and never says it saved one", async () => {
+    const services = await openCompose();
+    await userEvent.type(first(), "  ");
+
+    hidePage();
+    await waitFor(() => {
+      expect(screen.queryByText("Saving…")).toBeNull();
+    });
+
+    expect(await services.records.list("journal-entry")).toEqual([]);
+    expect(screen.getByRole("status").textContent).toBe("");
+    expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
+  });
+
+  it("flushes the draft before the session drops its keys (AC-21, DEV-005)", async () => {
+    const services = await openCompose();
+    const order: string[] = [];
+    const put = services.records.put.bind(services.records);
+    services.records.put = (kind, record) => {
+      order.push(`put ${record.status}: ${record.responses.good}`);
+      return put(kind, record);
+    };
+    const lock = services.vault.lock.bind(services.vault);
+    services.vault.lock = () => {
+      order.push("keys dropped");
+      lock();
+    };
+    await userEvent.type(first(), "half a thought");
+
+    await lockNow(services, () => undefined);
+
+    expect(order).toEqual(["put draft: half a thought", "keys dropped"]);
+    expect(services.session.state).toBe("signed_in_locked");
+  });
+
+  it("picks the stored draft up when the screen opens, with its feelings", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+      feelings: ["tired"],
+    });
+    const services = await openCompose(
+      unlockedWith(entry(1, "2026-11-03"), stored),
+    );
+
+    expect(first()).toHaveProperty("value", "half a thought");
+    expect(screen.getByLabelText("tired")).toHaveProperty("checked", true);
+    expect(
+      screen.getByText(/carrying on with the draft/).textContent,
+    ).toContain(formatEntryDate(stored.entryDate));
+    expect(screen.getByRole("button", { name: "Discard draft" })).toBeTruthy();
+
+    await userEvent.type(first(), " and more");
+    hidePage();
+
+    await waitFor(async () => {
+      expect((await drafts(services))[0]?.responses.good).toBe(
+        "half a thought and more",
+      );
+    });
+    // The same entry was updated: no second draft, and its day is kept.
+    const [draft, ...others] = await drafts(services);
+    expect(others).toEqual([]);
+    expect(draft?.id).toBe(stored.id);
+    expect(draft?.createdAt).toBe(stored.createdAt);
+    expect(draft?.entryDate).toEqual(stored.entryDate);
+    expect(draft?.feelings).toEqual(["tired"]);
+  });
+
+  it("finishing turns the draft into the completed entry: same ID, no draft left", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "One", improve: "Two", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+
+    await userEvent.type(
+      screen.getByLabelText(PROMPTS[2]?.label ?? ""),
+      "Three",
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(`/journal/entries/${stored.id}`);
+    });
+    expect(await services.records.list("journal-entry")).toMatchObject([
+      {
+        id: stored.id,
+        status: "complete",
+        createdAt: stored.createdAt,
+        responses: { good: "One", improve: "Two", loved: "Three" },
+      },
+    ]);
+  });
+
+  it("an unfinished draft cannot be finished, and stays a draft", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "One", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+
+    await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
+
+    await waitFor(() => {
+      expect(screen.getAllByText(ANSWER_NEEDED)).toHaveLength(2);
+    });
+    expect((await drafts(services)).map((each) => each.id)).toEqual([
+      stored.id,
+    ]);
+  });
+
+  it("discards the draft only after confirmation, then starts empty", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard draft" }),
+    );
+    const dialog = screen.getByRole("alertdialog", {
+      name: "Discard this draft?",
+    });
+    expect(dialog.textContent).toContain("deleted for good");
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "Keep writing" }),
+    );
+    expect(await drafts(services)).toHaveLength(1);
+    expect(first()).toHaveProperty("value", "half a thought");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard draft" }),
+    );
+    await userEvent.click(
+      within(
+        screen.getByRole("alertdialog", { name: "Discard this draft?" }),
+      ).getByRole("button", { name: "Discard draft" }),
+    );
+
+    await waitFor(() => {
+      expect(first()).toHaveProperty("value", "");
+    });
+    expect(await services.records.list("journal-entry")).toEqual([]);
+    expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
+    expect(screen.queryByText(/carrying on with the draft/)).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("");
+  });
+
+  it("does not bring back text that was typed just before discarding", async () => {
+    const services = await openCompose();
+    await userEvent.type(first(), "soon gone");
+    hidePage();
+    await screen.findByRole("button", { name: "Discard draft" });
+    await userEvent.type(first(), " and this");
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard draft" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Discard draft",
+      }),
+    );
+    await waitFor(() => {
+      expect(first()).toHaveProperty("value", "");
+    });
+    await new Promise((resolve) =>
+      setTimeout(resolve, AUTOSAVE_DELAY_MS + 200),
+    );
+
+    expect(await services.records.list("journal-entry")).toEqual([]);
+  });
+
+  it("says so, in words that say what to do, when the draft cannot be saved", async () => {
+    const services = await openCompose();
+    services.records.put = () => Promise.reject(new Error("synthetic"));
+    await userEvent.type(first(), "x");
+
+    hidePage();
+
+    await waitFor(() => {
+      expect(screen.getByRole("status").textContent).toBe(DRAFT_NOT_SAVED);
+    });
+    expect(DRAFT_NOT_SAVED).toContain("Keep this page open");
+    expect(first()).toHaveProperty("value", "x");
+  });
+
+  it("shows that it is saving without reading that out", async () => {
+    await openCompose();
+
+    await userEvent.type(first(), "x");
+
+    const saving = screen.getByText("Saving…");
+    expect(saving.getAttribute("aria-hidden")).toBe("true");
+    expect(saving.closest('[role="status"]')).toBeNull();
+  });
+
+  it("says so when the journal cannot be opened, and shows no form", async () => {
+    const services = testServices("unlocked");
+    services.records.list = () => Promise.reject(new Error("synthetic"));
+
+    await renderApp("/journal/new", services);
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      CANNOT_OPEN,
+    );
+    expect(screen.queryByRole("button", { name: "Save entry" })).toBeNull();
+  });
+
+  it("an entry being finished when the app locks is not stored as complete; the draft stays", async () => {
+    const services = await openCompose();
+    for (const prompt of PROMPTS) {
+      await userEvent.type(screen.getByLabelText(prompt.label), "Private");
+    }
+    hidePage();
+    await waitFor(async () => {
+      expect(await drafts(services)).toHaveLength(1);
+    });
+    const puts: string[] = [];
+    const put = services.records.put.bind(services.records);
+    services.records.put = (kind, record) => {
+      puts.push(record.status);
+      return put(kind, record);
+    };
+    // Hold the hashing of the finished entry until the app has locked.
+    let release: () => void = () => undefined;
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    const hashing = vi
+      .spyOn(crypto.subtle, "digest")
+      .mockImplementation(async (algorithm, data) => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return digest(algorithm, data);
+      });
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Save entry" }).closest("form") ??
+        document.body,
+    );
+    await waitFor(() => {
+      expect(hashing).toHaveBeenCalled();
+    });
+    await lockNow(services, () => undefined);
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(puts).toEqual([]);
+    expect(services.session.state).toBe("signed_in_locked");
+  });
+
+  it("text typed while the entry is being finished never becomes a second draft", async () => {
+    const services = await openCompose();
+    for (const prompt of PROMPTS) {
+      await userEvent.type(screen.getByLabelText(prompt.label), "Answer");
+    }
+    hidePage();
+    await waitFor(async () => {
+      expect(await drafts(services)).toHaveLength(1);
+    });
+    // Hold the hashing of the finished entry, so typing lands in the middle.
+    let release: () => void = () => undefined;
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    const hashing = vi
+      .spyOn(crypto.subtle, "digest")
+      .mockImplementation(async (algorithm, data) => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return digest(algorithm, data);
+      });
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Save entry" }).closest("form") ??
+        document.body,
+    );
+    await waitFor(() => {
+      expect(hashing).toHaveBeenCalled();
+    });
+    fireEvent.input(first(), { target: { value: "Answer and a late word" } });
+    release();
+    await waitFor(() => {
+      expect(window.location.pathname).toMatch(/^\/journal\/entries\//);
+    });
+    vi.restoreAllMocks();
+    await new Promise((resolve) =>
+      setTimeout(resolve, AUTOSAVE_DELAY_MS + 200),
+    );
+
+    const stored = await services.records.list("journal-entry");
+    expect(stored.map((each) => each.status)).toEqual(["complete"]);
+  });
+
+  it("saves drafts again after finishing failed", async () => {
+    const services = await openCompose();
+    for (const prompt of PROMPTS) {
+      await userEvent.type(screen.getByLabelText(prompt.label), "Answer");
+    }
+    const put = services.records.put.bind(services.records);
+    services.records.put = (kind, record) =>
+      record.status === "complete"
+        ? Promise.reject(new Error("synthetic"))
+        : put(kind, record);
+
+    await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Couldn't continue",
+    );
+    await userEvent.type(first(), " still here");
+    hidePage();
+
+    await waitFor(async () => {
+      expect((await drafts(services))[0]?.responses.good).toBe(
+        "Answer still here",
+      );
+    });
+    expect(await drafts(services)).toHaveLength(1);
+  });
+
+  it("flushes the draft before a removed device drops its keys, and stores nothing after (DEV-003)", async () => {
+    const services = await openCompose();
+    const order: string[] = [];
+    const put = services.records.put.bind(services.records);
+    services.records.put = (kind, record) => {
+      order.push(`put ${record.status}: ${record.responses.good}`);
+      return put(kind, record);
+    };
+    const lock = services.vault.lock.bind(services.vault);
+    services.vault.lock = () => {
+      order.push("keys dropped");
+      lock();
+    };
+    await userEvent.type(first(), "half a thought");
+
+    await endRevokedDevice(services, () => undefined);
+    await new Promise((resolve) =>
+      setTimeout(resolve, AUTOSAVE_DELAY_MS + 200),
+    );
+
+    expect(order).toEqual(["put draft: half a thought", "keys dropped"]);
+    expect(services.session.state).toBe("signed_out");
+  });
+
+  it("a draft's page offers to carry on writing; a finished entry's does not", async () => {
+    const draft = entry(4, "2026-11-10", { status: "draft" });
+    const services = await unlockedWith(draft, entry(1, "2026-11-03"));
+    await renderApp(`/journal/entries/${draft.id}`, services);
+
+    expect(
+      (
+        await screen.findByRole("link", { name: "Carry on writing" })
+      ).getAttribute("href"),
+    ).toBe("/journal/new");
+
+    cleanup();
+    await renderApp(
+      "/journal/entries/00000000-0000-4000-8000-0000000000a1",
+      services,
+    );
+    await screen.findByText("Good 1");
+    expect(screen.queryByRole("link", { name: "Carry on writing" })).toBeNull();
   });
 });
 
@@ -457,30 +961,6 @@ describe("journal content and the lock (DEV-005)", () => {
     await lockNow(services, () => undefined);
 
     expect(await services.records.list("journal-entry")).toEqual([]);
-  });
-
-  it("an entry still being prepared when the app locks is never stored", async () => {
-    const services = await unlockedWith();
-    const answers = { good: "Private", improve: "text", loved: "here" };
-
-    // Hashing the entry is asynchronous, so the lock lands in the middle.
-    const saving = saveNewEntry(services, answers);
-    await lockNow(services, () => undefined);
-
-    expect(await saving).toBeUndefined();
-    expect(await services.records.list("journal-entry")).toEqual([]);
-  });
-
-  it("an entry is stored when the app stays unlocked", async () => {
-    const services = await unlockedWith();
-
-    const saved = await saveNewEntry(services, {
-      good: "a",
-      improve: "b",
-      loved: "c",
-    });
-
-    expect(await services.records.list("journal-entry")).toEqual([saved]);
   });
 
   it.each(["signed_out", "signed_in_locked"] as const)(

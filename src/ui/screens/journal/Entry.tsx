@@ -129,6 +129,11 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
           <p>{entry.feelings.join(", ")}</p>
         </Card>
       )}
+      {entry.status === "draft" && (
+        <p>
+          <Link href={pathFor("journal-new")}>Carry on writing</Link>
+        </p>
+      )}
       {back}
     </PageLayout>
   );

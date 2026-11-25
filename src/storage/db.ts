@@ -106,9 +106,11 @@ export function openRecordsDatabase(name: string): Promise<IDBDatabase> {
  * @param database - The open database.
  * @param stores - The object stores the work touches.
  * @param mode - Read-only or read-write.
- * @param work - Issues requests on the transaction; may call `result` with
+ * @param work - Issues requests on the transaction and calls `result` with
  *   the value to resolve with. Throwing aborts the transaction.
  * @returns What `work` reported, once everything is committed.
+ * @throws Error if the transaction committed without `work` reporting a
+ *   value. Work that has nothing to report passes `undefined`.
  */
 export function transact<T>(
   database: IDBDatabase,
@@ -118,9 +120,13 @@ export function transact<T>(
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const transaction = database.transaction([...stores], mode);
-    let value: T | undefined;
+    let reported: { readonly value: T } | undefined;
     transaction.oncomplete = () => {
-      resolve(value as T);
+      if (reported === undefined) {
+        reject(new Error("The transaction reported no result"));
+      } else {
+        resolve(reported.value);
+      }
     };
     const fail = (): void => {
       reject(transaction.error ?? new Error("The local database write failed"));
@@ -128,8 +134,8 @@ export function transact<T>(
     transaction.onabort = fail;
     transaction.onerror = fail;
     try {
-      work(transaction, (produced) => {
-        value = produced;
+      work(transaction, (value) => {
+        reported = { value };
       });
     } catch (error) {
       transaction.abort();

@@ -64,7 +64,26 @@ export class RecordDeletedError extends Error {
   }
 }
 
-type Cache = { [K in RecordKind]: Map<string, RecordKinds[K]> };
+/**
+ * This device's copy of a record was out of date: the stored record has
+ * changed since it was read, for example in another tab, or cannot be read
+ * by this version of the app. Nothing was written, so the newer or
+ * unreadable record is never silently replaced (no last-write-wins).
+ */
+export class StaleRecordError extends Error {
+  constructor() {
+    super("The record has changed since it was read");
+    this.name = "StaleRecordError";
+  }
+}
+
+/** A decrypted record and the local revision it was read at. */
+interface Held<T> {
+  readonly record: T;
+  readonly revision: number;
+}
+
+type Cache = { [K in RecordKind]: Map<string, Held<RecordKinds[K]>> };
 type Unreadable = { [K in RecordKind]: Set<string> };
 
 /** What is held in memory once the database has been read. */
@@ -83,7 +102,22 @@ interface Unlocked {
 }
 
 /** What a write found when it looked at the stored record. */
-type WriteOutcome = "written" | "absent" | "deleted";
+type WriteOutcome =
+  | { readonly kind: "written"; readonly revision: number }
+  | { readonly kind: "absent" | "deleted" | "stale" };
+
+/** A change to store: the row's identity, its new envelope, and a check. */
+interface Change extends Pick<
+  StoredRecord,
+  "type" | "id" | "envelope" | "schemaVersion"
+> {
+  /**
+   * The local revision the caller's copy was read at, or 0 if it holds no
+   * copy. The write is refused unless the stored row is still at it. Left
+   * out for a deletion, which applies to whatever is stored.
+   */
+  readonly expectedRevision?: number;
+}
 
 /**
  * Decrypt one stored record.
@@ -140,7 +174,7 @@ async function loadKind<K extends RecordKind>(
     if (record === undefined) {
       into.unreadable[kind].add(row.id);
     } else {
-      into.records[kind].set(row.id, record);
+      into.records[kind].set(row.id, { record, revision: row.localRevision });
     }
   });
 }
@@ -188,12 +222,11 @@ async function openStore(
  *
  * @param change - The record's type and ID, and its new envelope; a `null`
  *   envelope deletes the record.
- * @returns What was found: `"absent"` and `"deleted"` mean nothing was
- *   written.
+ * @returns What happened. Only `"written"` means anything was stored.
  */
 function writeChange(
   database: IDBDatabase,
-  change: Pick<StoredRecord, "type" | "id" | "envelope" | "schemaVersion">,
+  change: Change,
 ): Promise<WriteOutcome> {
   return transact<WriteOutcome>(
     database,
@@ -206,11 +239,18 @@ function writeChange(
         const existing = reading.result as StoredRecord | undefined;
         const deleting = change.envelope === null;
         if (existing?.tombstone === true) {
-          result(deleting ? "absent" : "deleted");
+          result({ kind: deleting ? "absent" : "deleted" });
           return;
         }
         if (existing === undefined && deleting) {
-          result("absent");
+          result({ kind: "absent" });
+          return;
+        }
+        if (
+          change.expectedRevision !== undefined &&
+          change.expectedRevision !== (existing?.localRevision ?? 0)
+        ) {
+          result({ kind: "stale" });
           return;
         }
         const row: StoredRecord = {
@@ -236,8 +276,10 @@ function writeChange(
             schemaVersion: row.schemaVersion,
             tombstone: row.tombstone,
           });
-          result("written");
+          result({ kind: "written", revision: row.localRevision });
         } catch {
+          // Aborting undoes the record write. The transaction then reports
+          // the failure through its abort event, which rejects the write.
           transaction.abort();
         }
       };
@@ -317,11 +359,12 @@ export class EncryptedRecordStore implements RecordStore {
     kind: K,
     id: string,
   ): Promise<RecordKinds[K] | undefined> {
-    return (await this.#read())?.records[kind].get(id);
+    return (await this.#read())?.records[kind].get(id)?.record;
   }
 
   async list<K extends RecordKind>(kind: K): Promise<RecordKinds[K][]> {
-    return [...((await this.#read())?.records[kind].values() ?? [])];
+    const held = (await this.#read())?.records[kind].values() ?? [];
+    return [...held].map((each) => each.record);
   }
 
   async unreadable(kind: RecordKind): Promise<number> {
@@ -336,25 +379,28 @@ export class EncryptedRecordStore implements RecordStore {
    * @param apply - Updates memory once the change is stored.
    */
   async #write(
-    prepare: (session: Unlocked) => Promise<Parameters<typeof writeChange>[1]>,
-    apply: (opened: Opened) => void,
+    prepare: (session: Unlocked, opened: Opened) => Promise<Change>,
+    apply: (opened: Opened, revision: number) => void,
   ): Promise<void> {
     const session = this.#session;
     if (session === undefined) {
       throw new StoreLockedError();
     }
-    const change = await prepare(session);
     const opened = await session.opened;
+    const change = await prepare(session, opened);
     if (this.#session !== session) {
       // Locked while the record was being encrypted.
       throw new StoreLockedError();
     }
     const outcome = await writeChange(opened.database, change);
-    if (outcome === "deleted") {
+    if (outcome.kind === "deleted") {
       throw new RecordDeletedError();
     }
-    if (outcome === "written" && this.#session === session) {
-      apply(opened);
+    if (outcome.kind === "stale") {
+      throw new StaleRecordError();
+    }
+    if (outcome.kind === "written" && this.#session === session) {
+      apply(opened, outcome.revision);
       this.#changed();
     }
   }
@@ -362,19 +408,21 @@ export class EncryptedRecordStore implements RecordStore {
   put<K extends RecordKind>(kind: K, record: RecordKinds[K]): Promise<void> {
     const { type, schemaVersion } = FORMATS[kind];
     return this.#write(
-      async ({ root, owner }) => ({
+      async ({ root, owner }, opened) => ({
         type,
         id: record.id,
         schemaVersion,
+        // Read before encrypting, which takes a moment: the check must be
+        // against the copy this write was based on.
+        expectedRevision: opened.records[kind].get(record.id)?.revision ?? 0,
         envelope: await sealJson(
           root,
           { owner, recordId: record.id, type },
           record,
         ),
       }),
-      (opened) => {
-        opened.records[kind].set(record.id, record);
-        opened.unreadable[kind].delete(record.id);
+      (opened, revision) => {
+        opened.records[kind].set(record.id, { record, revision });
       },
     );
   }
