@@ -4,6 +4,10 @@ from pydantic import Field
 
 from warmly.schemas.common import ApiModel, SmallCiphertext
 
+# The newest recovery-envelope format this server knows. A client cannot store
+# an envelope in a format the server has never heard of.
+LATEST_RECOVERY_FORMAT = 1
+
 
 class RecoveryEnvelope(ApiModel):
     """The account root key, wrapped by the user's recovery key.
@@ -23,5 +27,5 @@ class PutRecoveryEnvelopeRequest(ApiModel):
     expected_version: int = Field(
         ge=0, description="Version being replaced; 0 when none exists yet."
     )
-    format_version: int = Field(ge=1)
+    format_version: int = Field(ge=1, le=LATEST_RECOVERY_FORMAT)
     wrapped_key: SmallCiphertext

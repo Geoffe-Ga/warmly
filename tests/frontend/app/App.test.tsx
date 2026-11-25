@@ -24,6 +24,7 @@ import {
 
 beforeEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
   visit("/");
 });
 

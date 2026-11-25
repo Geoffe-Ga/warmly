@@ -8,12 +8,14 @@ import { GALLERY_PATH, Gallery } from "../ui/dev/Gallery";
 import { Home } from "../ui/screens/Home";
 import { NotFound } from "../ui/screens/NotFound";
 import { Placeholder } from "../ui/screens/Placeholder";
+import { Settings } from "../ui/screens/Settings";
 import { Locked } from "../ui/screens/account/Locked";
 import { NewPassword } from "../ui/screens/account/NewPassword";
 import { Recover } from "../ui/screens/account/Recover";
 import { RecoveryKey } from "../ui/screens/account/RecoveryKey";
 import { Register } from "../ui/screens/account/Register";
 import { ResetPassword } from "../ui/screens/account/ResetPassword";
+import { RotateRecoveryKey } from "../ui/screens/account/RotateRecoveryKey";
 import { SignIn } from "../ui/screens/account/SignIn";
 import { VerifyEmail } from "../ui/screens/account/VerifyEmail";
 import { redirectFor } from "./access";
@@ -34,6 +36,8 @@ export interface View {
 /** Screens that have been built. Every other route shows a placeholder. */
 const SCREENS: Readonly<Partial<Record<RouteId, () => JSX.Element>>> = {
   home: Home,
+  settings: Settings,
+  "rotate-recovery-key": RotateRecoveryKey,
   onboarding: Register,
   "verify-email": VerifyEmail,
   "recovery-key": RecoveryKey,

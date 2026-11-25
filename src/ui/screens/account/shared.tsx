@@ -17,14 +17,28 @@ const MESSAGES: Readonly<Record<AuthErrorCode | VaultErrorCode, string>> = {
     "Your email isn't verified yet. Open the link we sent you, then try again.",
   wrong_recovery_key:
     "That recovery key didn't work. Check each group of characters and try again.",
+  recovery_key_mistyped:
+    "That key has a typo somewhere. Compare each group with the one you saved and try again.",
+  recovery_key_malformed:
+    "That doesn't look like a recovery key. It is 14 groups of 4 letters and numbers.",
   no_keys_on_device:
     "This device can't unlock on its own. Use your recovery key instead.",
+  no_account_keys:
+    "This account hasn't finished setting up yet. Sign out and sign in again to create your recovery key.",
+  keys_already_exist:
+    "This account was already set up on another device. Sign in again and unlock with the recovery key you saved there.",
+  recovery_key_changed_elsewhere:
+    "Your recovery key was replaced from another device just now, so this one wasn't saved. Your existing key still works. Start again if you still want a new one.",
+  nothing_to_confirm:
+    "That step has expired, and nothing was changed. Start again.",
+  signed_out:
+    "You've been signed out. Sign in again to continue. Nothing was changed.",
   weak_password:
     "That password is too easy to guess. Choose a longer or less common one.",
   rate_limited:
     "Too many attempts in a short time. Wait a few minutes, then try again.",
   offline:
-    "We couldn't reach the sign-in service. Check your connection and try again. Nothing was changed.",
+    "We couldn't reach Warmly. Check your connection and try again. Nothing was changed.",
   reset_link_invalid:
     "This reset link has expired or was already used. Ask for a new one and open it on this device.",
   unavailable:
@@ -142,6 +156,22 @@ export function AccountForm(props: AccountFormProps): JSX.Element {
       )}
       {props.children}
     </form>
+  );
+}
+
+/**
+ * Check what the user typed against the last group of a recovery key shown to
+ * them. Case and surrounding spaces are ignored. This only checks that they
+ * copied the key down; it is not a security check.
+ *
+ * @param typed - What the user entered.
+ * @param recoveryKey - The key as shown, in dash-separated groups.
+ * @returns Whether the typed group matches.
+ */
+export function sameLastGroup(typed: string, recoveryKey: string): boolean {
+  const lastGroup = recoveryKey.split("-").at(-1) ?? "";
+  return (
+    lastGroup !== "" && typed.trim().toUpperCase() === lastGroup.toUpperCase()
   );
 }
 

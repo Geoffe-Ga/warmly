@@ -24,7 +24,7 @@
  * fails, so the server cannot present one record as another, as another
  * owner's, or as a different type.
  */
-import { concat, utf8 } from "./encoding";
+import { concat, lengthPrefixed, utf8 } from "./encoding";
 import { hkdfParams, type RootKey } from "./root-key";
 
 /** The format version this code writes. */
@@ -35,11 +35,6 @@ export const NONCE_BYTES = 12;
 const TAG_BYTES = 16;
 const HEADER_BYTES = 1 + NONCE_BYTES;
 const MAX_RECORD_TYPE = 255;
-const MAX_IDENTIFIER_BYTES = 0xffff;
-// With the `u` flag a valid surrogate pair is one code point, so this matches
-// only a surrogate that has no partner.
-const UNPAIRED_SURROGATE = /\p{Cs}/u;
-
 /** The identity a record is bound to. All of it is authenticated. */
 export interface RecordContext {
   /** Account that owns the record. */
@@ -71,23 +66,6 @@ export class UnsupportedFormatError extends Error {
     this.name = "UnsupportedFormatError";
     this.version = version;
   }
-}
-
-function lengthPrefixed(label: string, value: string): Uint8Array<ArrayBuffer> {
-  // An unpaired surrogate has no UTF-8 form and would be silently replaced,
-  // which could make two different identifiers encode to the same bytes.
-  if (UNPAIRED_SURROGATE.test(value)) {
-    throw new Error(`The ${label} identifier is not well-formed text`);
-  }
-  const bytes = utf8(value);
-  if (bytes.length === 0 || bytes.length > MAX_IDENTIFIER_BYTES) {
-    throw new Error(`The ${label} identifier must be 1 to 65535 bytes long`);
-  }
-  // A two-byte length before each field keeps "ab"+"c" distinct from "a"+"bc".
-  return concat(
-    new Uint8Array([bytes.length >> 8, bytes.length & 0xff]),
-    bytes,
-  );
 }
 
 function associatedData(context: RecordContext): Uint8Array<ArrayBuffer> {
@@ -207,13 +185,20 @@ export async function open(
  * @param context - The owner, record ID and type the record is bound to.
  * @param value - The record.
  * @returns The envelope.
+ * @throws Error if the value has no JSON form, such as `undefined`.
  */
 export async function sealJson(
   root: RootKey,
   context: RecordContext,
   value: unknown,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  return seal(root, context, utf8(JSON.stringify(value)));
+  const text: string | undefined = JSON.stringify(value);
+  // `undefined`, a function or a symbol has no JSON form, and would otherwise
+  // fail later with an error that says nothing useful.
+  if (text === undefined) {
+    throw new Error("The record has no JSON form");
+  }
+  return seal(root, context, utf8(text));
 }
 
 /**

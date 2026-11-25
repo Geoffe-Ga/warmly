@@ -1,0 +1,8 @@
+{
+  "formatVersion": 1,
+  "note": "Synthetic fixture. The recovery secret is the bytes 0..31 and the root key the bytes 255..224. Neither protects anything real and neither may ever be reused.",
+  "owner": "0b0f7c1e-5a2d-4a53-9c1d-2f6a3e1b7c90",
+  "recoveryKey": "000G-40R4-0M30-E209-185G-R38E-1W81-24GK-2GAH-C5RR-34D1-P70X-3RFQ-2PWF",
+  "rootKey": "//79/Pv6+fj39vX08/Lx8O/u7ezr6uno5+bl5OPi4eA=",
+  "envelope": "AQUZzVRWwSA4C/VusZXn27xK+KNpFD1yCPgWTKeCZ1Ho8Oaa+2xP/F2PHy979kCCyOQvAxWeG2d0uOb5qw=="
+}

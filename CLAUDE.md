@@ -9,10 +9,12 @@ Read the relevant PRD section (IDs such as `JR-`, `RF-`, `CC-`, `SEC-`, `SYNC-`,
 `AI-`, `AC-`) before implementing anything, and cite those IDs in issues, PRs and tests.
 Human-facing overview: [README.md](README.md).
 
-**Status:** walking skeleton in progress. `warmly/` (Python) serves every
-`/v1` route as a typed stub; `src/` is a Preact
-shell with the account screens (register, verify, recovery key, sign in, lock)
-working against in-memory doubles; other routes render accessible placeholders.
+**Status:** walking skeleton in progress. `warmly/` (Python) verifies access
+tokens on every `/v1` route but health, stores recovery envelopes, and serves
+the remaining routes as typed stubs. `src/` is a Preact shell with real
+account and recovery-key flows (real cryptography; in-memory doubles stand in
+for the servers outside production); other routes render accessible
+placeholders.
 
 ---
 
@@ -156,6 +158,10 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   `tests/fixtures/crypto/`: a format change adds a new version beside it.
 - The browser talks to Supabase Auth only, through `@supabase/auth-js`. Never
   add the full Supabase client or call the Data API from the browser.
+- New keys and a replacement recovery key are saved only after the user has
+  confirmed the recovery key (`KeyVault.confirmRecoveryKey`). Never upload a
+  recovery envelope before that, and never log, store or put a recovery key
+  in a URL.
 - External services (auth, key vault) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.

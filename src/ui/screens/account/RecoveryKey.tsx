@@ -9,18 +9,7 @@ import { Card } from "../../components/Card";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, useAction } from "./shared";
-
-/**
- * The last group of a recovery key, which the user must type back to show
- * they have really saved it.
- *
- * @param recoveryKey - The full key, in dash-separated groups.
- * @returns The final group.
- */
-export function lastGroupOf(recoveryKey: string): string {
-  return recoveryKey.split("-").at(-1) ?? "";
-}
+import { AccountForm, sameLastGroup, useAction } from "./shared";
 
 /**
  * Show the recovery key once and make the user confirm they stored it (PRD
@@ -30,7 +19,7 @@ export function lastGroupOf(recoveryKey: string): string {
  * @returns The recovery-key screen.
  */
 export function RecoveryKey(): JSX.Element {
-  const { session, onboarding } = useServices();
+  const { vault, session, onboarding } = useServices();
   const { navigate } = useContext(NavigationContext);
   const action = useAction();
   const [typed, setTyped] = useState("");
@@ -49,8 +38,7 @@ export function RecoveryKey(): JSX.Element {
   }
 
   const validate = (): boolean => {
-    const matches =
-      typed.trim().toUpperCase() === lastGroupOf(recoveryKey).toUpperCase();
+    const matches = sameLastGroup(typed, recoveryKey);
     setError(
       matches
         ? undefined
@@ -78,11 +66,14 @@ export function RecoveryKey(): JSX.Element {
       <AccountForm
         action={action}
         validate={validate}
-        onValid={() => {
+        onValid={async () => {
+          // Only now are the keys saved: the user has shown they hold the
+          // recovery key. If saving fails, the key stays on screen so they
+          // can try again.
+          await vault.confirmRecoveryKey();
           onboarding.clear();
           session.unlock();
           navigate(HOME_PATH);
-          return Promise.resolve();
         }}
       >
         <TextField

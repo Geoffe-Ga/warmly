@@ -88,11 +88,12 @@ CASES = [
         Enrollment,
         body={"wrapped_key": CIPHERTEXT},
     ),
-    Case("GET", "/v1/recovery-envelope", RecoveryEnvelope),
+    Case("GET", "/v1/recovery-envelope", RecoveryEnvelope, stub=False),
     Case(
         "PUT",
         "/v1/recovery-envelope",
         RecoveryEnvelope,
-        body={"expected_version": 0, "format_version": 1, "wrapped_key": CIPHERTEXT},
+        body={"expected_version": 1, "format_version": 1, "wrapped_key": CIPHERTEXT},
+        stub=False,
     ),
 ]

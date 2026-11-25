@@ -24,6 +24,7 @@ export type RouteId =
   | "print"
   | "settings"
   | "devices"
+  | "rotate-recovery-key"
   | "onboarding"
   | "verify-email"
   | "recovery-key"
@@ -160,6 +161,14 @@ export const ROUTES: readonly RouteDef[] = [
     summary: "The devices that can open your journal.",
     access: "private",
   },
+  {
+    id: "rotate-recovery-key",
+    path: "/settings/recovery-key",
+    title: "Replace your recovery key",
+    summary: "Swap your recovery key for a new one. The old key stops working.",
+    access: "private",
+  },
+
   {
     id: "onboarding",
     path: "/welcome",

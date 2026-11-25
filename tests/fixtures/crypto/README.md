@@ -12,7 +12,12 @@ it strands real data.
   0 to 31 and protects nothing real. No real key or journal text may ever be
   committed.
 
-Each file holds the root key, its fingerprint, and a list of records. A record
+`v1/recovery.json` is a recovery envelope (ADR-0003): a synthetic recovery
+key, the owner it is bound to, the root key it wraps, and the envelope. The
+keys in these files are published in this repository, so they must never be
+reused for anything real.
+
+Each `records.json` file holds the root key, its fingerprint, and a list of records. A record
 gives the owner, record ID and type it is bound to, the plaintext, and the
 envelope, all as standard base64 where they are bytes.
 

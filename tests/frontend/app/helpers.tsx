@@ -41,6 +41,17 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
   };
 }
 
+/**
+ * Finish creating an account's keys, as onboarding does once the user has
+ * confirmed the recovery key. Leaves the vault unlocked on a trusted device.
+ *
+ * @param vault - The vault double.
+ */
+export async function setUpKeys(vault: FakeKeyVault): Promise<void> {
+  await vault.createAccountKeys();
+  await vault.confirmRecoveryKey();
+}
+
 /** Point the browser at a path before the app renders. */
 export function visit(path: string): void {
   window.history.replaceState(null, "", path);

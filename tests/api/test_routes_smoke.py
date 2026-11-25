@@ -134,13 +134,3 @@ def test_approve_relays_the_wrapped_key_unchanged(client: TestClient) -> None:
 
     assert body["status"] == "approved"
     assert body["wrapped_key"] == CIPHERTEXT
-
-
-def test_put_recovery_envelope_advances_the_version(client: TestClient) -> None:
-    """Rotation yields the next version (compare-and-swap shape, SEC-003)."""
-    body = client.put(
-        "/v1/recovery-envelope",
-        json={"expected_version": 4, "format_version": 1, "wrapped_key": CIPHERTEXT},
-    ).json()
-
-    assert body == {"version": 5, "format_version": 1, "wrapped_key": CIPHERTEXT}

@@ -2,12 +2,23 @@ import { cleanup, screen, waitFor } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { FAKE_RECOVERY_KEY } from "../../../src/testing/fake-key-vault";
+import { VaultError } from "../../../src/crypto/key-vault";
+import {
+  FAKE_RECOVERY_KEY,
+  FAKE_ROTATED_RECOVERY_KEY,
+} from "../../../src/testing/fake-key-vault";
 
-import { ACCOUNT, heading, renderApp, testServices } from "./helpers";
+import {
+  ACCOUNT,
+  heading,
+  renderApp,
+  setUpKeys,
+  testServices,
+} from "./helpers";
 
 beforeEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
 });
 
 afterEach(() => {
@@ -176,11 +187,9 @@ describe("the recovery key never outlives its onboarding (DEV-006)", () => {
     expect(services.onboarding.recoveryKey).toBeUndefined();
     expect(services.onboarding.emailVerified).toBe(false);
 
-    await fill("Email", ACCOUNT.email);
-    await fill("Password", ACCOUNT.password);
-    await press("Sign in");
-    await onHeading("Warmly is locked");
+    // Someone else now signs in on this device and opens the screen directly.
     cleanup();
+    services.session.signIn();
     await renderApp("/welcome/recovery-key", services);
 
     expect(screen.queryByTestId("recovery-key")).toBeNull();
@@ -197,6 +206,41 @@ describe("the recovery key never outlives its onboarding (DEV-006)", () => {
     await onHeading("Warmly is locked");
 
     expect(services.onboarding.recoveryKey).toBeUndefined();
+  });
+
+  it("stays on screen if saving the keys fails, so it can be tried again", async () => {
+    const services = await atRecoveryKeyScreen();
+    const confirm = services.vault.confirmRecoveryKey.bind(services.vault);
+    let attempts = 0;
+    services.vault.confirmRecoveryKey = () => {
+      attempts += 1;
+      return attempts === 1
+        ? Promise.reject(new VaultError("offline"))
+        : confirm();
+    };
+
+    await fill("Type the last group of your key", "test");
+    await press("I've saved my key");
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Check your connection",
+    );
+    expect(screen.getByTestId("recovery-key").textContent).toBe(
+      FAKE_RECOVERY_KEY,
+    );
+    expect(services.session.state).toBe("signed_in_locked");
+    expect(await services.vault.accountHasKeys()).toBe(false);
+
+    await press("I've saved my key");
+    await onHeading("Warmly");
+    expect(services.session.state).toBe("unlocked");
+  });
+
+  it("the keys are not saved until the user confirms the recovery key", async () => {
+    const services = await atRecoveryKeyScreen();
+
+    expect(await services.vault.accountHasKeys()).toBe(false);
+    expect(await services.vault.hasKeysOnThisDevice()).toBe(false);
   });
 
   it("is forgotten once confirmed", async () => {
@@ -216,9 +260,10 @@ describe("sign in, unlock and recover", () => {
     await services.auth.register(ACCOUNT.email, ACCOUNT.password);
     await services.auth.completeVerification();
     await services.auth.signOut();
-    if (trustedDevice) {
-      await services.vault.createAccountKeys();
-      services.vault.lock();
+    await setUpKeys(services.vault);
+    services.vault.lock();
+    if (!trustedDevice) {
+      services.vault.forgetThisDevice();
     }
     return services;
   }
@@ -267,10 +312,10 @@ describe("sign in, unlock and recover", () => {
   });
 
   it("rejects a wrong recovery key without unlocking", async () => {
-    const services = await renderApp(
-      "/recover",
-      testServices("signed_in_locked"),
-    );
+    const prepared = testServices("signed_in_locked");
+    await setUpKeys(prepared.vault);
+    prepared.vault.forgetThisDevice();
+    const services = await renderApp("/recover", prepared);
 
     await fill("Recovery key", "WRONG-KEY0-0000");
     await press("Unlock");
@@ -278,6 +323,39 @@ describe("sign in, unlock and recover", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("That recovery key didn't work");
     expect(services.session.state).toBe("signed_in_locked");
+  });
+
+  it("finishes setting up an account whose onboarding was abandoned", async () => {
+    const services = testServices();
+    await services.auth.register(ACCOUNT.email, ACCOUNT.password);
+    await services.auth.completeVerification();
+    await services.auth.signOut();
+    await renderApp("/sign-in", services);
+
+    await fill("Email", ACCOUNT.email);
+    await fill("Password", ACCOUNT.password);
+    await press("Sign in");
+    await onHeading("Save your recovery key");
+
+    expect(screen.getByTestId("recovery-key").textContent).toBe(
+      FAKE_RECOVERY_KEY,
+    );
+    expect(await services.vault.accountHasKeys()).toBe(false);
+    await fill("Type the last group of your key", "TEST");
+    await press("I've saved my key");
+    await onHeading("Warmly");
+    expect(await services.vault.accountHasKeys()).toBe(true);
+  });
+
+  it("explains an account that has no keys yet on the recovery screen", async () => {
+    await renderApp("/recover", testServices("signed_in_locked"));
+
+    await fill("Recovery key", FAKE_RECOVERY_KEY);
+    await press("Unlock");
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "hasn't finished setting up",
+    );
   });
 
   it("requires a recovery key before trying", async () => {
@@ -288,6 +366,35 @@ describe("sign in, unlock and recover", () => {
     expect(screen.getByText("Enter your recovery key.")).toBeDefined();
     expect(screen.queryByRole("alert")).toBeNull();
   });
+
+  it.each([
+    ["on this device", "/locked", "Unlock", "unlock"],
+    ["with the recovery key", "/recover", "Unlock", "unlockWithRecoveryKey"],
+  ] as const)(
+    "locks the keys again if the session ends while unlocking %s",
+    async (_name, path, button, method) => {
+      const services = testServices("signed_in_locked");
+      await setUpKeys(services.vault);
+      services.vault.lock();
+      const open = services.vault[method].bind(services.vault);
+      services.vault[method] = async (key: string = FAKE_RECOVERY_KEY) => {
+        await open(key);
+        // A sign-out lands while the keys are being opened.
+        services.session.signOut();
+      };
+      await renderApp(path, services);
+      if (path === "/recover") {
+        await fill("Recovery key", FAKE_RECOVERY_KEY);
+      }
+
+      await press(button);
+
+      await waitFor(() => {
+        expect(services.session.state).toBe("signed_out");
+        expect(services.vault.isUnlocked).toBe(false);
+      });
+    },
+  );
 
   it("explains a device that cannot unlock on its own", async () => {
     await renderApp("/locked", testServices("signed_in_locked"));
@@ -378,6 +485,8 @@ describe("choosing a new password from the emailed link (DEV-006)", () => {
     await services.auth.register(ACCOUNT.email, ACCOUNT.password);
     await services.auth.completeVerification();
     await services.auth.signOut();
+    await setUpKeys(services.vault);
+    services.vault.forgetThisDevice();
     await services.auth.requestPasswordReset(ACCOUNT.email);
     return services;
   }
@@ -456,5 +565,122 @@ describe("the locked screen shows nothing private (UI-008)", () => {
     expect(
       screen.getByRole("link", { name: "Use your recovery key instead" }),
     ).toBeDefined();
+  });
+});
+
+describe("replacing the recovery key (SEC-003)", () => {
+  async function unlockedWithKeys() {
+    const services = testServices("unlocked");
+    await setUpKeys(services.vault);
+    return services;
+  }
+
+  it("is reached from settings, which also shows the key fingerprint", async () => {
+    await renderApp("/settings", await unlockedWithKeys());
+
+    expect((await screen.findByTestId("key-fingerprint")).textContent).toMatch(
+      /^[0-9a-f]{16}$/,
+    );
+    await userEvent.click(
+      screen.getByRole("link", { name: "Replace your recovery key" }),
+    );
+    await onHeading("Replace your recovery key");
+  });
+
+  it("replaces the key only after the current key and the new one are confirmed", async () => {
+    const services = await renderApp(
+      "/settings/recovery-key",
+      await unlockedWithKeys(),
+    );
+
+    await fill("Current recovery key", FAKE_RECOVERY_KEY.toLowerCase());
+    await press("Continue");
+
+    const shown = await screen.findByTestId("recovery-key");
+    expect(shown.textContent).toBe(FAKE_ROTATED_RECOVERY_KEY);
+    expect(screen.getByText(/It isn't active yet/)).toBeDefined();
+    // Nothing has changed yet: the old key still opens the account.
+    await expect(
+      services.vault.unlockWithRecoveryKey(FAKE_RECOVERY_KEY),
+    ).resolves.toBeUndefined();
+
+    await fill("Type the last group of your new key", "next");
+    await press("Replace my recovery key");
+
+    expect(await screen.findByText(/only one that works now/)).toBeDefined();
+    expect(document.body.textContent).not.toContain(FAKE_ROTATED_RECOVERY_KEY);
+    await expect(
+      services.vault.unlockWithRecoveryKey(FAKE_RECOVERY_KEY),
+    ).rejects.toMatchObject({ code: "wrong_recovery_key" });
+    await expect(
+      services.vault.unlockWithRecoveryKey(FAKE_ROTATED_RECOVERY_KEY),
+    ).resolves.toBeUndefined();
+  });
+
+  it("refuses a wrong current key and prepares nothing", async () => {
+    await renderApp("/settings/recovery-key", await unlockedWithKeys());
+
+    await fill("Current recovery key", "FAKE-KEY0-NOT0-REAL-0000-NOPE");
+    await press("Continue");
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "That recovery key didn't work",
+    );
+    expect(screen.queryByTestId("recovery-key")).toBeNull();
+  });
+
+  it("asks for the current key before trying", async () => {
+    await renderApp("/settings/recovery-key", await unlockedWithKeys());
+
+    await press("Continue");
+
+    expect(screen.getByText("Enter your current recovery key.")).toBeDefined();
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Current recovery key"),
+    );
+  });
+
+  it("does not replace the key until the new one is typed back correctly", async () => {
+    const services = await renderApp(
+      "/settings/recovery-key",
+      await unlockedWithKeys(),
+    );
+    await fill("Current recovery key", FAKE_RECOVERY_KEY);
+    await press("Continue");
+    await screen.findByTestId("recovery-key");
+
+    await fill("Type the last group of your new key", "oops");
+    await press("Replace my recovery key");
+
+    expect(screen.getByText(/doesn't match the last group/)).toBeDefined();
+    await expect(
+      services.vault.unlockWithRecoveryKey(FAKE_RECOVERY_KEY),
+    ).resolves.toBeUndefined();
+  });
+
+  it("keeps the old key when the replacement cannot be saved", async () => {
+    const services = await unlockedWithKeys();
+    services.vault.confirmRecoveryKeyRotation = () =>
+      Promise.reject(new VaultError("recovery_key_changed_elsewhere"));
+    await renderApp("/settings/recovery-key", services);
+    await fill("Current recovery key", FAKE_RECOVERY_KEY);
+    await press("Continue");
+    await screen.findByTestId("recovery-key");
+
+    await fill("Type the last group of your new key", "NEXT");
+    await press("Replace my recovery key");
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Your existing key still works",
+    );
+    await expect(
+      services.vault.unlockWithRecoveryKey(FAKE_RECOVERY_KEY),
+    ).resolves.toBeUndefined();
+  });
+
+  it("is a private screen", async () => {
+    await renderApp("/settings/recovery-key", testServices("signed_in_locked"));
+
+    expect(window.location.pathname).toBe("/locked");
   });
 });

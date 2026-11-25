@@ -15,7 +15,12 @@ import {
   isAuthRetryableFetchError,
 } from "@supabase/auth-js";
 
-import { AuthError, type AuthClient, type AuthErrorCode } from "./auth-client";
+import {
+  AuthError,
+  type AuthClient,
+  type AuthErrorCode,
+  type AuthSession,
+} from "./auth-client";
 
 /** Where the Supabase project is and the key that identifies this app. */
 export interface SupabaseAuthConfig {
@@ -31,7 +36,12 @@ interface Outcome {
 }
 
 interface SessionOutcome extends Outcome {
-  readonly data: { readonly session: object | null };
+  readonly data: {
+    readonly session: {
+      readonly access_token: string;
+      readonly user: { readonly id: string };
+    } | null;
+  };
 }
 
 /**
@@ -188,9 +198,16 @@ export class SupabaseAuthClient implements AuthClient {
   }
 
   async isSignedIn(): Promise<boolean> {
+    return (await this.currentSession()) !== undefined;
+  }
+
+  async currentSession(): Promise<AuthSession | undefined> {
     const outcome = await this.#api.getSession();
     check(outcome);
-    return outcome.data.session !== null;
+    const session = outcome.data.session;
+    return session === null
+      ? undefined
+      : { userId: session.user.id, accessToken: session.access_token };
   }
 
   async register(email: string, password: string): Promise<void> {

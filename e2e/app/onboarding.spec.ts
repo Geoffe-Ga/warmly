@@ -253,7 +253,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
   test("the recovery-key screen unlocks and is accessible", async ({
     page,
   }) => {
-    await onboard(page);
+    const recoveryKey = await onboard(page);
     await page.getByRole("button", { name: "Lock" }).click();
     await page
       .getByRole("link", { name: "Use your recovery key instead" })
@@ -262,10 +262,12 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
 
     await page.getByLabel("Recovery key").fill("wrong-key");
     await page.getByRole("button", { name: "Unlock" }).click();
-    await expect(page.getByRole("alert")).toContainText("didn't work");
+    await expect(page.getByRole("alert")).toContainText(
+      "doesn't look like a recovery key",
+    );
     await expectNoViolations(page);
 
-    await page.getByLabel("Recovery key").fill("fake-key0-not0-real-0000-test");
+    await page.getByLabel("Recovery key").fill(recoveryKey.toLowerCase());
     await page.getByRole("button", { name: "Unlock" }).click();
     await expect(
       page.getByRole("navigation", { name: "Primary" }),

@@ -31,6 +31,12 @@ export function Locked(): JSX.Element {
         validate={() => true}
         onValid={async () => {
           await vault.unlock();
+          if (session.state !== "signed_in_locked") {
+            // The session ended while the keys were being opened, for
+            // example by a sign-out. Never leave keys open without it.
+            vault.lock();
+            return;
+          }
           session.unlock();
           navigate(HOME_PATH);
         }}
