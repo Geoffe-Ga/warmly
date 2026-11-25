@@ -14,6 +14,7 @@ import {
 import {
   createCollection,
   deleteCollection,
+  keepStrayCards,
   moveCard,
   renameCollection,
 } from "../../../src/domain/cards/collections";
@@ -228,6 +229,47 @@ describe("collections and cards sync between a person's devices (SYNC-001, AC-05
 
     expect(await texts(a, id)).toHaveLength(4);
     expect((await texts(b, id)).sort()).toEqual((await texts(a, id)).sort());
+  });
+});
+
+describe("a card added while its collection is deleted on another device", () => {
+  it("is not lost or hidden: both devices show it as a stray, and keeping it puts it in kept cards everywhere", async () => {
+    const { a, b, id } = await shared();
+
+    await deleteCollection({ records: a.store }, id);
+    await createCard({ records: b.store }, id, {
+      type: "other",
+      text: "Written on B meanwhile.",
+    });
+    await a.sync();
+    await b.sync();
+    // B's change to the deleted collection's list is refused and waits for
+    // a choice; the card itself is a new record and is accepted.
+    const waiting = await listCardConflicts(b.store);
+    expect(waiting.map((each) => [each.record, each.kind])).toEqual([
+      ["card-collection", "deleted-elsewhere"],
+    ]);
+    await chooseVersion(b.store, waiting[0] as CardsConflict, "theirs");
+    await b.sync();
+    await a.sync();
+
+    for (const one of [a, b]) {
+      expect((await cardsOf(one).strays()).map(readingText)).toEqual([
+        "Written on B meanwhile.",
+      ]);
+      expect(await names(one)).toEqual([]);
+    }
+
+    expect(await keepStrayCards({ records: a.store })).toBe(1);
+    await a.sync();
+    await b.sync();
+
+    for (const one of [a, b]) {
+      expect(await cardsOf(one).strays()).toEqual([]);
+      expect(await names(one)).toEqual([KEPT_CARDS_NAME]);
+      const kept = (await cardsOf(one).collections())[0]?.id ?? "";
+      expect(await texts(one, kept)).toEqual(["Written on B meanwhile."]);
+    }
   });
 });
 

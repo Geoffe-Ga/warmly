@@ -6,7 +6,11 @@
  * to the private record store, which seals it and queues it for sync.
  */
 import type { RecordStore } from "../../storage/record-store";
-import { orderCards, type CardCollection } from "./types";
+import {
+  orderCards,
+  type CardCollection,
+  type ConversationCard,
+} from "./types";
 
 /** The longest name a collection may have, in characters. */
 export const MAX_COLLECTION_NAME = 80;
@@ -25,7 +29,8 @@ interface Deps {
 
 function cleanName(name: string): string {
   const clean = name.trim();
-  if (clean === "" || clean.length > MAX_COLLECTION_NAME) {
+  // Counted as the person sees them: an emoji is one character.
+  if (clean === "" || [...clean].length > MAX_COLLECTION_NAME) {
     throw new InvalidNameError();
   }
   return clean;
@@ -90,6 +95,11 @@ export async function renameCollection(
  * The cards go first. If something stops this part-way, the collection is
  * still there with fewer cards, and deleting it again finishes the job.
  *
+ * A card added to the collection at the same moment, in another tab or on
+ * another device, is not in the list read here and so is not deleted. It
+ * is left belonging to no collection, where the collections screen shows
+ * it and the person decides (see `keepStrayCards`).
+ *
  * @param deps - The record store.
  * @param id - The collection's ID.
  * @returns How many cards were deleted with it, or `undefined` if the
@@ -111,6 +121,98 @@ export async function deleteCollection(
   }
   await deps.records.delete("card-collection", id);
   return cards.length;
+}
+
+/**
+ * The collection that cards are kept in when their own is gone. It is an
+ * ordinary collection found by this name: if the person already has one
+ * called this, kept cards join it.
+ */
+export const KEPT_CARDS_NAME = "Kept cards";
+
+/**
+ * Find the collection for kept cards, or make it.
+ *
+ * @param deps - The record store.
+ * @param now - The current time.
+ * @returns The collection.
+ */
+export async function keptCardsCollection(
+  deps: Deps,
+  now: Date = new Date(),
+): Promise<CardCollection> {
+  const existing = (await deps.records.list("card-collection")).find(
+    (each) => each.name === KEPT_CARDS_NAME,
+  );
+  if (existing !== undefined) {
+    return existing;
+  }
+  const made = now.toISOString();
+  const collection: CardCollection = {
+    id: crypto.randomUUID(),
+    name: KEPT_CARDS_NAME,
+    cardIds: [],
+    createdAt: made,
+    updatedAt: made,
+  };
+  await deps.records.put("card-collection", collection);
+  return collection;
+}
+
+function strays(
+  collections: readonly CardCollection[],
+  cards: readonly ConversationCard[],
+): ConversationCard[] {
+  const known = new Set(collections.map((each) => each.id));
+  return cards.filter((card) => !known.has(card.collectionId));
+}
+
+/**
+ * Keep the cards that belong to no collection, by putting them in the
+ * collection for kept cards. Done only when the person asks.
+ *
+ * @param deps - The record store.
+ * @param now - The current time.
+ * @returns How many cards were moved.
+ */
+export async function keepStrayCards(
+  deps: Deps,
+  now: Date = new Date(),
+): Promise<number> {
+  const found = strays(
+    await deps.records.list("card-collection"),
+    await deps.records.list("conversation-card"),
+  );
+  if (found.length === 0) {
+    return 0;
+  }
+  const home = await keptCardsCollection(deps, now);
+  for (const card of found) {
+    await deps.records.put("conversation-card", {
+      ...card,
+      collectionId: home.id,
+      updatedAt: now.toISOString(),
+    });
+  }
+  return found.length;
+}
+
+/**
+ * Delete the cards that belong to no collection, for good. Done only when
+ * the person asks, after a confirmation.
+ *
+ * @param deps - The record store.
+ * @returns How many cards were deleted.
+ */
+export async function deleteStrayCards(deps: Deps): Promise<number> {
+  const found = strays(
+    await deps.records.list("card-collection"),
+    await deps.records.list("conversation-card"),
+  );
+  for (const card of found) {
+    await deps.records.delete("conversation-card", card.id);
+  }
+  return found.length;
 }
 
 /** Where a card ended up after a move. Positions start at 1. */

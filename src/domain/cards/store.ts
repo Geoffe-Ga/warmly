@@ -41,6 +41,15 @@ export interface CardsStore {
     cardId: string,
   ): Promise<ConversationCard | undefined>;
   /**
+   * Cards that belong to no collection on this device. That happens when
+   * one device deletes a collection while another is adding a card to it:
+   * the card arrives, and its collection is gone. They are never hidden:
+   * the collections screen shows them and offers to keep or delete them.
+   *
+   * @returns Those cards, oldest first.
+   */
+  strays(): Promise<readonly ConversationCard[]>;
+  /**
    * Be told when collections or cards may have changed, here or through
    * sync.
    *
@@ -60,7 +69,7 @@ export class RecordCardsStore implements CardsStore {
 
   async collections(): Promise<readonly CardCollection[]> {
     const all = await this.#records.list("card-collection");
-    return all.sort(
+    return [...all].sort(
       (a, b) =>
         a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
     );
@@ -87,6 +96,20 @@ export class RecordCardsStore implements CardsStore {
         ? await this.collection(collectionId)
         : undefined;
     return collection === undefined ? undefined : card;
+  }
+
+  async strays(): Promise<readonly ConversationCard[]> {
+    const [collections, cards] = await Promise.all([
+      this.#records.list("card-collection"),
+      this.#records.list("conversation-card"),
+    ]);
+    const known = new Set(collections.map((each) => each.id));
+    return cards
+      .filter((card) => !known.has(card.collectionId))
+      .sort(
+        (a, b) =>
+          a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+      );
   }
 
   subscribe(listener: () => void): () => void {

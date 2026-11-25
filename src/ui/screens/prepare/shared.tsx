@@ -45,7 +45,7 @@ export function useLoaded<T>(
 
   useEffect(() => {
     let current = true;
-    const fetch = (): void => {
+    const refresh = (): void => {
       latest.current().then(
         (value) => {
           if (current) {
@@ -60,8 +60,8 @@ export function useLoaded<T>(
       );
     };
     setLoaded({ kind: "loading" });
-    fetch();
-    const stop = source?.subscribe(fetch);
+    refresh();
+    const stop = source?.subscribe(refresh);
     return () => {
       current = false;
       stop?.();

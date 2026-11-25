@@ -322,7 +322,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   then any other card that belongs to it. Never drop a card because the
   list does not name it: that is what keeps cards written on two devices
   when one version of the list is kept. Deleting a collection deletes
-  every card that belongs to it, and both deletions ask first.
+  every card that belongs to it, and both deletions ask first. A card
+  whose collection is gone (added on one device while the collection was
+  deleted on another) is never hidden: `CardsStore.strays` lists it and
+  the collections screen offers to keep or delete it. Never move or
+  delete such cards without being asked.
 - A manual card is `user_owned` with no AI fields; making, changing,
   moving or deleting one never calls AI or the network (PRD CC-010). Never
   correct, score or block what the person writes on a card. Reordering

@@ -11,6 +11,7 @@
  * belongs to a collection is shown even when the collection's list does
  * not name it (see `orderCards`).
  */
+import { keptCardsCollection } from "../domain/cards/collections";
 import type { CardCollection, ConversationCard } from "../domain/cards/types";
 import type {
   Keep,
@@ -19,8 +20,7 @@ import type {
 } from "../storage/record-store";
 import { ConflictGoneError, type ConflictKind } from "./conflicts";
 
-/** The name of the collection that holds cards kept after their own was deleted. */
-export const KEPT_CARDS_NAME = "Kept cards";
+export { KEPT_CARDS_NAME } from "../domain/cards/collections";
 
 interface Base {
   /** The record's ID. */
@@ -127,25 +127,11 @@ export async function chooseVersion(
 async function homeFor(
   records: RecordStore,
   card: ConversationCard,
-  now: string,
+  now: Date,
 ): Promise<CardCollection> {
-  const all = await records.list("card-collection");
-  const home =
-    all.find((each) => each.id === card.collectionId) ??
-    all.find((each) => each.name === KEPT_CARDS_NAME);
-  if (home !== undefined) {
-    return home;
-  }
+  const own = await records.get("card-collection", card.collectionId);
   // Its collection is gone, so the card needs somewhere to be seen.
-  const made: CardCollection = {
-    id: crypto.randomUUID(),
-    name: KEPT_CARDS_NAME,
-    cardIds: [],
-    createdAt: now,
-    updatedAt: now,
-  };
-  await records.put("card-collection", made);
-  return made;
+  return own ?? keptCardsCollection({ records }, now);
 }
 
 /**
@@ -185,7 +171,7 @@ export async function keepAsNew(
       updatedAt: at,
     });
   } else {
-    const home = await homeFor(records, conflict.mine, at);
+    const home = await homeFor(records, conflict.mine, now);
     await records.put("conversation-card", {
       ...conflict.mine,
       id,

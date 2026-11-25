@@ -16,8 +16,12 @@ import {
 import {
   InvalidNameError,
   MAX_COLLECTION_NAME,
+  KEPT_CARDS_NAME,
   createCollection,
   deleteCollection,
+  deleteStrayCards,
+  keepStrayCards,
+  keptCardsCollection,
   moveCard,
   renameCollection,
 } from "../../../src/domain/cards/collections";
@@ -796,6 +800,137 @@ describe("moving a card (CC-010, AC-13)", () => {
       SEED.thanks,
       SEED.wondering,
     ]);
+  });
+});
+
+describe("cards that belong to no collection are never hidden (CC-010)", () => {
+  /** A collection deleted elsewhere, with a card that was added to it late. */
+  async function withStrays() {
+    const made = await seeded();
+    await made.records.put(
+      "conversation-card",
+      card("late-2", "gone", ["Second stray."], "2026-11-12T09:00:00.000Z"),
+    );
+    await made.records.put(
+      "conversation-card",
+      card("late-1", "gone", ["First stray."], "2026-11-11T09:00:00.000Z"),
+    );
+    return made;
+  }
+
+  it("lists none when every card's collection is here", async () => {
+    const { store } = await seeded();
+
+    expect(await store.strays()).toEqual([]);
+  });
+
+  it("lists cards whose collection is gone, oldest first", async () => {
+    const { store } = await withStrays();
+
+    expect((await store.strays()).map(readingText)).toEqual([
+      "First stray.",
+      "Second stray.",
+    ]);
+  });
+
+  it("keeps them, when asked, in a collection for kept cards, and nothing else moves", async () => {
+    const { records, store } = await withStrays();
+
+    expect(await keepStrayCards({ records }, NOW)).toBe(2);
+
+    expect(await store.strays()).toEqual([]);
+    const kept = (await store.collections()).find(
+      (each) => each.name === KEPT_CARDS_NAME,
+    );
+    expect(await texts(store, kept?.id ?? "")).toEqual([
+      "First stray.",
+      "Second stray.",
+    ]);
+    expect(await texts(store, SEED.sunday)).toHaveLength(3);
+    expect((await records.get("conversation-card", "late-1"))?.updatedAt).toBe(
+      NOW.toISOString(),
+    );
+  });
+
+  it("uses a collection for kept cards that already exists, and makes only one", async () => {
+    const { records, store } = await withStrays();
+    const first = await keptCardsCollection({ records }, NOW);
+
+    expect((await keptCardsCollection({ records })).id).toBe(first.id);
+    await keepStrayCards({ records });
+
+    expect(
+      (await store.collections()).filter(
+        (each) => each.name === KEPT_CARDS_NAME,
+      ),
+    ).toHaveLength(1);
+    expect(await texts(store, first.id)).toHaveLength(2);
+  });
+
+  it("does nothing, and makes no collection, when there are none to keep", async () => {
+    const { records, store } = await seeded();
+
+    expect(await keepStrayCards({ records })).toBe(0);
+    expect(await deleteStrayCards({ records })).toBe(0);
+
+    expect(await store.collections()).toHaveLength(3);
+  });
+
+  it("deletes them, when asked, and only them", async () => {
+    const { records, store } = await withStrays();
+
+    expect(await deleteStrayCards({ records })).toBe(2);
+
+    expect(await store.strays()).toEqual([]);
+    expect(await records.list("conversation-card")).toHaveLength(4);
+  });
+
+  it("a card added while its collection was being deleted is left as a stray, not lost", async () => {
+    const { records, store } = await seeded();
+    const list = records.list.bind(records);
+    let added = false;
+    // Another tab adds a card just after the collection's cards are read.
+    records.list = (async (kind: "conversation-card") => {
+      const found = await list(kind);
+      if (kind === "conversation-card" && !added) {
+        added = true;
+        await records.put(
+          "conversation-card",
+          card("racing", SEED.sunday, ["Written at the same moment."]),
+        );
+      }
+      return found;
+    }) as typeof records.list;
+
+    await deleteCollection({ records }, SEED.sunday);
+
+    expect((await store.strays()).map(readingText)).toEqual([
+      "Written at the same moment.",
+    ]);
+  });
+});
+
+describe("lengths are counted as a person sees them", () => {
+  it("an emoji counts as one character in a name and in a card", async () => {
+    const records = new MemoryRecordStore();
+    const name = "🙂".repeat(MAX_COLLECTION_NAME);
+    const made = await createCollection({ records }, name);
+
+    expect(made.name).toBe(name);
+    await expect(createCollection({ records }, `${name}🙂`)).rejects.toThrow(
+      InvalidNameError,
+    );
+    const full = await createCard({ records }, made.id, {
+      type: "other",
+      text: "🙂".repeat(MAX_CARD_TEXT),
+    });
+    expect(full).toBeDefined();
+    await expect(
+      createCard({ records }, made.id, {
+        type: "other",
+        text: "🙂".repeat(MAX_CARD_TEXT + 1),
+      }),
+    ).rejects.toThrow(InvalidCardTextError);
   });
 });
 

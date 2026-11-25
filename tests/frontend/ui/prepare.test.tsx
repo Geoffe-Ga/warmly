@@ -20,6 +20,7 @@ import { readingText } from "../../../src/domain/cards/types";
 import { StaleRecordError } from "../../../src/storage/record-store";
 import { StorageError } from "../../../src/storage/errors";
 import { DELETE_WARNING } from "../../../src/ui/screens/journal/Entry";
+import { STRAYS_EXPLAINED } from "../../../src/ui/screens/prepare/Collections";
 import {
   NAME_NEEDED,
   NOT_SAVED,
@@ -66,6 +67,7 @@ const BROKEN: CardsStore = {
   collection: () => Promise.reject(new Error("synthetic CANARY")),
   cards: () => Promise.reject(new Error("synthetic CANARY")),
   card: () => Promise.reject(new Error("synthetic CANARY")),
+  strays: () => Promise.reject(new Error("synthetic CANARY")),
   subscribe: () => () => undefined,
 };
 
@@ -1041,5 +1043,114 @@ describe("changing and deleting a card (CC-010)", () => {
         "Changed on my phone.",
       );
     });
+  });
+});
+
+describe("cards that belong to no collection (CC-010)", () => {
+  async function withStray(): Promise<TestServices> {
+    const services = await unlocked();
+    await services.records.put("conversation-card", {
+      id: "stray-1",
+      collectionId: "gone",
+      type: "other",
+      authorship: "user_owned",
+      segments: [{ id: "s", category: "other", text: "Written just in time." }],
+      sourceEntryIds: [],
+      createdAt: "2026-11-12T09:00:00.000Z",
+      updatedAt: "2026-11-12T09:00:00.000Z",
+    });
+    return services;
+  }
+
+  it("says nothing about them when there are none", async () => {
+    await renderApp("/prepare", await unlocked());
+    await screen.findByRole("navigation", { name: "Your collections" });
+
+    expect(screen.queryByText(/not in any collection/)).toBeNull();
+  });
+
+  it("shows them with what happened, and changes nothing until asked", async () => {
+    const services = await withStray();
+    await renderApp("/prepare", services);
+
+    const section = (
+      await screen.findByRole("heading", {
+        name: "1 card is not in any collection",
+      })
+    ).closest(".card") as HTMLElement;
+
+    expect(within(section).getByText(STRAYS_EXPLAINED)).toBeTruthy();
+    expect(within(section).getByText("Written just in time.")).toBeTruthy();
+    expect(await services.cards.strays()).toHaveLength(1);
+  });
+
+  it("keeps them in a collection of kept cards when asked", async () => {
+    const services = await withStray();
+    await renderApp("/prepare", services);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: 'Keep them in "Kept cards"' }),
+    );
+
+    await screen.findByText('Kept in a collection called "Kept cards".');
+    expect(screen.queryByText(/not in any collection/)).toBeNull();
+    expect(
+      within(
+        screen.getByRole("navigation", { name: "Your collections" }),
+      ).getByRole("link", { name: /Kept cards/ }).textContent,
+    ).toBe("Kept cards0 cards");
+    const kept = (await services.cards.collections()).find(
+      (each) => each.name === "Kept cards",
+    );
+    expect(await cardTexts(services, kept?.id ?? "")).toEqual([
+      "Written just in time.",
+    ]);
+  });
+
+  it("deletes them only after a confirmation, and cancelling keeps them", async () => {
+    const services = await withStray();
+    await renderApp("/prepare", services);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Delete them" }),
+    );
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toContain(DELETE_WARNING);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(await services.cards.strays()).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Delete them" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete cards",
+      }),
+    );
+
+    await screen.findByText("Those cards were deleted.");
+    expect(await services.cards.strays()).toEqual([]);
+    expect(await services.records.list("conversation-card")).toHaveLength(4);
+  });
+
+  it("counts more than one, and says so if keeping fails", async () => {
+    const services = await withStray();
+    const first = await services.records.get("conversation-card", "stray-1");
+    await services.records.put("conversation-card", {
+      ...(first as NonNullable<typeof first>),
+      id: "stray-2",
+    });
+    await renderApp("/prepare", services);
+    await screen.findByRole("heading", {
+      name: "2 cards are not in any collection",
+    });
+    services.records.put = () => Promise.reject(new Error("synthetic"));
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: 'Keep them in "Kept cards"' }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain(NOT_SAVED);
+    expect(await services.cards.strays()).toHaveLength(2);
   });
 });

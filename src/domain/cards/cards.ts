@@ -33,7 +33,8 @@ interface Deps {
 
 function cleanText(text: string): string {
   const clean = text.trim();
-  if (clean === "" || clean.length > MAX_CARD_TEXT) {
+  // Counted as the person sees them: an emoji is one character.
+  if (clean === "" || [...clean].length > MAX_CARD_TEXT) {
     throw new InvalidCardTextError();
   }
   return clean;
