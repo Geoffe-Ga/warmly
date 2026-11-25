@@ -13,8 +13,8 @@ import type { SessionState } from "./session";
 
 /**
  * End the unlocked part of a session on this device: drop the keys from
- * memory and forget anything held for onboarding, such as an unconfirmed
- * recovery key. Used by both Lock and Sign out, so neither can leave key
+ * memory, drop every decrypted record, and forget anything held for
+ * onboarding, such as an unconfirmed recovery key. Used by both Lock and Sign out, so neither can leave key
  * material behind for whoever uses the device next.
  *
  * @param services - The app's services.
@@ -22,6 +22,8 @@ import type { SessionState } from "./session";
 export function dropSecrets(services: Services): void {
   services.vault.lock();
   services.onboarding.clear();
+  // Anything decrypted goes with the keys.
+  services.records.lock();
 }
 
 /**

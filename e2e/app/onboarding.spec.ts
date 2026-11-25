@@ -119,7 +119,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
       .getByRole("navigation", { name: "Primary" })
       .getByRole("link", { name: "Journal" })
       .click();
-    await expect(page.getByText("Your entries in date order")).toBeVisible();
+    await expect(page.getByText("Your entries, newest first.")).toBeVisible();
 
     await page.getByRole("button", { name: "Lock" }).click();
 
@@ -127,7 +127,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Warmly is locked",
     );
-    await expect(page.getByText("Your entries in date order")).toHaveCount(0);
+    await expect(page.getByText("Your entries, newest first.")).toHaveCount(0);
     await expect(page.getByRole("navigation")).toHaveCount(0);
     await expectNoViolations(page);
 
@@ -159,7 +159,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
 
     await page.goBack();
 
-    await expect(page.getByText("Your entries in date order")).toHaveCount(0);
+    await expect(page.getByText("Your entries, newest first.")).toHaveCount(0);
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Warmly is locked",
     );
@@ -171,7 +171,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
     await page.goto("/journal");
 
     await expect(page).toHaveURL(/\/locked$/);
-    await expect(page.getByText("Your entries in date order")).toHaveCount(0);
+    await expect(page.getByText("Your entries, newest first.")).toHaveCount(0);
   });
 
   test("signing out returns to sign in, and the account can sign in again", async ({

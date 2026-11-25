@@ -14,7 +14,9 @@ tokens and device signatures on every `/v1` route but health, stores recovery
 envelopes and device identities, and serves the remaining routes as typed
 stubs. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
-servers outside production); other routes render accessible placeholders.
+servers outside production) and a journal that can be written, listed, read
+and searched but is held in memory only; other routes render accessible
+placeholders.
 
 ---
 
@@ -73,7 +75,8 @@ supabase/migrations/     Forward-only SQL migrations (ADR-0002); never edit one 
 openapi/                 Committed API contract; src/api/schema.d.ts is generated from it
                          (regenerate both with ./scripts/contract.sh, never by hand)
 src/                     TypeScript PWA: app/ (route table, router, shell), ui/ (screens,
-                         components), main.tsx (bootstrap + SW registration)
+                         components), domain/ (record types and rules), storage/
+                         (RecordStore), main.tsx (bootstrap + SW registration)
 docs/adr/                Architecture Decision Records
 docs/security/           Threat model and security notes
 config/                  Build-time config shared with tests (security headers, CSP)
@@ -187,6 +190,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   API client reports it through `services.revocation` and the app shell
   ends the session (`endRevokedDevice`). Never handle it in a screen, and
   never delete local records when it happens: only the keys go.
+- Private records are read and written only through `RecordStore`
+  (`src/storage/record-store.ts`), reached as `services.records`. A screen
+  never keeps its own copy beyond what it is showing, and never puts record
+  text in a path, a query string or `localStorage`. The store's `lock()` is
+  called by `dropSecrets`, so nothing decrypted outlives the keys.
 - External services (auth, key vault, device directory) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.

@@ -115,6 +115,7 @@ test.describe("production build: no test doubles or development tools", () => {
       expect(body).not.toContain("Component gallery");
       expect(body).not.toContain("warmly.fake.");
       expect(body).not.toContain("FAKE-KEY0");
+      expect(body).not.toContain("Example entry:");
     }
   });
 

@@ -40,10 +40,12 @@ import {
   UnavailableDeviceDirectory,
   type DeviceDirectory,
 } from "../devices/this-device";
+import { MemoryRecordStore, type RecordStore } from "../storage/record-store";
 import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeDeviceRegistry } from "../testing/fake-device-registry";
 import { FakePairingRelay } from "../testing/fake-pairing-relay";
 import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
+import { seedJournal } from "../testing/seed-journal";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
@@ -60,6 +62,8 @@ export interface Services {
   readonly forgetThisDevice: () => Promise<void>;
   /** Reports that the server has refused this device as revoked. */
   readonly revocation: RevocationSignal;
+  /** The private records: journal entries now, more kinds later. */
+  readonly records: RecordStore;
   readonly session: Session;
   /** In-memory state of an account being set up; see {@link Onboarding}. */
   readonly onboarding: Onboarding;
@@ -292,6 +296,10 @@ export function createServices(): Services {
       revocation.report,
     ),
     revocation,
+    // The example entries exist only outside production builds.
+    records: new MemoryRecordStore(
+      import.meta.env.MODE !== "production" ? seedJournal() : [],
+    ),
     session: createSession(),
     onboarding: createOnboarding(),
     lockHooks: createLockHooks(),
