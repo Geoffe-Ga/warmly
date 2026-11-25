@@ -563,14 +563,18 @@ describe("drafts (JR-004)", () => {
 
   it("saves what is typed as a draft a moment after typing stops, and says so", async () => {
     const services = await openCompose();
-    expect(screen.getByRole("status").textContent).toBe("");
+    expect(
+      within(screen.getByRole("main")).getByRole("status").textContent,
+    ).toBe("");
 
     await userEvent.type(first(), "half a thought");
     expect(await drafts(services)).toEqual([]);
 
     await waitFor(
       () => {
-        expect(screen.getByRole("status").textContent).toBe(DRAFT_SAVED);
+        expect(
+          within(screen.getByRole("main")).getByRole("status").textContent,
+        ).toBe(DRAFT_SAVED);
       },
       { timeout: 3000 },
     );
@@ -644,7 +648,9 @@ describe("drafts (JR-004)", () => {
     });
 
     expect(await services.records.list("journal-entry")).toEqual([]);
-    expect(screen.getByRole("status").textContent).toBe("");
+    expect(
+      within(screen.getByRole("main")).getByRole("status").textContent,
+    ).toBe("");
     expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
   });
 
@@ -781,7 +787,9 @@ describe("drafts (JR-004)", () => {
     expect(await services.records.list("journal-entry")).toEqual([]);
     expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
     expect(screen.queryByText(/carrying on with the draft/)).toBeNull();
-    expect(screen.getByRole("status").textContent).toBe("");
+    expect(
+      within(screen.getByRole("main")).getByRole("status").textContent,
+    ).toBe("");
   });
 
   it("never saves onto a discarded draft's ID, even when deleting it failed", async () => {
@@ -850,7 +858,9 @@ describe("drafts (JR-004)", () => {
     hidePage();
 
     await waitFor(() => {
-      expect(screen.getByRole("status").textContent).toBe(DRAFT_NOT_SAVED);
+      expect(
+        within(screen.getByRole("main")).getByRole("status").textContent,
+      ).toBe(DRAFT_NOT_SAVED);
     });
     expect(DRAFT_NOT_SAVED).toContain("Keep this page open");
     expect(first()).toHaveProperty("value", "x");

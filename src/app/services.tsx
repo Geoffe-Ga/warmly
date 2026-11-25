@@ -43,6 +43,10 @@ import {
 import type { RootKey } from "../crypto/root-key";
 import { recordsDatabaseName } from "../storage/db";
 import { EncryptedRecordStore } from "../storage/encrypted-record-store";
+import {
+  browserPersistence,
+  type StoragePersistence,
+} from "../storage/persistence";
 import type { RecordStore } from "../storage/record-store";
 import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeDeviceRegistry } from "../testing/fake-device-registry";
@@ -72,6 +76,8 @@ export interface Services {
   readonly onboarding: Onboarding;
   /** Work to finish before the app locks; see {@link LockHooks}. */
   readonly lockHooks: LockHooks;
+  /** Asks the browser to keep this device's data, and reports the answer. */
+  readonly persistence: StoragePersistence;
   /** Announces changes to private records; see {@link EventBus}. */
   readonly events: EventBus;
 }
@@ -293,6 +299,10 @@ function tabId(): string {
  */
 export function createServices(): Services {
   const revocation = createRevocationSignal();
+  // `navigator.storage` is missing on an insecure page and in old browsers.
+  const persistence = browserPersistence(
+    (navigator as Partial<Navigator>).storage,
+  );
   const records = new EncryptedRecordStore((owner) =>
     import.meta.env.MODE !== "production"
       ? recordsDatabaseName(owner, tabRecordsPrefix())
@@ -325,10 +335,14 @@ export function createServices(): Services {
       revocation.report,
       (root, owner) => {
         records.unlock(root, owner);
+        // Once there is something worth keeping, ask the browser to keep
+        // it. The answer is shown in Settings; it never rejects.
+        void persistence.request();
       },
     ),
     revocation,
     records,
+    persistence,
     session: createSession(),
     onboarding: createOnboarding(),
     lockHooks: createLockHooks(),

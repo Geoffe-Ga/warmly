@@ -398,7 +398,7 @@ describe("deleting an entry (JR-007, OPS-003)", () => {
       expect(heading().textContent).toBe("Entry deleted");
     });
     expect(document.activeElement).toBe(heading());
-    const status = screen.getByRole("status");
+    const status = within(screen.getByRole("main")).getByRole("status");
     expect(status.textContent).toContain("Deleted");
     expect(status.textContent).toContain(
       "It has been removed from this device.",

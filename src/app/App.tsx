@@ -20,6 +20,7 @@ import {
   useInactivityLock,
 } from "./SessionControls";
 import { Link, NavigationContext, type Navigation } from "./navigation";
+import { useOnline } from "./online";
 import { APP_NAME, resolve } from "./resolve";
 import { normalisePath } from "./router";
 import { SECONDARY_NAV } from "./routes";
@@ -65,6 +66,31 @@ function Header(props: {
 export interface AppProps {
   /** Services to use; a test passes its own. Defaults to this build's. */
   readonly services?: Services;
+}
+
+/** Said while offline and unlocked. It never shows anything private. */
+export const OFFLINE_UNLOCKED =
+  "Offline: your writing is saved on this device.";
+/** Said while offline and not unlocked. */
+export const OFFLINE_LOCKED =
+  "Offline: you can still unlock Warmly on a device you have set up. Signing in needs a connection.";
+
+/**
+ * A line under the header while the device is offline (PRD UI-008, AC-28).
+ * The region is always in the page, empty while online, so a screen reader
+ * hears the change when the connection drops.
+ */
+function OfflineNotice(props: { readonly state: SessionState }): JSX.Element {
+  const online = useOnline();
+  let text = "";
+  if (!online) {
+    text = props.state === "unlocked" ? OFFLINE_UNLOCKED : OFFLINE_LOCKED;
+  }
+  return (
+    <p role="status" class="offline-notice">
+      {text}
+    </p>
+  );
 }
 
 /**
@@ -164,6 +190,7 @@ export function App(props: AppProps): JSX.Element {
             state={state}
             navigate={navigate}
           />
+          <OfflineNotice state={state} />
           <main>
             {view === undefined ? (
               <PageLayout title="Opening Warmly" />

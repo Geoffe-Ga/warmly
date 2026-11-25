@@ -47,7 +47,9 @@ test.describe("journal drafts", () => {
 
     await page.getByLabel(GOOD).fill("Synthetic: half a thought, offline");
     await page.getByRole("checkbox", { name: "hopeful" }).check();
-    await expect(page.getByRole("status")).toHaveText("Saved on this device");
+    await expect(page.getByRole("main").getByRole("status")).toHaveText(
+      "Saved on this device",
+    );
     await expectNoViolations(page);
 
     // Closing and reopening the page, still offline.
@@ -102,7 +104,9 @@ test.describe("journal drafts", () => {
     await onboard(page);
     await openCompose(page);
     await page.getByLabel(GOOD).fill("Synthetic: to be discarded");
-    await expect(page.getByRole("status")).toHaveText("Saved on this device");
+    await expect(page.getByRole("main").getByRole("status")).toHaveText(
+      "Saved on this device",
+    );
 
     await page.getByRole("button", { name: "Discard draft" }).click();
     const dialog = page.getByRole("alertdialog", {
@@ -119,7 +123,9 @@ test.describe("journal drafts", () => {
     for (const box of await page.getByRole("textbox").all()) {
       await box.fill("Synthetic answer");
     }
-    await expect(page.getByRole("status")).toHaveText("Saved on this device");
+    await expect(page.getByRole("main").getByRole("status")).toHaveText(
+      "Saved on this device",
+    );
     await page.getByRole("button", { name: "Save entry" }).click();
     await expect(page).toHaveURL(/\/journal\/entries\/[0-9a-f-]{36}$/);
     // Wait for the entry to load: its links move when it does, and a click

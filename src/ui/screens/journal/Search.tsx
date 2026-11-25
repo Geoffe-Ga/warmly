@@ -1,8 +1,7 @@
 import type { JSX } from "preact";
 import { useMemo } from "preact/hooks";
 
-import { SearchIndex } from "../../../domain/search";
-import { parseQuery } from "../../../domain/search/tokenize";
+import { SearchIndex, parseQuery } from "../../../domain/search";
 import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
 
 /** One entry that matched, with a piece of its text around the match. */

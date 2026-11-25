@@ -13,13 +13,14 @@ import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { useAction } from "../account/shared";
+import { describeOpenFailure } from "../../storage-messages";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
 
 /** What the screen has found out about the entry. */
 type Found =
   | { readonly kind: "loading" }
   | { readonly kind: "missing" }
-  | { readonly kind: "failed" }
+  | { readonly kind: "failed"; readonly message: string }
   | { readonly kind: "deleted" }
   | { readonly kind: "entry"; readonly entry: JournalEntry };
 
@@ -119,10 +120,12 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
             setFound((was) => afterLoading(was, entry));
           }
         },
-        () => {
+        (error: unknown) => {
           if (current) {
             setFound((was) =>
-              was.kind === "deleted" ? was : { kind: "failed" },
+              was.kind === "deleted"
+                ? was
+                : { kind: "failed", message: describeOpenFailure(error) },
             );
           }
         },
@@ -147,7 +150,7 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
     return (
       <PageLayout title={deleted ? "Entry deleted" : "Journal entry"}>
         <StatusBanner tone={notice.tone} label={notice.label}>
-          {notice.text}
+          {found.kind === "failed" ? found.message : notice.text}
         </StatusBanner>
         {back}
       </PageLayout>

@@ -122,7 +122,12 @@ and the outbox is intact. A test fails if a version has no dump.
   browser profile can see which accounts have been used in it. It is not
   content, and the same ID is already in the stored auth session.
 - The browser may evict IndexedDB under storage pressure. Until sync exists
-  an entry lives on one device only. Asking for persistent storage is left
-  to the sync work.
+  an entry lives on one device only. The app asks for persistent storage
+  each time it is unlocked (`navigator.storage.persist`) and Settings shows
+  the browser's answer as it is; the browser may still say no.
+- Storage failures are typed (`src/storage/errors.ts`): a full device, a
+  browser that will not allow storage, another tab blocking an upgrade, and
+  a database from a newer version. Each has its own message and next step,
+  and what the person typed stays on the page.
 - Changing a record's shape means a new `schemaVersion` and a reader for the
   old one; changing the stores means a new migration step and a new dump.

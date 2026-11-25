@@ -7,6 +7,15 @@
  * derived from it such as a search index, is ever written to this database.
  */
 
+import {
+  StorageBlockedError,
+  StorageUnavailableError,
+  openFailure,
+  useFailure,
+} from "./errors";
+
+export { NewerDatabaseError } from "./errors";
+
 /** The schema version this code reads and writes. */
 export const DB_VERSION = 1;
 /** Object store of records, keyed by `[type, id]`. */
@@ -32,17 +41,6 @@ export interface StoredRecord {
   readonly tombstone: boolean;
   /** Whether there is a change the server has not acknowledged. */
   readonly dirty: boolean;
-}
-
-/**
- * The database was written by a newer version of the app than this one. It
- * is left untouched: reading it with older code could misread or damage it.
- */
-export class NewerDatabaseError extends Error {
-  constructor() {
-    super("The local database was written by a newer version of the app");
-    this.name = "NewerDatabaseError";
-  }
 }
 
 /**
@@ -77,25 +75,44 @@ export function recordsDatabaseName(owner: string, prefix = "warmly"): string {
  * @param name - The database name.
  * @returns The open database. The caller closes it.
  * @throws NewerDatabaseError if a newer app version has upgraded it.
+ * @throws StorageUnavailableError if the browser has no usable database.
+ * @throws StorageBlockedError if another tab stops it being upgraded.
+ * @throws StorageFullError if there is no room to create it.
  */
 export function openRecordsDatabase(name: string): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
-    const opening = indexedDB.open(name, DB_VERSION);
+    let opening: IDBOpenDBRequest;
+    try {
+      // Some browsers have no IndexedDB in a private window, and some throw
+      // as soon as it is touched.
+      opening = indexedDB.open(name, DB_VERSION);
+    } catch {
+      reject(new StorageUnavailableError());
+      return;
+    }
+    let blocked = false;
     opening.onupgradeneeded = (event) => {
       for (const migrate of MIGRATIONS.slice(event.oldVersion, DB_VERSION)) {
         migrate(opening.result);
       }
     };
+    // Another tab has the database open at an older version and has not let
+    // go. Waiting could take for ever, so this open is given up: the person
+    // is told to close the other tabs.
+    opening.onblocked = () => {
+      blocked = true;
+      reject(new StorageBlockedError());
+    };
     opening.onsuccess = () => {
-      resolve(opening.result);
+      if (blocked) {
+        // The other tab let go after this open was given up.
+        opening.result.close();
+      } else {
+        resolve(opening.result);
+      }
     };
     opening.onerror = () => {
-      reject(
-        opening.error?.name === "VersionError"
-          ? new NewerDatabaseError()
-          : (opening.error ??
-              new Error("The local database could not be opened")),
-      );
+      reject(openFailure(opening.error));
     };
   });
 }
@@ -111,6 +128,8 @@ export function openRecordsDatabase(name: string): Promise<IDBDatabase> {
  * @returns What `work` reported, once everything is committed.
  * @throws Error if the transaction committed without `work` reporting a
  *   value. Work that has nothing to report passes `undefined`.
+ * @throws StorageFullError if the device has no room for the write.
+ * @throws StorageUnavailableError if the database can no longer be used.
  */
 export function transact<T>(
   database: IDBDatabase,
@@ -119,7 +138,15 @@ export function transact<T>(
   work: (transaction: IDBTransaction, result: (value: T) => void) => void,
 ): Promise<T> {
   return new Promise<T>((resolve, reject) => {
-    const transaction = database.transaction([...stores], mode);
+    let transaction: IDBTransaction;
+    try {
+      transaction = database.transaction([...stores], mode);
+    } catch (error) {
+      // The database was closed under this tab, for example because a newer
+      // version of the app took it over in another one.
+      reject(useFailure(error) ?? new StorageUnavailableError());
+      return;
+    }
     let reported: { readonly value: T } | undefined;
     transaction.oncomplete = () => {
       if (reported === undefined) {
@@ -129,7 +156,11 @@ export function transact<T>(
       }
     };
     const fail = (): void => {
-      reject(transaction.error ?? new Error("The local database write failed"));
+      reject(
+        useFailure(transaction.error) ??
+          transaction.error ??
+          new Error("The local database write failed"),
+      );
     };
     transaction.onabort = fail;
     transaction.onerror = fail;
@@ -140,7 +171,10 @@ export function transact<T>(
     } catch (error) {
       transaction.abort();
       reject(
-        error instanceof Error ? error : new Error("The write was abandoned"),
+        useFailure(error) ??
+          (error instanceof Error
+            ? error
+            : new Error("The write was abandoned")),
       );
     }
   });

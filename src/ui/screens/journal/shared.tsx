@@ -6,10 +6,9 @@ import { useEffect, useState } from "preact/hooks";
 
 import { useServices } from "../../../app/services";
 import type { EntryDate, JournalEntry } from "../../../domain/journal/types";
+import { describeOpenFailure } from "../../storage-messages";
 
-/** Said when this device's saved records cannot be opened at all. */
-export const CANNOT_OPEN =
-  "Warmly couldn't open what is saved on this device. Nothing has been changed or deleted. Close other Warmly tabs and reload this page; if a newer version of Warmly has been used here, update to it.";
+export { CANNOT_OPEN } from "../../storage-messages";
 
 /**
  * Write an entry's day for people, such as "November 10, 2026".
@@ -48,7 +47,11 @@ export function inTimelineOrder(
 /** What the journal screens know about the stored entries. */
 export type Journal =
   | { readonly state: "loading" }
-  | { readonly state: "failed" }
+  | {
+      readonly state: "failed";
+      /** Why the entries could not be opened, in words for the person. */
+      readonly message: string;
+    }
   | {
       readonly state: "ready";
       /** The entries, in timeline order. */
@@ -82,9 +85,12 @@ export function useJournalEntries(): Journal {
             });
           }
         },
-        () => {
+        (error: unknown) => {
           if (current) {
-            setJournal({ state: "failed" });
+            setJournal({
+              state: "failed",
+              message: describeOpenFailure(error),
+            });
           }
         },
       );

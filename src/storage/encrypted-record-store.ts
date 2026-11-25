@@ -15,6 +15,7 @@ import {
   sealJson,
 } from "../crypto/envelope";
 import type { RootKey } from "../crypto/root-key";
+import { NewerDatabaseError } from "./errors";
 import {
   OUTBOX,
   RECORDS,
@@ -86,6 +87,11 @@ interface Opened {
   readonly records: Cache;
   /** IDs of stored records that could not be decrypted or understood. */
   readonly unreadable: Unreadable;
+  /**
+   * Set once a newer version of the app, in another tab, has upgraded the
+   * database. This tab's connection is closed from then on.
+   */
+  superseded: boolean;
 }
 
 /** One unlocked period: the key, whose records these are, and the data. */
@@ -180,13 +186,17 @@ async function openStore(
   const database = await openRecordsDatabase(name);
   // If another tab running newer code needs to upgrade the database, let it:
   // this tab's writes then fail, which is safer than blocking the upgrade.
-  database.onversionchange = () => {
-    database.close();
-  };
   const opened: Opened = {
     database,
     records: { "journal-entry": new Map() },
     unreadable: { "journal-entry": new Set() },
+    superseded: false,
+  };
+  database.onversionchange = (event) => {
+    database.close();
+    // A new version number means newer code is upgrading the database. No
+    // number means it is being deleted, which is not the same thing.
+    opened.superseded = event.newVersion !== null;
   };
   try {
     const rows = await transact<StoredRecord[]>(
@@ -370,6 +380,9 @@ export class EncryptedRecordStore implements RecordStore {
     if (session === undefined || opened === undefined) {
       return undefined;
     }
+    if (opened.superseded) {
+      throw new NewerDatabaseError();
+    }
     const row = await transact<StoredRecord | undefined>(
       opened.database,
       [RECORDS],
@@ -423,6 +436,9 @@ export class EncryptedRecordStore implements RecordStore {
       throw new StoreLockedError();
     }
     const opened = await session.opened;
+    if (opened.superseded) {
+      throw new NewerDatabaseError();
+    }
     const change = await prepare(session, opened);
     if (this.#session !== session) {
       // Locked while the record was being encrypted.

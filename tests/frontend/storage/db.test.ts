@@ -3,6 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { importRootKey } from "../../../src/crypto/root-key";
 import type { JournalEntry } from "../../../src/domain/journal/types";
 import {
+  StorageBlockedError,
+  StorageError,
+  StorageFullError,
+  StorageUnavailableError,
+} from "../../../src/storage/errors";
+import {
   DB_VERSION,
   NewerDatabaseError,
   OUTBOX,
@@ -166,20 +172,96 @@ describe("a database that cannot be opened", () => {
     });
   }
 
-  it("fails with the database's own error", async () => {
-    failingOpen(new DOMException("synthetic", "QuotaExceededError"));
+  it.each([
+    ["QuotaExceededError", StorageFullError, "full"],
+    ["VersionError", NewerDatabaseError, "newer"],
+    ["UnknownError", StorageUnavailableError, "unavailable"],
+    ["SecurityError", StorageUnavailableError, "unavailable"],
+  ] as const)(
+    "turns the browser's %s into a typed error",
+    async (name, type, kind) => {
+      failingOpen(new DOMException("synthetic", name));
 
-    await expect(openRecordsDatabase(freshName())).rejects.toMatchObject({
-      name: "QuotaExceededError",
-    });
-  });
+      const failure = await openRecordsDatabase(freshName()).catch(
+        (error: unknown) => error,
+      );
 
-  it("fails with a plain error when the database gives none", async () => {
+      expect(failure).toBeInstanceOf(type);
+      expect(failure).toBeInstanceOf(StorageError);
+      expect((failure as StorageError).kind).toBe(kind);
+      // Nothing of the browser's own text is carried along.
+      expect((failure as Error).message).not.toContain("synthetic");
+    },
+  );
+
+  it("is unavailable when the browser gives no reason", async () => {
     failingOpen(null);
 
-    await expect(openRecordsDatabase(freshName())).rejects.toThrow(
-      "The local database could not be opened",
+    await expect(openRecordsDatabase(freshName())).rejects.toBeInstanceOf(
+      StorageUnavailableError,
     );
+  });
+
+  it("is unavailable when the browser has no database, or refuses to open one at all", async () => {
+    vi.spyOn(indexedDB, "open").mockImplementation(() => {
+      throw new DOMException("synthetic", "SecurityError");
+    });
+
+    await expect(openRecordsDatabase(freshName())).rejects.toBeInstanceOf(
+      StorageUnavailableError,
+    );
+  });
+
+  it("gives up as blocked when another tab holds an older version open, and lets go when that tab does", async () => {
+    const name = freshName();
+    // Another tab has version 0 of the database open and ignores requests
+    // to close it.
+    const other = await new Promise<IDBDatabase>((resolve) => {
+      const opening = indexedDB.open(name);
+      opening.onsuccess = () => {
+        resolve(opening.result);
+      };
+    });
+    await new Promise<void>((resolve) => {
+      other.close();
+      const downgrade = indexedDB.deleteDatabase(name);
+      downgrade.onsuccess = () => {
+        resolve();
+      };
+    });
+    const holder = await new Promise<IDBDatabase>((resolve) => {
+      const opening = indexedDB.open(name, 1);
+      opening.onupgradeneeded = () => {
+        opening.result.createObjectStore("placeholder");
+      };
+      opening.onsuccess = () => {
+        resolve(opening.result);
+      };
+    });
+    const original = indexedDB.open.bind(indexedDB);
+    vi.spyOn(indexedDB, "open").mockImplementation((...args) =>
+      // Ask for a newer version than the holder has, as an upgrade would.
+      original(args[0], 2),
+    );
+
+    await expect(openRecordsDatabase(name)).rejects.toBeInstanceOf(
+      StorageBlockedError,
+    );
+
+    // When the other tab closes, the abandoned open finishes and is closed
+    // again, so nothing is left holding the database.
+    holder.close();
+    vi.restoreAllMocks();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise<void>((resolve, reject) => {
+      const removing = indexedDB.deleteDatabase(name);
+      removing.onsuccess = () => {
+        resolve();
+      };
+      removing.onblocked = () => {
+        reject(new Error("the abandoned open still holds the database"));
+      };
+    });
   });
 });
 
@@ -223,6 +305,35 @@ describe("a transaction", () => {
     ).rejects.toThrow("The transaction reported no result");
 
     database.close();
+  });
+
+  it("reports a full device as a typed error, and stores nothing", async () => {
+    const database = await openRecordsDatabase(freshName());
+    vi.spyOn(IDBObjectStore.prototype, "put").mockImplementation(() => {
+      throw new DOMException("synthetic", "QuotaExceededError");
+    });
+
+    await expect(
+      transact(database, [RECORDS], "readwrite", (transaction, result) => {
+        transaction.objectStore(RECORDS).put({ type: 1, id: "a" });
+        result(undefined);
+      }),
+    ).rejects.toBeInstanceOf(StorageFullError);
+
+    vi.restoreAllMocks();
+    expect(await readRows(database.name, RECORDS)).toEqual([]);
+    database.close();
+  });
+
+  it("reports a database closed under it as unavailable", async () => {
+    const database = await openRecordsDatabase(freshName());
+    database.close();
+
+    await expect(
+      transact(database, [RECORDS], "readonly", (_transaction, result) => {
+        result(undefined);
+      }),
+    ).rejects.toBeInstanceOf(StorageUnavailableError);
   });
 
   it("stores nothing when the work throws", async () => {
