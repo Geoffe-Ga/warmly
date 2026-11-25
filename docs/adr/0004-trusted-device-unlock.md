@@ -60,7 +60,11 @@ stored = AES-256-GCM( device key , AES-256-GCM( unlock key , root key ) )
 - **Guessing on the screen is limited.** Five wrong passphrases in a row
   remove the device record. The device then needs the recovery key and can be
   trusted again afterwards. Nothing is lost. The count is kept in the record,
-  so a reload does not reset it.
+  so a reload does not reset it. Each attempt is counted in one transaction
+  *before* it is tried, so simultaneous attempts each count and an abandoned
+  attempt still counts. The limit is a control against guessing on the lock
+  screen only: someone who can restore an earlier copy of the browser profile
+  resets the count along with everything else.
 - **Associated data** on both layers: `"warmly/device-key/" | version |
   len(owner) | owner`, so a record cannot be moved to another account.
 - **Record, format version 1** (one per account, in IndexedDB): version,
@@ -126,6 +130,9 @@ real-device check is on the release checklist.
   becomes visible, so a tab or phone that slept past the limit locks on
   resume.
 - **Sign out** does not wait for hooks. It must always succeed at once.
+- **The flush window.** While hooks run, for at most 5 seconds, the private
+  screen is still shown. That is the price of not losing unsaved work; with
+  no hooks registered, locking is immediate.
 
 ## What "cleared from memory" means
 

@@ -228,7 +228,6 @@ export const ROUTES: readonly RouteDef[] = [
       "Set a passphrase so this device can unlock without your recovery key.",
     access: "private",
   },
-
   {
     id: "locked",
     path: "/locked",

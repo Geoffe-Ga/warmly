@@ -130,9 +130,15 @@ function isKey(value: unknown): value is CryptoKey {
   return (
     typeof value === "object" &&
     value !== null &&
+    "type" in value &&
+    value.type === "secret" &&
     "algorithm" in value &&
+    typeof value.algorithm === "object" &&
+    value.algorithm !== null &&
+    "name" in value.algorithm &&
+    value.algorithm.name === "AES-GCM" &&
     "extractable" in value &&
-    "usages" in value
+    value.extractable === false
   );
 }
 
@@ -226,9 +232,14 @@ export class IndexedDbDeviceKeyStore implements DeviceKeyStore {
     this.#iterations = iterations;
   }
 
+  /**
+   * Run one transaction. `work` may queue further requests from inside a
+   * request callback; the promise settles when the whole transaction has
+   * committed, or rejects if it aborts (for example when storage is full).
+   */
   async #run<T>(
     mode: IDBTransactionMode,
-    work: (store: IDBObjectStore) => IDBRequest<T>,
+    work: (store: IDBObjectStore, result: (value: T) => void) => void,
   ): Promise<T> {
     const opening = indexedDB.open(this.#databaseName, 1);
     opening.onupgradeneeded = () => {
@@ -236,24 +247,51 @@ export class IndexedDbDeviceKeyStore implements DeviceKeyStore {
     };
     const database = await request(opening);
     try {
-      return await request(
-        work(database.transaction(STORE, mode).objectStore(STORE)),
-      );
+      return await new Promise<T>((resolve, reject) => {
+        const transaction = database.transaction(STORE, mode);
+        let value: T | undefined;
+        let produced = false;
+        transaction.oncomplete = () => {
+          if (produced) {
+            resolve(value as T);
+          } else {
+            reject(new Error("The IndexedDB transaction produced no result"));
+          }
+        };
+        const fail = (): void => {
+          reject(
+            transaction.error ?? new Error("IndexedDB transaction failed"),
+          );
+        };
+        transaction.onabort = fail;
+        transaction.onerror = fail;
+        work(transaction.objectStore(STORE), (produced_) => {
+          value = produced_;
+          produced = true;
+        });
+      });
     } finally {
       database.close();
     }
   }
 
+  #isUsable(value: unknown): value is DeviceRecord {
+    // A store built with fewer iterations (tests only) accepts its own.
+    const least = Math.min(this.#iterations, MIN_ACCEPTED_ITERATIONS);
+    return isRecord(value, least);
+  }
+
   async #read(userId: string): Promise<DeviceRecord | undefined> {
-    const value: unknown = await this.#run("readonly", (store) =>
-      store.get(userId),
-    );
+    const value = await this.#run<unknown>("readonly", (store, result) => {
+      const reading = store.get(userId);
+      reading.onsuccess = () => {
+        result(reading.result);
+      };
+    });
     if (value === undefined) {
       return undefined;
     }
-    // A store built with fewer iterations (tests only) accepts its own.
-    const least = Math.min(this.#iterations, MIN_ACCEPTED_ITERATIONS);
-    if (!isRecord(value, least)) {
+    if (!this.#isUsable(value)) {
       throw new DeviceStoreDamagedError();
     }
     return value;
@@ -280,7 +318,8 @@ export class IndexedDbDeviceKeyStore implements DeviceKeyStore {
         `Root key material must be ${String(ROOT_KEY_BYTES)} bytes`,
       );
     }
-    if (passphrase.length < MIN_DEVICE_PASSPHRASE_LENGTH) {
+    // Measured as it will be used: after normalisation.
+    if (passphrase.normalize("NFKC").length < MIN_DEVICE_PASSPHRASE_LENGTH) {
       throw new Error("The device passphrase is too short");
     }
     const additionalData = associatedData(userId);
@@ -315,12 +354,61 @@ export class IndexedDbDeviceKeyStore implements DeviceKeyStore {
     await this.#put(userId, record);
   }
 
+  /**
+   * Count an unlock attempt before it is tried, in one transaction, so that
+   * simultaneous attempts (a double submit, or two tabs) each count, and an
+   * attempt that is abandoned part-way still counts.
+   *
+   * @returns The record as it was, or what is wrong with it.
+   */
+  async #beginAttempt(
+    userId: string,
+  ): Promise<DeviceRecord | "missing" | "damaged" | "locked_out"> {
+    return this.#run("readwrite", (store, result) => {
+      const reading = store.get(userId);
+      reading.onsuccess = () => {
+        const value: unknown = reading.result;
+        if (value === undefined) {
+          result("missing");
+        } else if (!this.#isUsable(value)) {
+          result("damaged");
+        } else if (value.failedUnlocks >= MAX_FAILED_UNLOCKS) {
+          store.delete(userId);
+          result("locked_out");
+        } else {
+          store.put(
+            { ...value, failedUnlocks: value.failedUnlocks + 1 },
+            userId,
+          );
+          result(value);
+        }
+      };
+    });
+  }
+
+  /** Set the count back to zero, in one transaction. */
+  async #clearAttempts(userId: string): Promise<void> {
+    await this.#run<true>("readwrite", (store, result) => {
+      const reading = store.get(userId);
+      reading.onsuccess = () => {
+        const current: unknown = reading.result;
+        if (this.#isUsable(current)) {
+          store.put({ ...current, failedUnlocks: 0 }, userId);
+        }
+        result(true);
+      };
+    });
+  }
+
   async open(
     userId: string,
     passphrase: string,
   ): Promise<Uint8Array<ArrayBuffer>> {
-    const record = await this.#read(userId);
-    if (record === undefined) {
+    const record = await this.#beginAttempt(userId);
+    if (record === "locked_out") {
+      throw new DeviceLockedOutError();
+    }
+    if (record === "missing" || record === "damaged") {
       throw new DeviceStoreDamagedError();
     }
     const additionalData = associatedData(userId);
@@ -336,35 +424,41 @@ export class IndexedDbDeviceKeyStore implements DeviceKeyStore {
       // means the record itself is unusable.
       throw new DeviceStoreDamagedError();
     }
+    let rootKeyBytes: ArrayBuffer;
     try {
-      const rootKeyBytes = await crypto.subtle.decrypt(
+      rootKeyBytes = await crypto.subtle.decrypt(
         { name: "AES-GCM", iv: record.innerNonce, additionalData },
         await passphraseKey(passphrase, record.salt, record.iterations),
         inner,
       );
-      if (record.failedUnlocks > 0) {
-        await this.#put(userId, { ...record, failedUnlocks: 0 });
-      }
-      return new Uint8Array(rootKeyBytes);
     } catch {
       // A failure here is almost always a wrong passphrase. A damaged inner
-      // layer looks the same; either way the count below ends the guessing
-      // and hands over to the recovery key.
-      const failedUnlocks = record.failedUnlocks + 1;
-      if (failedUnlocks >= MAX_FAILED_UNLOCKS) {
+      // layer looks the same; either way the count ends the guessing and
+      // hands over to the recovery key. The attempt was already counted.
+      if (record.failedUnlocks + 1 >= MAX_FAILED_UNLOCKS) {
         await this.forget(userId);
         throw new DeviceLockedOutError();
       }
-      await this.#put(userId, { ...record, failedUnlocks });
       throw new DevicePassphraseError();
     }
+    // The passphrase was right. Clearing the count is tidying up: if it
+    // cannot be written, the unlock still succeeds, and the count is cleared
+    // by the next successful unlock instead.
+    await this.#clearAttempts(userId).catch(() => undefined);
+    return new Uint8Array(rootKeyBytes);
   }
 
   async #put(userId: string, record: DeviceRecord): Promise<void> {
-    await this.#run("readwrite", (store) => store.put(record, userId));
+    await this.#run<true>("readwrite", (store, result) => {
+      store.put(record, userId);
+      result(true);
+    });
   }
 
   async forget(userId: string): Promise<void> {
-    await this.#run("readwrite", (store) => store.delete(userId));
+    await this.#run<true>("readwrite", (store, result) => {
+      store.delete(userId);
+      result(true);
+    });
   }
 }

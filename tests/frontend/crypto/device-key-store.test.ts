@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   DEVICE_FORMAT_VERSION,
@@ -282,6 +282,104 @@ describe("the device key store (ADR-0004, DEV-005)", () => {
     await expect(store.open(USER, PASSPHRASE)).rejects.toBeInstanceOf(
       DeviceStoreDamagedError,
     );
+  });
+
+  it("counts simultaneous wrong attempts separately, so a race cannot buy extra guesses", async () => {
+    const { store, name } = newStore();
+    await store.enrol(USER, generateRootKeyBytes(), PASSPHRASE);
+
+    const outcomes = await Promise.allSettled(
+      Array.from({ length: MAX_FAILED_UNLOCKS + 3 }, (_, index) =>
+        store.open(USER, `a wrong passphrase ${String(index)}`),
+      ),
+    );
+
+    const names = outcomes.map((outcome) =>
+      outcome.status === "rejected" ? (outcome.reason as Error).name : "opened",
+    );
+    expect(names).not.toContain("opened");
+    expect(
+      names.filter((n) => n === "DevicePassphraseError").length,
+    ).toBeLessThan(MAX_FAILED_UNLOCKS);
+    expect(names).toContain("DeviceLockedOutError");
+    expect(await store.has(USER)).toBe(false);
+    expect(
+      await raw<unknown>(name, "readonly", (s) => s.get(USER)),
+    ).toBeUndefined();
+  });
+
+  it("counts an attempt before trying it, and clears the count on success", async () => {
+    const { store, name } = newStore();
+    await store.enrol(USER, generateRootKeyBytes(), PASSPHRASE);
+    const count = async (): Promise<number> =>
+      (
+        await raw<{ failedUnlocks: number }>(name, "readonly", (s) =>
+          s.get(USER),
+        )
+      ).failedUnlocks;
+
+    await store.open(USER, "a wrong passphrase").catch(() => undefined);
+    expect(await count()).toBe(1);
+    await store.open(USER, "another wrong one").catch(() => undefined);
+    expect(await count()).toBe(2);
+
+    await store.open(USER, PASSPHRASE);
+    expect(await count()).toBe(0);
+  });
+
+  it("a correct passphrase still unlocks when the count cannot be cleared", async () => {
+    const { store } = newStore();
+    const root = generateRootKeyBytes();
+    await store.enrol(USER, root, PASSPHRASE);
+    const realPut = IDBObjectStore.prototype.put;
+    let puts = 0;
+    const spy = vi
+      .spyOn(IDBObjectStore.prototype, "put")
+      .mockImplementation(function (this: IDBObjectStore, ...args) {
+        puts += 1;
+        // The first write counts the attempt. The second, which would clear
+        // the count, fails as a full disk would.
+        if (puts === 2) {
+          throw new DOMException("quota", "QuotaExceededError");
+        }
+        return realPut.apply(this, args);
+      });
+
+    const opened = await store.open(USER, PASSPHRASE);
+    spy.mockRestore();
+
+    expect(toBase64(opened)).toBe(toBase64(root));
+    expect(puts).toBe(2);
+    // Not reported as a wrong passphrase, and the device is still trusted.
+    expect(toBase64(await store.open(USER, PASSPHRASE))).toBe(toBase64(root));
+  });
+
+  it("reports a failed write when enrolling instead of pretending it worked", async () => {
+    const { store } = newStore();
+    const spy = vi
+      .spyOn(IDBObjectStore.prototype, "put")
+      .mockImplementation(() => {
+        throw new DOMException("quota", "QuotaExceededError");
+      });
+
+    await expect(
+      store.enrol(USER, generateRootKeyBytes(), PASSPHRASE),
+    ).rejects.toThrow();
+    spy.mockRestore();
+
+    expect(await store.has(USER)).toBe(false);
+  });
+
+  it("measures the minimum length after normalising the passphrase", async () => {
+    const { store } = newStore();
+    // Twelve code units before normalisation, six after: each "ﬁ" ligature
+    // counts once either way, but a decomposed accent does not add length.
+    const decomposed = "e\u0301".repeat(6);
+    expect(decomposed).toHaveLength(12);
+
+    await expect(
+      store.enrol(USER, generateRootKeyBytes(), decomposed),
+    ).rejects.toThrow("too short");
   });
 
   it("counts wrong passphrases across reloads", async () => {

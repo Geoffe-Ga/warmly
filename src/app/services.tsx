@@ -117,6 +117,10 @@ const TAB_ID_KEY = "warmly.fake.tab";
  * device: IndexedDB is otherwise shared by every tab. Production uses one
  * database for the whole browser.
  *
+ * The only thing kept in `sessionStorage` here is a random tab ID. It is not
+ * key material and decrypts nothing, and this function is not called in
+ * production builds.
+ *
  * @returns The database name.
  */
 export function tabDeviceDatabase(): string {
