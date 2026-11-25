@@ -1,10 +1,18 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/preact";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
+import type { JSX } from "preact";
 import { useState } from "preact/hooks";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Button } from "../../../src/ui/components/Button";
 import { Card } from "../../../src/ui/components/Card";
+import { CheckboxGroup } from "../../../src/ui/components/CheckboxGroup";
 import { ConfirmDialog } from "../../../src/ui/components/ConfirmDialog";
 import { TextArea, TextField } from "../../../src/ui/components/Field";
 import { PageLayout } from "../../../src/ui/components/PageLayout";
@@ -207,6 +215,89 @@ describe("TextArea", () => {
 
     expect(screen.getByLabelText("Short")).toHaveProperty("rows", 4);
     expect(screen.getByLabelText("Long")).toHaveProperty("rows", 9);
+  });
+});
+
+describe("CheckboxGroup", () => {
+  function Group(props: {
+    readonly start?: string[];
+    readonly onChange?: (selected: string[]) => void;
+    readonly hint?: string;
+  }): JSX.Element {
+    const [selected, setSelected] = useState(props.start ?? []);
+    return (
+      <CheckboxGroup
+        legend="How are you feeling?"
+        name="feelings"
+        options={["calm", "tired", "hopeful"]}
+        selected={selected}
+        {...(props.hint === undefined ? {} : { hint: props.hint })}
+        onChange={(next) => {
+          setSelected(next);
+          props.onChange?.(next);
+        }}
+      />
+    );
+  }
+
+  it("is a named group of native checkboxes, one per option, in order", () => {
+    render(<Group start={["tired"]} hint="Choose any that fit, or none." />);
+
+    const group = screen.getByRole("group", { name: "How are you feeling?" });
+    expect(group.tagName).toBe("FIELDSET");
+    expect(
+      document.getElementById(group.getAttribute("aria-describedby") ?? "")
+        ?.textContent,
+    ).toBe("Choose any that fit, or none.");
+    const boxes = within(group).getAllByRole("checkbox");
+    expect(boxes.map((box) => box.getAttribute("value"))).toEqual([
+      "calm",
+      "tired",
+      "hopeful",
+    ]);
+    expect(boxes.map((box) => (box as HTMLInputElement).checked)).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    expect(boxes.every((box) => box.getAttribute("name") === "feelings")).toBe(
+      true,
+    );
+    expect(screen.getByLabelText("hopeful")).toBe(boxes[2]);
+  });
+
+  it("has no description when there is no hint", () => {
+    render(<Group />);
+
+    expect(screen.getByRole("group").hasAttribute("aria-describedby")).toBe(
+      false,
+    );
+  });
+
+  it("reports the selection in option order as boxes are ticked and cleared", async () => {
+    const changes: string[][] = [];
+    render(<Group onChange={(next) => changes.push(next)} />);
+
+    await userEvent.click(screen.getByLabelText("hopeful"));
+    await userEvent.click(screen.getByLabelText("calm"));
+    await userEvent.click(screen.getByLabelText("hopeful"));
+
+    expect(changes).toEqual([["hopeful"], ["calm", "hopeful"], ["calm"]]);
+  });
+
+  it("can be worked with the keyboard alone", async () => {
+    const changes: string[][] = [];
+    render(<Group onChange={(next) => changes.push(next)} />);
+
+    await userEvent.tab();
+    expect(document.activeElement).toBe(screen.getByLabelText("calm"));
+    await userEvent.tab();
+    await userEvent.keyboard(" ");
+
+    expect(changes).toEqual([["tired"]]);
+    expect((screen.getByLabelText("tired") as HTMLInputElement).checked).toBe(
+      true,
+    );
   });
 });
 

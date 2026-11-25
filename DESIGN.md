@@ -150,6 +150,22 @@ components:
     rounded: "{rounded.md}"
     padding: 0.5rem 1rem
     height: 8rem
+  choice:
+    backgroundColor: "{colors.surface}"
+    textColor: "{colors.ink}"
+    borderColor: "{colors.border-strong}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: 0.25rem 1rem
+    height: 2.75rem
+  choice-selected:
+    backgroundColor: "{colors.blush}"
+    textColor: "{colors.ink}"
+    borderColor: "{colors.border-strong}"
+    typography: "{typography.body}"
+    rounded: "{rounded.md}"
+    padding: 0.25rem 1rem
+    height: 2.75rem
   card:
     backgroundColor: "{colors.surface}"
     textColor: "{colors.ink}"
@@ -376,6 +392,10 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 **`text-input-invalid`** — The border turns `{colors.danger}` and an error message in `{typography.small-strong}` appears below, linked with `aria-describedby`. The message says what to do next.
 
 **`text-area`** — The journal writing surface. Same styling as `{component.text-input}`, at least 8rem tall, vertically resizable.
+
+**`choice`** — One option in a group where any number, or none, may be picked: a native checkbox and its word inside a 44px-tall outlined pill, wrapped in a `fieldset` whose `legend` asks the question. Used for the feelings check-in.
+
+**`choice-selected`** — A ticked option: `{colors.blush}` fill. The tick itself still shows, so the state never depends on colour alone.
 
 ### Status Banners
 

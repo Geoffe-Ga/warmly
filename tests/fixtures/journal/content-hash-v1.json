@@ -1,0 +1,46 @@
+{
+  "note": "Known answers for content hash version 1, computed independently with Python's hashlib and unicodedata. Synthetic text. Never edit: a change to the hash is a new version with a new file.",
+  "version": 1,
+  "cases": [
+    {
+      "name": "plain answers",
+      "responses": {
+        "good": "We cooked together.",
+        "improve": "Planning weekends.",
+        "loved": "A note on the fridge."
+      },
+      "canonical": "{\"v\":1,\"good\":\"We cooked together.\",\"improve\":\"Planning weekends.\",\"loved\":\"A note on the fridge.\"}",
+      "hash": "a5eb0dad8884e0963c82f0dd95937fd93c36faec7e6995a3e7bfd8918008e802"
+    },
+    {
+      "name": "empty answers",
+      "responses": {
+        "good": "",
+        "improve": "",
+        "loved": ""
+      },
+      "canonical": "{\"v\":1,\"good\":\"\",\"improve\":\"\",\"loved\":\"\"}",
+      "hash": "227d289c8de6c16add2988ec788299ada4066a18c49632c287d9485a1797ed5c"
+    },
+    {
+      "name": "quotes, a backslash and a line break",
+      "responses": {
+        "good": "She said \"thank you\".",
+        "improve": "Back\\slash",
+        "loved": "Line one\nLine two"
+      },
+      "canonical": "{\"v\":1,\"good\":\"She said \\\"thank you\\\".\",\"improve\":\"Back\\\\slash\",\"loved\":\"Line one\\nLine two\"}",
+      "hash": "9170fe5653d1c89463287871067e9017172baa8f06e72ad7071ff0ec37d091c7"
+    },
+    {
+      "name": "non-ASCII text, already composed",
+      "responses": {
+        "good": "Café ☕ at 7",
+        "improve": "naïve plans",
+        "loved": "ありがとう 💛"
+      },
+      "canonical": "{\"v\":1,\"good\":\"Café ☕ at 7\",\"improve\":\"naïve plans\",\"loved\":\"ありがとう 💛\"}",
+      "hash": "9d440831c27c3150386eb8d0f7ef3a4355a5bd80e9dac89132328c82caa6d0f2"
+    }
+  ]
+}

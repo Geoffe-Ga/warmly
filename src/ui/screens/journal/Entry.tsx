@@ -124,6 +124,11 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
           <Answer text={entry.responses[prompt.key]} />
         </Card>
       ))}
+      {entry.feelings !== undefined && entry.feelings.length > 0 && (
+        <Card heading="Feelings you noted">
+          <p>{entry.feelings.join(", ")}</p>
+        </Card>
+      )}
       {back}
     </PageLayout>
   );
