@@ -19,6 +19,7 @@ import { RotateRecoveryKey } from "../ui/screens/account/RotateRecoveryKey";
 import { SignIn } from "../ui/screens/account/SignIn";
 import { TrustDevice } from "../ui/screens/account/TrustDevice";
 import { VerifyEmail } from "../ui/screens/account/VerifyEmail";
+import { ManageDevices } from "../ui/screens/devices/ManageDevices";
 import { redirectFor } from "./access";
 import { matchRoute } from "./router";
 import type { RouteDef, RouteId } from "./routes";
@@ -38,6 +39,7 @@ export interface View {
 const SCREENS: Readonly<Partial<Record<RouteId, () => JSX.Element>>> = {
   home: Home,
   settings: Settings,
+  devices: ManageDevices,
   "rotate-recovery-key": RotateRecoveryKey,
   onboarding: Register,
   "verify-email": VerifyEmail,

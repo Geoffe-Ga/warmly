@@ -8,6 +8,8 @@
 import type { AuthSession } from "../auth/auth-client";
 import { fromBase64, toBase64 } from "../crypto/encoding";
 import { VaultError } from "../crypto/key-vault";
+import type { DeviceIdentityStore } from "../devices/identity";
+import { ApiClient, ApiError } from "./client";
 import type { components } from "./schema";
 
 type WireEnvelope = components["schemas"]["RecoveryEnvelope"];
@@ -21,23 +23,33 @@ export interface StoredRecoveryEnvelope {
   readonly envelope: Uint8Array<ArrayBuffer>;
 }
 
+/** A recovery envelope to store, and the version it replaces. */
+export interface RecoveryEnvelopeWrite {
+  /** The stored version this replaces; 0 creates the first envelope. */
+  readonly expectedVersion: number;
+  /** The wrapped root key. */
+  readonly envelope: Uint8Array<ArrayBuffer>;
+  /** The envelope format the bytes were written in. */
+  readonly formatVersion: number;
+  /**
+   * What a new device must prove it knows before it may register (see
+   * `deviceEnrollmentVerifier`). Sent once, with the first envelope, and
+   * ignored when replacing one.
+   */
+  readonly enrollmentVerifier: Uint8Array<ArrayBuffer>;
+}
+
 /** Reads and replaces the signed-in account's recovery envelope. */
 export interface RecoveryEnvelopeStore {
   /** @returns The envelope, or `undefined` if the account has none yet. */
   read(session: AuthSession): Promise<StoredRecoveryEnvelope | undefined>;
   /**
-   * Create (`expectedVersion` 0) or replace the envelope, only if the stored
-   * version is still the expected one.
+   * Create or replace the envelope, only if the stored version is still the
+   * expected one.
    *
-   * @param formatVersion - The envelope format the bytes were written in.
    * @returns `false` if the stored version had moved on; nothing was changed.
    */
-  write(
-    session: AuthSession,
-    expectedVersion: number,
-    envelope: Uint8Array<ArrayBuffer>,
-    formatVersion: number,
-  ): Promise<boolean>;
+  write(session: AuthSession, change: RecoveryEnvelopeWrite): Promise<boolean>;
 }
 
 const PATH = "/v1/recovery-envelope";
@@ -53,53 +65,40 @@ function isWireEnvelope(value: unknown): value is WireEnvelope {
   );
 }
 
+/** Report a failure to reach the API in the vault's own terms. */
+function asVaultError(error: unknown): unknown {
+  if (
+    error instanceof ApiError &&
+    (error.code === "offline" || error.code === "signed_out")
+  ) {
+    return new VaultError(error.code);
+  }
+  return error;
+}
+
 /** The recovery envelope held by the Warmly API. */
 export class ApiRecoveryEnvelopeStore implements RecoveryEnvelopeStore {
-  readonly #baseUrl: string;
-  readonly #fetch: typeof fetch;
+  readonly #api: ApiClient;
+  readonly #identities: DeviceIdentityStore;
 
   /**
-   * @param baseUrl - Origin of the Warmly API; empty for the app's own origin.
-   * @param fetchFn - The network function. Injected so tests never touch the
-   *   network.
+   * @param api - The API client.
+   * @param identities - This device's identity, which signs a replacement.
    */
-  constructor(baseUrl: string, fetchFn: typeof fetch) {
-    this.#baseUrl = baseUrl.replace(/\/+$/, "");
-    this.#fetch = fetchFn;
-  }
-
-  async #request(
-    session: AuthSession,
-    init: RequestInit = {},
-  ): Promise<Response> {
-    let response: Response;
-    try {
-      response = await this.#fetch(this.#baseUrl + PATH, {
-        ...init,
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${session.accessToken}`,
-          ...(init.body === undefined
-            ? {}
-            : { "Content-Type": "application/json" }),
-        },
-        // The token is the only credential; cookies are never sent.
-        credentials: "omit",
-        cache: "no-store",
-      });
-    } catch {
-      throw new VaultError("offline");
-    }
-    if (response.status === 401) {
-      throw new VaultError("signed_out");
-    }
-    return response;
+  constructor(api: ApiClient, identities: DeviceIdentityStore) {
+    this.#api = api;
+    this.#identities = identities;
   }
 
   async read(
     session: AuthSession,
   ): Promise<StoredRecoveryEnvelope | undefined> {
-    const response = await this.#request(session);
+    // Not signed: a new device reads the envelope before it can register.
+    const response = await this.#api
+      .send(session, { method: "GET", path: PATH, signedBy: undefined })
+      .catch((error: unknown) => {
+        throw asVaultError(error);
+      });
     if (response.status === 404) {
       return undefined;
     }
@@ -112,19 +111,27 @@ export class ApiRecoveryEnvelopeStore implements RecoveryEnvelopeStore {
 
   async write(
     session: AuthSession,
-    expectedVersion: number,
-    envelope: Uint8Array<ArrayBuffer>,
-    formatVersion: number,
+    change: RecoveryEnvelopeWrite,
   ): Promise<boolean> {
-    const request: WireRequest = {
-      expected_version: expectedVersion,
-      format_version: formatVersion,
-      wrapped_key: toBase64(envelope),
+    const creating = change.expectedVersion === 0;
+    const body: WireRequest = {
+      expected_version: change.expectedVersion,
+      format_version: change.formatVersion,
+      wrapped_key: toBase64(change.envelope),
+      ...(creating
+        ? { device_enrollment_verifier: toBase64(change.enrollmentVerifier) }
+        : {}),
     };
-    const response = await this.#request(session, {
-      method: "PUT",
-      body: JSON.stringify(request),
-    });
+    // Creating the first envelope cannot be signed: no device can register
+    // before it exists. Replacing one must be signed by a registered device.
+    const signedBy = creating
+      ? undefined
+      : await this.#identities.get(session.userId);
+    const response = await this.#api
+      .send(session, { method: "PUT", path: PATH, body, signedBy })
+      .catch((error: unknown) => {
+        throw asVaultError(error);
+      });
     if (response.status === 409) {
       return false;
     }

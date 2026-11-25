@@ -16,6 +16,11 @@ export interface ButtonProps {
    * (`aria-disabled`), so keyboard and screen-reader users can still find it.
    */
   readonly disabled?: boolean;
+  /**
+   * A fuller name for assistive technology when several buttons on a screen
+   * share the same visible text. It must start with the visible text.
+   */
+  readonly ariaLabel?: string;
 }
 
 /**
@@ -39,6 +44,7 @@ export function Button(props: ButtonProps): JSX.Element {
       type={props.type ?? "button"}
       class={`button button--${variant}`}
       aria-disabled={disabled ? "true" : undefined}
+      aria-label={props.ariaLabel}
       onClick={onClick}
     >
       {props.children}

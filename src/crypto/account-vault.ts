@@ -17,6 +17,7 @@ import type {
   StoredRecoveryEnvelope,
 } from "../api/recovery-envelope-store";
 import type { AuthClient, AuthSession } from "../auth/auth-client";
+import { deviceEnrollmentVerifier } from "../devices/signing";
 import {
   DeviceLockedOutError,
   DevicePassphraseError,
@@ -60,6 +61,7 @@ export class AccountVault implements KeyVault {
   readonly #auth: AuthClient;
   readonly #envelopes: RecoveryEnvelopeStore;
   readonly #device: DeviceKeyStore | undefined;
+  readonly #afterUnlock: ((root: RootKey) => void) | undefined;
   #root: RootKey | undefined;
   #pending: Pending | undefined;
   /**
@@ -75,15 +77,28 @@ export class AccountVault implements KeyVault {
    * @param envelopes - Where the recovery envelope is kept.
    * @param device - This device's key store. Without one, unlocking always
    *   takes the recovery key.
+   * @param afterUnlock - Called each time the vault is unlocked, with the
+   *   root key. Unlocking does not wait for it, so it must not throw.
    */
   constructor(
     auth: AuthClient,
     envelopes: RecoveryEnvelopeStore,
     device?: DeviceKeyStore,
+    afterUnlock?: (root: RootKey) => void,
   ) {
     this.#auth = auth;
     this.#envelopes = envelopes;
     this.#device = device;
+    this.#afterUnlock = afterUnlock;
+  }
+
+  /**
+   * The root key, for code that encrypts and decrypts records.
+   *
+   * @returns The key handle while unlocked, otherwise `undefined`.
+   */
+  rootKey(): RootKey | undefined {
+    return this.#root;
   }
 
   async #session(): Promise<AuthSession> {
@@ -115,11 +130,13 @@ export class AccountVault implements KeyVault {
     rootKeyBytes: Uint8Array<ArrayBuffer>,
     offerTrust: boolean,
   ): Promise<void> {
-    this.#root = await importRootKey(rootKeyBytes);
+    const root = await importRootKey(rootKeyBytes);
+    this.#root = root;
     this.#dropToTrust();
     if (offerTrust && this.#device !== undefined) {
       this.#toTrust = { userId, rootKeyBytes: rootKeyBytes.slice() };
     }
+    this.#afterUnlock?.(root);
   }
 
   /** Open the stored envelope with a typed recovery key. */
@@ -297,12 +314,15 @@ export class AccountVault implements KeyVault {
     );
     // If this write does not happen, the stored envelope is untouched and
     // the pending change is kept, so the user can try again.
-    const saved = await this.#envelopes.write(
-      session,
-      pending.expectedVersion,
+    const saved = await this.#envelopes.write(session, {
+      expectedVersion: pending.expectedVersion,
       envelope,
-      RECOVERY_FORMAT_VERSION,
-    );
+      formatVersion: RECOVERY_FORMAT_VERSION,
+      // One-way, so the server learns nothing about the root key from it.
+      enrollmentVerifier: await deviceEnrollmentVerifier(
+        await importRootKey(pending.rootKeyBytes),
+      ),
+    });
     if (!saved) {
       this.#dropPending();
       throw new VaultError(conflict);

@@ -1,9 +1,13 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
+import { ApiError } from "../../../src/api/client";
 import {
   createAuthClient,
-  createKeyVault,
+  createKeyServices,
   createServices,
+  tabDeviceDatabase,
+  tabIdentityDatabase,
+  type KeyServiceDoubles,
 } from "../../../src/app/services";
 import {
   AuthError,
@@ -13,7 +17,17 @@ import { SupabaseAuthClient } from "../../../src/auth/supabase-auth-client";
 import { AccountVault } from "../../../src/crypto/account-vault";
 import { IndexedDbDeviceKeyStore } from "../../../src/crypto/device-key-store";
 import { UnavailableKeyVault, VaultError } from "../../../src/crypto/key-vault";
+import { IndexedDbDeviceIdentityStore } from "../../../src/devices/identity";
+import {
+  AccountDevices,
+  DeviceError,
+  UnavailableDeviceDirectory,
+} from "../../../src/devices/this-device";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
+import {
+  FAKE_DEVICES_STORAGE_KEY,
+  FakeDeviceRegistry,
+} from "../../../src/testing/fake-device-registry";
 import { FakeRecoveryEnvelopeStore } from "../../../src/testing/fake-recovery-envelope-store";
 import {
   FAKE_DEVICE_PASSPHRASE,
@@ -422,44 +436,122 @@ describe("createAuthClient", () => {
   });
 });
 
-describe("createKeyVault", () => {
+describe("createKeyServices", () => {
   const CONFIGURED = {
     VITE_SUPABASE_URL: "https://project.example",
     VITE_SUPABASE_PUBLISHABLE_KEY: ["sb", "publishable", "synthetic"].join("_"),
   };
-  const auth = new FakeAuthClient();
+  const PHRASE = ["correct", "horse", "battery"].join(" ");
 
-  it("runs the real vault on the in-memory stores when they are supplied", () => {
-    const vault = createKeyVault(CONFIGURED, auth, {
+  function doubles(): KeyServiceDoubles {
+    const id = crypto.randomUUID();
+    return {
       envelopes: new FakeRecoveryEnvelopeStore(),
-      device: new IndexedDbDeviceKeyStore("warmly-device-test"),
-    });
+      device: new IndexedDbDeviceKeyStore(`warmly-device-test-${id}`),
+      identities: new IndexedDbDeviceIdentityStore(
+        `warmly-identity-test-${id}`,
+      ),
+      registry: new FakeDeviceRegistry(),
+    };
+  }
 
-    expect(vault).toBeInstanceOf(AccountVault);
+  it("runs the real vault and device directory on the in-memory stores when they are supplied", () => {
+    const services = createKeyServices(
+      CONFIGURED,
+      new FakeAuthClient(),
+      doubles(),
+    );
+
+    expect(services.vault).toBeInstanceOf(AccountVault);
+    expect(services.devices).toBeInstanceOf(AccountDevices);
+  });
+
+  it("registers this device when the account's keys are created, and lists it (DEV-002)", async () => {
+    const auth = new FakeAuthClient();
+    await auth.register("sam@example.com", PHRASE);
+    await auth.completeVerification();
+    const { vault, devices } = createKeyServices({}, auth, doubles());
+    await expect(devices.list()).rejects.toMatchObject({ code: "locked" });
+
+    await vault.createAccountKeys();
+    await vault.confirmRecoveryKey();
+
+    await expect
+      .poll(() => localStorage.getItem(FAKE_DEVICES_STORAGE_KEY))
+      .not.toBeNull();
+    const listed = await devices.list();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.isCurrent).toBe(true);
+    expect(listed[0]?.name).toMatch(/^Device added /);
+  });
+
+  it("a second device that unlocks with the recovery key registers itself too", async () => {
+    const auth = new FakeAuthClient();
+    await auth.register("sam@example.com", PHRASE);
+    await auth.completeVerification();
+    const first = createKeyServices({}, auth, doubles());
+    const key = await first.vault.createAccountKeys();
+    await first.vault.confirmRecoveryKey();
+    await first.devices.list();
+    const second = createKeyServices({}, auth, doubles());
+
+    await second.vault.unlockWithRecoveryKey(key);
+
+    expect((await second.devices.list()).map((d) => d.isCurrent)).toEqual([
+      false,
+      true,
+    ]);
+    second.vault.lock();
+    await expect(second.devices.list()).rejects.toMatchObject({
+      code: "locked",
+    });
   });
 
   it("runs the real vault on the API in a configured production build", async () => {
-    const vault = createKeyVault(
+    const services = createKeyServices(
       { ...CONFIGURED, VITE_API_ORIGIN: "https://api.example" },
-      auth,
+      new FakeAuthClient(),
     );
 
-    expect(vault).toBeInstanceOf(AccountVault);
-    // No device store until trusted-device unlock exists.
-    expect(await vault.hasKeysOnThisDevice()).toBe(false);
+    expect(services.vault).toBeInstanceOf(AccountVault);
+    expect(services.devices).toBeInstanceOf(AccountDevices);
+    expect(await services.vault.hasKeysOnThisDevice()).toBe(false);
   });
 
   it.each([{}, { VITE_API_ORIGIN: "" }, { VITE_API_ORIGIN: 7 }])(
     "is unavailable when signed-in accounts are configured but the API origin is not (%j)",
     (extra) => {
-      expect(createKeyVault({ ...CONFIGURED, ...extra }, auth)).toBeInstanceOf(
-        UnavailableKeyVault,
+      const services = createKeyServices(
+        { ...CONFIGURED, ...extra },
+        new FakeAuthClient(),
       );
+
+      expect(services.vault).toBeInstanceOf(UnavailableKeyVault);
+      expect(services.devices).toBeInstanceOf(UnavailableDeviceDirectory);
     },
   );
 
   it("is unavailable in a production build with no backend configured", () => {
-    expect(createKeyVault({}, auth)).toBeInstanceOf(UnavailableKeyVault);
+    const services = createKeyServices({}, new FakeAuthClient());
+
+    expect(services.vault).toBeInstanceOf(UnavailableKeyVault);
+    expect(services.devices).toBeInstanceOf(UnavailableDeviceDirectory);
+  });
+});
+
+describe("per-tab databases in builds that use the in-memory server", () => {
+  it("gives a tab the same pair of names every time, and another tab different ones", () => {
+    const device = tabDeviceDatabase();
+    const identity = tabIdentityDatabase();
+
+    expect(tabDeviceDatabase()).toBe(device);
+    expect(tabIdentityDatabase()).toBe(identity);
+    expect(identity).not.toBe(device);
+    expect(identity).toMatch(/^warmly-identity-[0-9a-f-]{36}$/);
+
+    sessionStorage.clear();
+    expect(tabIdentityDatabase()).not.toBe(identity);
+    expect(tabDeviceDatabase()).not.toBe(device);
   });
 });
 
@@ -469,6 +561,7 @@ describe("createServices", () => {
 
     expect(services.auth).toBeInstanceOf(FakeAuthClient);
     expect(services.vault).toBeInstanceOf(AccountVault);
+    expect(services.devices).toBeInstanceOf(AccountDevices);
     expect(services.session.state).toBe("signed_out");
     expect(services.onboarding.recoveryKey).toBeUndefined();
   });
@@ -500,6 +593,17 @@ describe("describeError", () => {
     [new VaultError("nothing_to_confirm"), "Start again"],
     [new VaultError("signed_out"), "Sign in again"],
     [new VaultError("offline"), "Check your connection"],
+    [new ApiError("offline"), "Check your connection"],
+    [new ApiError("signed_out"), "Sign in again"],
+    [
+      new ApiError("device_not_authorized"),
+      "isn't registered with your account",
+    ],
+    [new ApiError("clock_wrong"), "Set the date and time to automatic"],
+    [new ApiError("unexpected"), "Something went wrong"],
+    [new DeviceError("locked"), "Unlock it and try again"],
+    [new DeviceError("not_found"), "no longer on your account"],
+    [new DeviceError("invalid_name"), "1 to 60 characters"],
   ])("explains %s", (error, expected) => {
     expect(describeError(error)).toContain(expected);
   });

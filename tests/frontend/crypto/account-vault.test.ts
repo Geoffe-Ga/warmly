@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import type {
   RecoveryEnvelopeStore,
+  RecoveryEnvelopeWrite,
   StoredRecoveryEnvelope,
 } from "../../../src/api/recovery-envelope-store";
 import type { AuthSession } from "../../../src/auth/auth-client";
@@ -12,6 +13,8 @@ import {
 } from "../../../src/crypto/device-key-store";
 import { toBase64 } from "../../../src/crypto/encoding";
 import { VaultError } from "../../../src/crypto/key-vault";
+import { fingerprint, type RootKey } from "../../../src/crypto/root-key";
+import { deviceEnrollmentVerifier } from "../../../src/devices/signing";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import {
   FAKE_RECOVERY_STORAGE_KEY,
@@ -139,10 +142,10 @@ describe("creating account keys (AC-01, DEV-006)", () => {
     let failing = true;
     const flaky: RecoveryEnvelopeStore = {
       read: (session) => server.read(session),
-      write: (session, expected, envelope, format) =>
+      write: (session, change) =>
         failing
           ? Promise.reject(new VaultError("offline"))
-          : server.write(session, expected, envelope, format),
+          : server.write(session, change),
     };
     const vault = device(flaky);
     const key = await vault.createAccountKeys();
@@ -235,12 +238,12 @@ describe("recovering on a new device (DEV-001 path B)", () => {
     await auth.signOut();
     await signUp(OTHER_EMAIL);
     const theirSession = (await auth.currentSession()) as AuthSession;
-    await server.write(
-      theirSession,
-      0,
-      (stolen as StoredRecoveryEnvelope).envelope,
-      1,
-    );
+    await server.write(theirSession, {
+      expectedVersion: 0,
+      envelope: (stolen as StoredRecoveryEnvelope).envelope,
+      formatVersion: 1,
+      enrollmentVerifier: new Uint8Array(32),
+    });
 
     expect(await code(device().unlockWithRecoveryKey(key))).toBe(
       "wrong_recovery_key",
@@ -543,10 +546,10 @@ describe("replacing the recovery key (SEC-003)", () => {
     let failing = true;
     const flaky: RecoveryEnvelopeStore = {
       read: (session) => server.read(session),
-      write: (session, expected, envelope, format) =>
+      write: (session, change) =>
         failing
           ? Promise.reject(new VaultError("offline"))
-          : server.write(session, expected, envelope, format),
+          : server.write(session, change),
     };
     const vault = device(flaky);
     const newKey = await vault.beginRecoveryKeyRotation(key);
@@ -637,5 +640,118 @@ describe("replacing the recovery key (SEC-003)", () => {
     expect(toBase64(after?.envelope ?? new Uint8Array())).not.toBe(
       toBase64(before?.envelope ?? new Uint8Array()),
     );
+  });
+});
+
+describe("what the vault gives device registration (DEV-002, ADR-0005)", () => {
+  const PASSPHRASE = ["lamp", "river", "kettle"].join(" ");
+
+  /** A server that records what was written to it. */
+  function recording(): {
+    store: RecoveryEnvelopeStore;
+    writes: RecoveryEnvelopeWrite[];
+  } {
+    const writes: RecoveryEnvelopeWrite[] = [];
+    return {
+      writes,
+      store: {
+        read: (session) => server.read(session),
+        write: (session, change) => {
+          writes.push(change);
+          return server.write(session, change);
+        },
+      },
+    };
+  }
+
+  it("sends the enrollment verifier derived from the new root key with the first envelope", async () => {
+    await signUp();
+    const { store, writes } = recording();
+    const vault = new AccountVault(auth, store);
+    await vault.createAccountKeys();
+
+    await vault.confirmRecoveryKey();
+
+    const root = vault.rootKey() as RootKey;
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.expectedVersion).toBe(0);
+    expect(toBase64(writes[0]?.enrollmentVerifier ?? new Uint8Array())).toBe(
+      toBase64(await deviceEnrollmentVerifier(root)),
+    );
+  });
+
+  it("the verifier is not the root key, the envelope or the fingerprint", async () => {
+    await signUp();
+    const { store, writes } = recording();
+    const vault = new AccountVault(auth, store);
+    await vault.createAccountKeys();
+    await vault.confirmRecoveryKey();
+
+    const verifier = toBase64(
+      writes[0]?.enrollmentVerifier ?? new Uint8Array(),
+    );
+
+    expect(writes[0]?.enrollmentVerifier).toHaveLength(32);
+    expect(toBase64(writes[0]?.envelope ?? new Uint8Array())).not.toContain(
+      verifier.slice(0, 16),
+    );
+    expect(await vault.fingerprint()).not.toBe(verifier);
+  });
+
+  it("exposes the root key only while unlocked", async () => {
+    await signUp();
+    const vault = device();
+    expect(vault.rootKey()).toBeUndefined();
+
+    await vault.createAccountKeys();
+    expect(vault.rootKey()).toBeUndefined();
+    await vault.confirmRecoveryKey();
+
+    const root = vault.rootKey();
+    expect(root).toBeDefined();
+    expect(await fingerprint(root as RootKey)).toBe(await vault.fingerprint());
+
+    vault.lock();
+    expect(vault.rootKey()).toBeUndefined();
+  });
+
+  it("tells the registration hook about every unlock, with the root key", async () => {
+    await signUp();
+    const seen: string[] = [];
+    const record = (root: RootKey): void => {
+      void fingerprint(root).then((value) => seen.push(value));
+    };
+    const store = new IndexedDbDeviceKeyStore(
+      `vault-hook-${crypto.randomUUID()}`,
+      1_000,
+    );
+    const vault = new AccountVault(auth, server, store, record);
+
+    const key = await vault.createAccountKeys();
+    expect(seen).toHaveLength(0);
+    await vault.confirmRecoveryKey();
+    await vault.trustThisDevice(PASSPHRASE);
+    const expected = await vault.fingerprint();
+    vault.lock();
+    await vault.unlock(PASSPHRASE);
+    vault.lock();
+    await vault.unlockWithRecoveryKey(key);
+
+    await expect.poll(() => seen).toEqual([expected, expected, expected]);
+  });
+
+  it("does not tell the hook about a failed unlock or a rotation that was not saved", async () => {
+    const { key } = await onboarded();
+    let unlocks = 0;
+    const vault = new AccountVault(auth, server, undefined, () => {
+      unlocks += 1;
+    });
+
+    expect(await code(vault.unlockWithRecoveryKey("nope"))).toBe(
+      "recovery_key_malformed",
+    );
+    await vault.beginRecoveryKeyRotation(key);
+
+    expect(unlocks).toBe(0);
   });
 });

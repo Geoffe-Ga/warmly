@@ -5,6 +5,7 @@
 import type { ComponentChildren, JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
+import { ApiError, type ApiErrorCode } from "../../../api/client";
 import { HOME_PATH } from "../../../app/access";
 import { pathFor } from "../../../app/routes";
 import { AuthError, type AuthErrorCode } from "../../../auth/auth-client";
@@ -13,10 +14,20 @@ import {
   type KeyVault,
   type VaultErrorCode,
 } from "../../../crypto/key-vault";
+import {
+  DeviceError,
+  MAX_DEVICE_NAME_LENGTH,
+  type DeviceErrorCode,
+} from "../../../devices/this-device";
 import { StatusBanner } from "../../components/StatusBanner";
 
 // Keyed by every error code, so adding a code without wording is a type error.
-const MESSAGES: Readonly<Record<AuthErrorCode | VaultErrorCode, string>> = {
+const MESSAGES: Readonly<
+  Record<
+    AuthErrorCode | VaultErrorCode | ApiErrorCode | DeviceErrorCode,
+    string
+  >
+> = {
   invalid_credentials:
     "That email and password don't match. Check both and try again, or reset your password.",
   email_not_verified:
@@ -55,12 +66,21 @@ const MESSAGES: Readonly<Record<AuthErrorCode | VaultErrorCode, string>> = {
     "We couldn't reach Warmly. Check your connection and try again. Nothing was changed.",
   reset_link_invalid:
     "This reset link has expired or was already used. Ask for a new one and open it on this device.",
+  device_not_authorized:
+    "This device isn't registered with your account. Lock Warmly, unlock it with your recovery key, and try again. Nothing was changed.",
+  clock_wrong:
+    "This device's clock looks wrong, so the request was refused. Set the date and time to automatic, then try again. Nothing was changed.",
+  unexpected:
+    "Something went wrong and nothing was changed. Try again in a moment.",
+  locked: "Warmly is locked. Unlock it and try again. Nothing was changed.",
+  not_found:
+    "That device is no longer on your account. Reload the list to see your current devices.",
+  invalid_name: `Give the device a name of 1 to ${String(MAX_DEVICE_NAME_LENGTH)} characters.`,
   unavailable:
     "Accounts aren't available in this version of Warmly yet. Nothing was sent or saved.",
 };
 
-const UNEXPECTED =
-  "Something went wrong and nothing was changed. Try again in a moment.";
+const UNEXPECTED = MESSAGES.unexpected;
 
 /**
  * Turn a failure into words for the user: what happened and what to do next.
@@ -71,7 +91,12 @@ const UNEXPECTED =
  * @returns A sentence or two to show in an alert.
  */
 export function describeError(error: unknown): string {
-  if (error instanceof AuthError || error instanceof VaultError) {
+  if (
+    error instanceof AuthError ||
+    error instanceof VaultError ||
+    error instanceof ApiError ||
+    error instanceof DeviceError
+  ) {
     return MESSAGES[error.code];
   }
   return UNEXPECTED;

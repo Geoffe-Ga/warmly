@@ -31,11 +31,12 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Cloud database compromise | Client-side encryption; server holds ciphertext | Envelope **in place** (ADR-0003); storage planned: #25 |
 | Backend or operator curiosity | Same, plus logs that cannot contain request content | Logging: **in place** (this issue) |
 | Cross-account access | Owner taken only from a verified token ([authentication](authentication.md)); owner-only database policies (ADR-0002) | **In place**; per-route ownership checks arrive with each route, rate limits: #38 |
-| Stolen session token | The auth library keeps the session in `localStorage`; strict CSP limits what script could read it; the token decrypts nothing by itself. Every request also signed by a device key | CSP **in place**; device binding planned: #21 |
+| Stolen session token | The auth library keeps the session in `localStorage`; strict CSP limits what script could read it; the token decrypts nothing by itself. Every request behind the token is also signed by a device key that cannot be copied off the device, and a new device can register only by proving it holds the root key (ADR-0005) | **In place** |
 | Lost devices, or a forgotten password | Personal recovery key wraps the root key; the server holds only the wrapped copy; a password reset changes no keys (ADR-0003) | **In place** |
 | Stolen locked device | Root key stored wrapped twice, by a non-extractable device key and by a device passphrase (ADR-0004); 30-minute inactivity lock. A weak device passphrase is the weak point: PBKDF2 slows guessing but does not stop it | **In place**; passkey unlock planned: #80 |
 | Offline edit conflicts | Compare-and-swap; both versions kept | Planned: #33, #36 |
-| Revoked device reconnecting | Device check on every request | Planned: #23 |
+| Revoked device reconnecting | The device is looked up, and refused if revoked, on every signed request (ADR-0005) | Check **in place**; revoking a device planned: #23 |
+| Replayed or altered request | The signature covers the method, path, body hash, a timestamp and a nonce; stale timestamps and reused nonces are refused (ADR-0005) | **In place** |
 | Stale data resurrecting deletions | Permanent tombstones and a deletion ledger | Planned: #37, #65 |
 | Compromised dependency | Few runtime dependencies, exact pins, hashed Python requirements, dependency audit in CI, strict CSP | **In place** |
 | Cross-site scripting | Framework escapes text; CSP forbids inline and evaluated code | **In place** (this issue) |
@@ -52,20 +53,22 @@ encrypted on the user's device and the backend stores ciphertext only.
   screen (ADR-0004). The CSP is the control; a long passphrase is the
   backstop.
 
-- **The recovery envelope routes check the session, not the device.** Until
-  every request is signed by a device key (#21, #23), a stolen access token
-  can read the envelope, which is useless without the 256-bit recovery key,
-  and can replace it at the current version, which would stop the recovery
-  key working. Trusted devices would be unaffected, and nothing would be
-  disclosed.
+- **Reading the recovery envelope needs only the session.** A new device
+  must read it before it can hold the root key, so that one request cannot
+  be device-signed. What it returns is useless without the 256-bit recovery
+  key. Replacing the envelope does need a registered device's signature
+  (ADR-0005).
+- **Same-origin script can ask the browser to sign.** The device key cannot
+  be copied, but script running in the app's origin can use it while it runs
+  there. The CSP is the control.
 - **Replacing the recovery key does not rotate the root key.** An old
   recovery key together with an old copy of the envelope still opens the
   root key (ADR-0003).
 
 - **A signed-out or revoked session's access token** stays valid until it
   expires, because the API verifies tokens without calling the auth provider.
-  The token decrypts nothing by itself. Binding each request to a device key
-  that can be revoked at once is planned in #21 and #23.
+  The token decrypts nothing by itself, and since ADR-0005 it is not enough
+  to call a signed route. Cutting a device off at once is planned in #23.
 
 ## Controls added by the security baseline
 

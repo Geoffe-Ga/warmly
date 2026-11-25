@@ -13,6 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.api.cases import CASES, ENROLLMENT_ID, Case
 from tests.api.conftest import (
     FakeDatabase,
     InMemoryDeviceStore,
@@ -75,22 +76,55 @@ def test_a_signed_request_from_a_registered_device_is_accepted(
     assert client.post(SIGNED_POST, content=POST_BODY, headers=JSON).status_code == 200
 
 
+# The only routes a session token reaches without any device signature, and
+# why (ADR-0005). Creating the first recovery envelope is the one further
+# exception; it depends on the body, and the recovery tests cover it.
+SESSION_ONLY_ROUTES = {
+    # A new device reads the envelope before it can hold the root key.
+    ("GET", "/v1/recovery-envelope"),
+    # A device asking to be approved has no registered key yet (#22).
+    ("POST", "/v1/enrollments"),
+    ("GET", f"/v1/enrollments/{ENROLLMENT_ID}"),
+}
+PUBLIC_ROUTES = {("GET", "/v1/health"), ("GET", "/v1/ready")}
+SIGNED_CASES = [
+    case
+    for case in CASES
+    if (case.method, case.path) not in SESSION_ONLY_ROUTES | PUBLIC_ROUTES
+]
+
+
+def test_every_exempt_route_is_a_documented_route() -> None:
+    """A stale entry in the exemption list fails here instead of hiding."""
+    assert {(case.method, case.path) for case in CASES} >= SESSION_ONLY_ROUTES
+
+
 @pytest.mark.parametrize(
-    ("method", "path"),
-    [
-        ("GET", "/v1/sync/changes?cursor=0"),
-        ("POST", "/v1/sync/operations"),
-        ("GET", "/v1/devices"),
-        ("PATCH", f"/v1/devices/{DEVICE_ID}"),
-        ("POST", f"/v1/devices/{DEVICE_ID}/revoke"),
-        ("POST", SIGNED_POST),
-    ],
+    "case",
+    [c for c in CASES if (c.method, c.path) in SESSION_ONLY_ROUTES],
+    ids=lambda c: f"{c.method} {c.path}",
 )
-def test_a_session_token_alone_is_not_enough(
-    session_only: TestClient, method: str, path: str
+def test_the_exempt_routes_work_with_the_session_token_alone(
+    session_only: TestClient, case: Case
 ) -> None:
-    """A stolen token cannot read or write anything without a device key (D-06)."""
-    _refused(session_only.request(method, path, json={}), "device.missing_signature")
+    """These are the calls a device makes before it is registered."""
+    response = session_only.request(case.method, case.path, json=case.body)
+
+    assert response.status_code in {200, 201, 404}, response.text
+
+
+@pytest.mark.parametrize("case", SIGNED_CASES, ids=lambda c: f"{c.method} {c.path}")
+def test_a_session_token_alone_is_not_enough(
+    session_only: TestClient, case: Case
+) -> None:
+    """A stolen token cannot read or write anything without a device key (D-06).
+
+    The cases are every documented route, so a new route is covered here
+    without anyone remembering to add it.
+    """
+    response = session_only.request(case.method, case.path, json=case.body)
+
+    _refused(response, "device.missing_signature")
 
 
 @pytest.mark.parametrize(

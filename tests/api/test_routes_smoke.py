@@ -14,9 +14,9 @@ from tests.api.cases import (
     ENROLLMENT_ID,
     OP_ID,
     OPERATION,
-    REGISTERED_DEVICE_ID,
     Case,
 )
+from tests.auth.devices import DEVICE_ID as REGISTERED_DEVICE_ID
 from warmly import __version__
 from warmly.api.stub import STUB_HEADER
 

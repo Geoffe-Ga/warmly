@@ -274,6 +274,23 @@ textarea.field__control {
   background: var(--color-surface);
 }
 
+/* Detail list: short label and value pairs inside a card */
+
+.detail-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--space-1) var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.detail-list dt {
+  color: var(--color-ink-muted);
+}
+
+.detail-list dd {
+  margin: 0;
+}
+
 /* Status banner */
 
 .banner {

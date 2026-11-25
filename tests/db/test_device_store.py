@@ -97,7 +97,7 @@ async def test_another_owners_device_is_not_found_listed_or_renamed(
     await store.register(OWNER_A, _registration(DEVICE_1))
 
     assert await store.find(OWNER_B, DEVICE_1) is None
-    assert await store.list(OWNER_B, DEVICE_2) == []
+    assert not await store.list(OWNER_B, DEVICE_2)
     assert await store.rename(OWNER_B, DEVICE_1, "eA==", DEVICE_2) is None
 
     (kept,) = await store.list(OWNER_A, DEVICE_1)
@@ -188,9 +188,9 @@ async def test_a_nonce_can_be_used_once_per_device(store: PostgresDeviceStore) -
     await store.register(OWNER_A, _registration(DEVICE_2))
     nonce = "n" * 24
 
-    assert await store.use_nonce(OWNER_A, DEVICE_1, nonce, LATER) is True
-    assert await store.use_nonce(OWNER_A, DEVICE_1, nonce, LATER) is False
-    assert await store.use_nonce(OWNER_A, DEVICE_2, nonce, LATER) is True
+    assert await store.use_nonce(OWNER_A, DEVICE_1, nonce, LATER)
+    assert not await store.use_nonce(OWNER_A, DEVICE_1, nonce, LATER)
+    assert await store.use_nonce(OWNER_A, DEVICE_2, nonce, LATER)
 
 
 async def test_the_same_nonce_sent_many_times_at_once_is_accepted_once(

@@ -46,6 +46,17 @@ If the signing keys cannot be fetched and the needed key is not cached, the
 answer is `503 auth.unavailable`, not `401`: the fault is the server's, and
 the client should keep its session and try again.
 
+### The device signature
+
+A valid token says who is calling. Every route behind the token, apart from
+the few a device must call before it is registered, also requires a signature
+from one of the account's registered devices over the method, path, body
+hash, a timestamp and a nonce. A stolen token alone is therefore not enough.
+The message format, the checks, the exempt routes and how a device registers
+are in [ADR-0005](../adr/0005-device-identity-and-pairing.md). A refusal is
+`401` with `device.missing_signature`, `device.stale_request` or
+`device.not_authorized`.
+
 ### Signing keys
 
 Keys come from `<issuer>/.well-known/jwks.json`. They are cached for ten
@@ -129,7 +140,7 @@ available, and every other build uses the in-memory double.
 | Smoke-test the real client and verifier against a live Supabase project | Claim names and error codes were taken from the client library's source, not from a live project | #78 |
 | Keep **Confirm email** on, use an asymmetric signing key, register the two redirect URLs | The API's `email_verified` check alone is not a control | #78 (dev project), #68 (release checklist), #61 (deploy pipeline) |
 | Every deployed environment, including staging and previews, sets `WARMLY_ENV=production` and `WARMLY_AUTH_ISSUER` | Outside production the API defaults to the local development issuer | #61 |
-| Bind each request to a device key | A stolen access token is valid until it expires; there is no revocation check | #21 |
+| Revoke a device | Requests are bound to a device key (ADR-0005), but a device cannot be cut off yet | #23 |
 | Load the auth client on demand | It is imported statically and adds to the first download | #63 |
 
 ## Tests
