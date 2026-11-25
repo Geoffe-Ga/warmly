@@ -51,7 +51,8 @@ async def db(database_url: str) -> AsyncIterator[Database]:
     await database.open()
     with psycopg.connect(database_url) as conn:
         conn.execute(
-            "TRUNCATE warmly_private.device_request_nonces, warmly_private.devices,"
+            "TRUNCATE warmly_private.device_enrollments,"
+            " warmly_private.device_request_nonces, warmly_private.devices,"
             " warmly_private.recovery_envelopes"
         )
     try:

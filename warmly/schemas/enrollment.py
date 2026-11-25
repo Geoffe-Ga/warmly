@@ -1,21 +1,54 @@
-"""Device enrollment models (PRD DEV-001 path A)."""
+"""Device pairing models (PRD DEV-001 path A; ADR-0005).
+
+The server relays these values between two of one account's devices and can
+read none of the secrets: the pairing code is computed on the devices, and
+the root key crosses only as ciphertext addressed to the new device.
+"""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import Field, StringConstraints
 
 from warmly.schemas.common import ApiModel, PublicKey, SmallCiphertext
 
-EnrollmentStatus = Literal["pending", "approved", "expired"]
+EnrollmentStatus = Literal[
+    "pending", "claimed", "revealed", "approved", "rejected", "expired"
+]
+
+# Exactly 32 bytes in standard base64: a SHA-256 digest or a random value.
+Bytes32 = Annotated[
+    str,
+    StringConstraints(min_length=44, max_length=44, pattern=r"^[A-Za-z0-9+/]{43}=$"),
+]
 
 
 class StartEnrollmentRequest(ApiModel):
     """A new device asks to be approved by an existing one."""
 
     device_id: UUID
-    public_key: PublicKey
+    public_key: PublicKey = Field(
+        description="The new device's one-time key-transfer public key."
+    )
+    commitment: Bytes32 = Field(
+        description=(
+            "A digest that fixes the new device's random value before the "
+            "approving device has chosen its own."
+        )
+    )
+
+
+class ClaimEnrollmentRequest(ApiModel):
+    """An unlocked device takes up a request and contributes its random value."""
+
+    approver_nonce: Bytes32
+
+
+class RevealEnrollmentRequest(ApiModel):
+    """The new device reveals the random value it committed to."""
+
+    joiner_nonce: Bytes32
 
 
 class ApproveEnrollmentRequest(ApiModel):
@@ -25,17 +58,21 @@ class ApproveEnrollmentRequest(ApiModel):
 
 
 class Enrollment(ApiModel):
-    """A short-lived, single-use enrollment challenge.
+    """A short-lived, single-use pairing between two of an account's devices.
 
-    The server relays ``wrapped_key`` and can never read it.
+    The server relays every field and can read no secret in it:
+    ``wrapped_key`` is encrypted to the new device.
     """
 
     id: UUID
     device_id: UUID
     public_key: PublicKey
-    challenge: SmallCiphertext = Field(
-        description="Server nonce both devices bind into the pairing code."
+    commitment: Bytes32
+    challenge: Bytes32 = Field(
+        description="Server random value both devices bind into the pairing code."
     )
     status: EnrollmentStatus
     expires_at: datetime
+    approver_nonce: Bytes32 | None = None
+    joiner_nonce: Bytes32 | None = None
     wrapped_key: SmallCiphertext | None = None

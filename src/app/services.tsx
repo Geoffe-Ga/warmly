@@ -24,6 +24,12 @@ import {
   IndexedDbDeviceIdentityStore,
   type DeviceIdentityStore,
 } from "../devices/identity";
+import {
+  AccountPairing,
+  UnavailableDevicePairing,
+  type DevicePairing,
+} from "../devices/pairing";
+import { ApiPairingRelay, type PairingRelay } from "../devices/pairing-relay";
 import { ApiDeviceRegistry, type DeviceRegistry } from "../devices/registry";
 import {
   AccountDevices,
@@ -32,6 +38,7 @@ import {
 } from "../devices/this-device";
 import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeDeviceRegistry } from "../testing/fake-device-registry";
+import { FakePairingRelay } from "../testing/fake-pairing-relay";
 import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
@@ -43,6 +50,8 @@ export interface Services {
   readonly vault: KeyVault;
   /** The account's own devices, for Manage Devices. */
   readonly devices: DeviceDirectory;
+  /** Handing the account key from an unlocked device to a new one. */
+  readonly pairing: DevicePairing;
   readonly session: Session;
   /** In-memory state of an account being set up; see {@link Onboarding}. */
   readonly onboarding: Onboarding;
@@ -84,12 +93,14 @@ export interface KeyServiceDoubles {
   readonly device: DeviceKeyStore;
   readonly identities: DeviceIdentityStore;
   readonly registry: DeviceRegistry;
+  readonly relay: PairingRelay;
 }
 
 /** The services that need the account's keys. */
 export interface KeyServices {
   readonly vault: KeyVault;
   readonly devices: DeviceDirectory;
+  readonly pairing: DevicePairing;
 }
 
 /**
@@ -126,6 +137,7 @@ export function createKeyServices(
     return {
       vault: new UnavailableKeyVault(),
       devices: new UnavailableDeviceDirectory(),
+      pairing: new UnavailableDevicePairing(),
     };
   }
   const api = new ApiClient(apiOrigin, (input, init) => fetch(input, init));
@@ -135,13 +147,14 @@ export function createKeyServices(
     device: new IndexedDbDeviceKeyStore(),
     identities,
     registry: new ApiDeviceRegistry(api),
+    relay: new ApiPairingRelay(api),
   });
 }
 
 /**
- * Join the vault and the device directory: each unlock registers the device
- * if it is not registered yet, and the directory reads the root key from the
- * vault.
+ * Join the vault, the device directory and pairing: each unlock registers
+ * the device if it is not registered yet, the directory reads the root key
+ * from the vault, and pairing releases and accepts the key through it.
  */
 function assemble(auth: AuthClient, parts: KeyServiceDoubles): KeyServices {
   const vault: AccountVault = new AccountVault(
@@ -158,7 +171,11 @@ function assemble(auth: AuthClient, parts: KeyServiceDoubles): KeyServices {
     parts.registry,
     () => vault.rootKey(),
   );
-  return { vault, devices };
+  return {
+    vault,
+    devices,
+    pairing: new AccountPairing(auth, parts.identities, parts.relay, vault),
+  };
 }
 
 const TAB_ID_KEY = "warmly.fake.tab";
@@ -224,6 +241,7 @@ export function createServices(): Services {
             device: new IndexedDbDeviceKeyStore(tabDeviceDatabase()),
             identities: new IndexedDbDeviceIdentityStore(tabIdentityDatabase()),
             registry: new FakeDeviceRegistry(),
+            relay: new FakePairingRelay(),
           }
         : undefined,
     ),

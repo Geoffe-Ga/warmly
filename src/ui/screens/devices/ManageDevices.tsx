@@ -1,6 +1,8 @@
 import type { JSX } from "preact";
 import { useCallback, useEffect, useState } from "preact/hooks";
 
+import { Link } from "../../../app/navigation";
+import { pathFor } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import {
   MAX_DEVICE_NAME_LENGTH,
@@ -202,10 +204,17 @@ export function ManageDevices(): JSX.Element {
             }}
           />
         ))}
-      <StatusBanner tone="info" label="Adding a device">
-        To add another device, sign in on it and unlock with your recovery key.
-        Approving a new device from this one, and removing a device, are not
-        built yet.
+      <Card heading="Add a device">
+        <p>
+          Sign in on the new device first. It will show a six-digit code. Then
+          approve it from here, or unlock it with your recovery key instead.
+        </p>
+        <p>
+          <Link href={pathFor("approve-device")}>Approve a new device</Link>
+        </p>
+      </Card>
+      <StatusBanner tone="info" label="Coming soon">
+        Removing a device is not built yet.
       </StatusBanner>
     </PageLayout>
   );

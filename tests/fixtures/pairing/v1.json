@@ -1,0 +1,11 @@
+{
+  "owner": "0a1b2c3d-0000-4000-8000-00000000000a",
+  "requestId": "44444444-4444-4444-8444-444444444444",
+  "deviceId": "d0000000-0000-4000-8000-0000000000f1",
+  "publicKey": "BB5iMcJENExFod/eEZL3yzRuUevK+IfSn/tWSgbFv/4g84yyj60ewN1o2BuNQ8LVbkwJVgDZ6M0RiIgxxYbqrZ8=",
+  "joinerNonce": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "approverNonce": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8=",
+  "challenge": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8=",
+  "commitment": "0OtfvEhfli0sf6rf+kYp9E89SjIHLulIKaJP5bJvYbY=",
+  "code": "760340"
+}

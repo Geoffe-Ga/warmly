@@ -24,6 +24,7 @@ export type RouteId =
   | "print"
   | "settings"
   | "devices"
+  | "approve-device"
   | "rotate-recovery-key"
   | "onboarding"
   | "verify-email"
@@ -32,6 +33,7 @@ export type RouteId =
   | "reset-password"
   | "new-password"
   | "recover"
+  | "add-device"
   | "trust-device"
   | "locked";
 
@@ -163,6 +165,13 @@ export const ROUTES: readonly RouteDef[] = [
     access: "private",
   },
   {
+    id: "approve-device",
+    path: "/settings/devices/approve",
+    title: "Approve a new device",
+    summary: "Let a device you are signing in on open your journal.",
+    access: "private",
+  },
+  {
     id: "rotate-recovery-key",
     path: "/settings/recovery-key",
     title: "Replace your recovery key",
@@ -218,6 +227,14 @@ export const ROUTES: readonly RouteDef[] = [
     path: "/recover",
     title: "Unlock with your recovery key",
     summary: "Use your recovery key to open your journal on this device.",
+    access: "locked",
+  },
+  {
+    id: "add-device",
+    path: "/recover/another-device",
+    title: "Approve from another device",
+    summary:
+      "Open your journal here with the help of a device you already use.",
     access: "locked",
   },
   {

@@ -19,11 +19,17 @@ import { IndexedDbDeviceKeyStore } from "../../../src/crypto/device-key-store";
 import { UnavailableKeyVault, VaultError } from "../../../src/crypto/key-vault";
 import { IndexedDbDeviceIdentityStore } from "../../../src/devices/identity";
 import {
+  AccountPairing,
+  PairingError,
+  UnavailableDevicePairing,
+} from "../../../src/devices/pairing";
+import {
   AccountDevices,
   DeviceError,
   UnavailableDeviceDirectory,
 } from "../../../src/devices/this-device";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
+import { FakePairingRelay } from "../../../src/testing/fake-pairing-relay";
 import {
   FAKE_DEVICES_STORAGE_KEY,
   FakeDeviceRegistry,
@@ -452,6 +458,7 @@ describe("createKeyServices", () => {
         `warmly-identity-test-${id}`,
       ),
       registry: new FakeDeviceRegistry(),
+      relay: new FakePairingRelay(),
     };
   }
 
@@ -464,6 +471,7 @@ describe("createKeyServices", () => {
 
     expect(services.vault).toBeInstanceOf(AccountVault);
     expect(services.devices).toBeInstanceOf(AccountDevices);
+    expect(services.pairing).toBeInstanceOf(AccountPairing);
   });
 
   it("registers this device when the account's keys are created, and lists it (DEV-002)", async () => {
@@ -528,6 +536,7 @@ describe("createKeyServices", () => {
 
       expect(services.vault).toBeInstanceOf(UnavailableKeyVault);
       expect(services.devices).toBeInstanceOf(UnavailableDeviceDirectory);
+      expect(services.pairing).toBeInstanceOf(UnavailableDevicePairing);
     },
   );
 
@@ -604,6 +613,19 @@ describe("describeError", () => {
     [new DeviceError("locked"), "Unlock it and try again"],
     [new DeviceError("not_found"), "no longer on your account"],
     [new DeviceError("invalid_name"), "1 to 60 characters"],
+    [new VaultError("locked"), "Unlock it and try again"],
+    [new PairingError("pairing_expired"), "ran out of time"],
+    [new PairingError("pairing_rejected"), "didn't approve this request"],
+    [new PairingError("pairing_tampered"), "didn't arrive as they were sent"],
+    [
+      new PairingError("pairing_confirmation_mismatch"),
+      "did not keep what it was sent",
+    ],
+    [
+      new PairingError("pairing_code_mismatch"),
+      "isn't the code on the new device",
+    ],
+    [new PairingError("pairing_cancelled"), "was cancelled"],
   ])("explains %s", (error, expected) => {
     expect(describeError(error)).toContain(expected);
   });

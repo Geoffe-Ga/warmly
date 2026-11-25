@@ -129,18 +129,51 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Start enrolling a new device
-     * @description Create an enrollment challenge for a new device.
+     * Ask to pair a new device
+     * @description Open a pairing request for a new device.
      *
-     *     Stub: returns a fixed pending challenge.
+     *     Any earlier open request of the account ends, so an approving device
+     *     only ever sees one.
      *
      *     Args:
-     *         request: The new device's ID and public key.
+     *         request: The new device's ID, one-time public key and commitment.
+     *         owner: The verified account.
+     *         enrollments: Where pairing requests are kept.
      *
      *     Returns:
-     *         A pending enrollment.
+     *         The request, with the server's challenge and its expiry.
      */
     post: operations["start_enrollment_v1_enrollments_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/enrollments/open": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * Read the request waiting to be approved
+     * @description Return the account's pairing request that no device has taken up yet.
+     *
+     *     Args:
+     *         caller: The verified account and device.
+     *         enrollments: Where pairing requests are kept.
+     *
+     *     Returns:
+     *         The waiting request.
+     *
+     *     Raises:
+     *         ProblemError: 404 if no request is waiting.
+     */
+    get: operations["get_open_enrollment_v1_enrollments_open_get"];
+    put?: never;
+    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -155,16 +188,19 @@ export interface paths {
       cookie?: never;
     };
     /**
-     * Read an enrollment
-     * @description Read the state of an enrollment.
-     *
-     *     Stub: always pending.
+     * Read a pairing request
+     * @description Read a pairing request. Both devices poll this while pairing.
      *
      *     Args:
-     *         enrollment_id: The enrollment to read.
+     *         enrollment_id: The request to read.
+     *         owner: The verified account.
+     *         enrollments: Where pairing requests are kept.
      *
      *     Returns:
-     *         A pending enrollment with the requested ID.
+     *         The request as it stands.
+     *
+     *     Raises:
+     *         ProblemError: 404 if the request is not one of the caller's.
      */
     get: operations["get_enrollment_v1_enrollments__enrollment_id__get"];
     put?: never;
@@ -185,20 +221,116 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Approve an enrollment
-     * @description Deliver the wrapped root key to a new device.
+     * Approve a pairing request
+     * @description Deliver the root key, encrypted to the new device.
      *
-     *     Stub: echoes the wrapped key back as an approved enrollment. The server
-     *     only ever relays this value; it cannot read it.
+     *     Only the device that claimed the request may approve it. The server
+     *     relays the wrapped key and cannot read it.
      *
      *     Args:
-     *         enrollment_id: The enrollment being approved.
+     *         enrollment_id: The request being approved.
      *         request: The root key, encrypted to the new device.
+     *         caller: The verified account and device.
+     *         enrollments: Where pairing requests are kept.
      *
      *     Returns:
-     *         An approved enrollment carrying the wrapped key.
+     *         The approved request carrying the wrapped key.
      */
     post: operations["approve_enrollment_v1_enrollments__enrollment_id__approve_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/enrollments/{enrollment_id}/claim": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Take up a pairing request
+     * @description Take up a waiting request and contribute the approving device's value.
+     *
+     *     Args:
+     *         enrollment_id: The request to claim.
+     *         request: The approving device's random value.
+     *         caller: The verified account and device.
+     *         enrollments: Where pairing requests are kept.
+     *
+     *     Returns:
+     *         The claimed request.
+     */
+    post: operations["claim_enrollment_v1_enrollments__enrollment_id__claim_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/enrollments/{enrollment_id}/reject": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Refuse a pairing request
+     * @description Refuse a request, for example because the pairing codes differed.
+     *
+     *     Args:
+     *         enrollment_id: The request being refused.
+     *         caller: The verified account and device.
+     *         enrollments: Where pairing requests are kept.
+     *
+     *     Returns:
+     *         The refused request.
+     */
+    post: operations["reject_enrollment_v1_enrollments__enrollment_id__reject_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/enrollments/{enrollment_id}/reveal": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Reveal the new device's random value
+     * @description Record the value the new device committed to when it started.
+     *
+     *     A value that does not match the commitment is refused and leaves the
+     *     request as it was, so the real value can still be revealed.
+     *
+     *     Args:
+     *         enrollment_id: The request.
+     *         request: The new device's random value.
+     *         owner: The verified account.
+     *         enrollments: Where pairing requests are kept.
+     *
+     *     Returns:
+     *         The request, now ready for the pairing code to be compared.
+     *
+     *     Raises:
+     *         ProblemError: 404 if the request is not the caller's; 409 if the
+     *             value does not match the commitment, or the request is not
+     *             waiting for it.
+     */
+    post: operations["reveal_enrollment_v1_enrollments__enrollment_id__reveal_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -423,6 +555,14 @@ export interface components {
       next_cursor: string;
     };
     /**
+     * ClaimEnrollmentRequest
+     * @description An unlocked device takes up a request and contributes its random value.
+     */
+    ClaimEnrollmentRequest: {
+      /** Approver Nonce */
+      approver_nonce: string;
+    };
+    /**
      * Device
      * @description One of the signed-in user's own devices.
      */
@@ -464,16 +604,21 @@ export interface components {
     };
     /**
      * Enrollment
-     * @description A short-lived, single-use enrollment challenge.
+     * @description A short-lived, single-use pairing between two of an account's devices.
      *
-     *     The server relays ``wrapped_key`` and can never read it.
+     *     The server relays every field and can read no secret in it:
+     *     ``wrapped_key`` is encrypted to the new device.
      */
     Enrollment: {
+      /** Approver Nonce */
+      approver_nonce?: string | null;
       /**
        * Challenge
-       * @description Server nonce both devices bind into the pairing code.
+       * @description Server random value both devices bind into the pairing code.
        */
       challenge: string;
+      /** Commitment */
+      commitment: string;
       /**
        * Device Id
        * Format: uuid
@@ -489,13 +634,21 @@ export interface components {
        * Format: uuid
        */
       id: string;
+      /** Joiner Nonce */
+      joiner_nonce?: string | null;
       /** Public Key */
       public_key: string;
       /**
        * Status
        * @enum {string}
        */
-      status: "pending" | "approved" | "expired";
+      status:
+        | "pending"
+        | "claimed"
+        | "revealed"
+        | "approved"
+        | "rejected"
+        | "expired";
       /** Wrapped Key */
       wrapped_key?: string | null;
     };
@@ -698,16 +851,32 @@ export interface components {
       name_ciphertext: string;
     };
     /**
+     * RevealEnrollmentRequest
+     * @description The new device reveals the random value it committed to.
+     */
+    RevealEnrollmentRequest: {
+      /** Joiner Nonce */
+      joiner_nonce: string;
+    };
+    /**
      * StartEnrollmentRequest
      * @description A new device asks to be approved by an existing one.
      */
     StartEnrollmentRequest: {
       /**
+       * Commitment
+       * @description A digest that fixes the new device's random value before the approving device has chosen its own.
+       */
+      commitment: string;
+      /**
        * Device Id
        * Format: uuid
        */
       device_id: string;
-      /** Public Key */
+      /**
+       * Public Key
+       * @description The new device's one-time key-transfer public key.
+       */
       public_key: string;
     };
     /**
@@ -1028,6 +1197,62 @@ export interface operations {
       };
     };
   };
+  get_open_enrollment_v1_enrollments_open_get: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Enrollment"];
+        };
+      };
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description No such pairing request on this account */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Invalid request */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
   get_enrollment_v1_enrollments__enrollment_id__get: {
     parameters: {
       query?: never;
@@ -1050,6 +1275,15 @@ export interface operations {
       };
       /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description No such pairing request on this account */
+      404: {
         headers: {
           [name: string]: unknown;
         };
@@ -1103,6 +1337,233 @@ export interface operations {
       };
       /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description No such pairing request on this account */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The request has expired, or is not at the step this call needs */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Invalid request */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  claim_enrollment_v1_enrollments__enrollment_id__claim_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        enrollment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ClaimEnrollmentRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Enrollment"];
+        };
+      };
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description No such pairing request on this account */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The request has expired, or is not at the step this call needs */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Invalid request */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  reject_enrollment_v1_enrollments__enrollment_id__reject_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        enrollment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Enrollment"];
+        };
+      };
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description No such pairing request on this account */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The request has expired, or is not at the step this call needs */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Invalid request */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  reveal_enrollment_v1_enrollments__enrollment_id__reveal_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        enrollment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RevealEnrollmentRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Enrollment"];
+        };
+      };
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description No such pairing request on this account */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The request has expired, or is not at the step this call needs */
+      409: {
         headers: {
           [name: string]: unknown;
         };

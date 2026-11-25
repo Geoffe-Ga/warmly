@@ -8,6 +8,7 @@ import type { Services } from "../../../src/app/services";
 import { createSession, type SessionState } from "../../../src/app/session";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import { FakeDeviceDirectory } from "../../../src/testing/fake-device-directory";
+import { FakeDevicePairing } from "../../../src/testing/fake-device-pairing";
 import {
   FAKE_DEVICE_PASSPHRASE,
   FakeKeyVault,
@@ -18,6 +19,7 @@ export interface TestServices extends Services {
   readonly auth: FakeAuthClient;
   readonly vault: FakeKeyVault;
   readonly devices: FakeDeviceDirectory;
+  readonly pairing: FakeDevicePairing;
 }
 
 /** Sample values for the `:id` segments of parameterised routes. */
@@ -39,10 +41,12 @@ export const ACCOUNT = {
  * @returns Services backed by fresh doubles.
  */
 export function testServices(state: SessionState = "signed_out"): TestServices {
+  const vault = new FakeKeyVault();
   return {
     auth: new FakeAuthClient(),
-    vault: new FakeKeyVault(),
+    vault,
     devices: new FakeDeviceDirectory(),
+    pairing: new FakeDevicePairing(vault),
     session: createSession(state),
     onboarding: createOnboarding(),
     lockHooks: createLockHooks(),

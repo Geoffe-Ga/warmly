@@ -13,7 +13,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.api.cases import CASES, ENROLLMENT_ID, Case
+from tests.api.cases import CASES, ENROLLMENT_ID, OPERATION, Case
 from tests.api.conftest import (
     FakeDatabase,
     InMemoryDeviceStore,
@@ -35,8 +35,8 @@ from warmly.auth.keys import StaticKeySource
 from warmly.auth.verifier import TokenVerifier
 
 SIGNED_GET = "/v1/sync/changes?cursor=0"
-SIGNED_POST = "/v1/enrollments/44444444-4444-4444-8444-444444444444/approve"
-POST_BODY = b'{"wrapped_key":"b3BhcXVl"}'
+SIGNED_POST = "/v1/sync/operations"
+POST_BODY = json.dumps({"operations": [OPERATION]}).encode()
 JSON = {"Content-Type": "application/json"}
 
 
@@ -85,6 +85,7 @@ SESSION_ONLY_ROUTES = {
     # A device asking to be approved has no registered key yet (#22).
     ("POST", "/v1/enrollments"),
     ("GET", f"/v1/enrollments/{ENROLLMENT_ID}"),
+    ("POST", f"/v1/enrollments/{ENROLLMENT_ID}/reveal"),
 }
 PUBLIC_ROUTES = {("GET", "/v1/health"), ("GET", "/v1/ready")}
 SIGNED_CASES = [
@@ -107,10 +108,14 @@ def test_every_exempt_route_is_a_documented_route() -> None:
 def test_the_exempt_routes_work_with_the_session_token_alone(
     session_only: TestClient, case: Case
 ) -> None:
-    """These are the calls a device makes before it is registered."""
+    """These are the calls a device makes before it is registered.
+
+    They may still be refused for another reason, such as a pairing request
+    that is not at the right step, but never for the missing signature.
+    """
     response = session_only.request(case.method, case.path, json=case.body)
 
-    assert response.status_code in {200, 201, 404}, response.text
+    assert response.status_code in {200, 201, 404, 409}, response.text
 
 
 @pytest.mark.parametrize("case", SIGNED_CASES, ids=lambda c: f"{c.method} {c.path}")

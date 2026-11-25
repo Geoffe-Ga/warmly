@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tests.api.cases import CASES, ENROLLMENT_ID, Case
-from tests.api.conftest import FakeDatabase
+from tests.api.conftest import FakeDatabase, InMemoryEnrollmentStore
 from tests.auth.tokens import AUDIENCE, ISSUER, OTHER_OWNER_ID, OWNER_ID, Signer
 from warmly.api.errors import PROBLEM_MEDIA_TYPE
 from warmly.app import create_app
@@ -207,15 +207,18 @@ def test_two_tokens_resolve_to_two_owners(whoami: FastAPI, signer: Signer) -> No
 
 
 def test_a_given_verifier_is_used_with_a_database_built_from_settings(
-    signer: Signer,
+    signer: Signer, enrollment_store: InMemoryEnrollmentStore
 ) -> None:
     """Supplying only the verifier still gives a working application."""
     verifier = TokenVerifier(
         issuer=ISSUER, audience=AUDIENCE, keys=StaticKeySource([signer.jwk()])
     )
-    app = create_app(load_settings({}), token_verifier=verifier)
+    app = create_app(
+        load_settings({}), token_verifier=verifier, enrollment_store=enrollment_store
+    )
 
-    # No lifespan is started, so the database is never contacted.
+    # No lifespan is started, and the one store this route reads is in
+    # memory, so the database is never contacted.
     response = TestClient(app).get(
         f"/v1/enrollments/{ENROLLMENT_ID}", headers=_bearer(signer.token())
     )

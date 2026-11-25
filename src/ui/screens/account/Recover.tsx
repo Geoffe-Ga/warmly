@@ -62,6 +62,11 @@ export function Recover(): JSX.Element {
         </div>
       </AccountForm>
       <p>
+        <Link href={pathFor("add-device")}>
+          Approve from another device instead
+        </Link>
+      </p>
+      <p>
         <Link href={pathFor("locked")}>Back</Link>
       </p>
     </PageLayout>

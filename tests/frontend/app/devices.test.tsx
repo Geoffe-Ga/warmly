@@ -119,7 +119,9 @@ describe("Manage Devices (DEV-002, DEV-003)", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Couldn't load your devices");
     expect(alert.textContent).toContain("Check your connection");
-    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+    expect(
+      screen.queryByRole("heading", { level: 2, name: "Kitchen laptop" }),
+    ).toBeNull();
 
     await userEvent.click(screen.getByRole("button", { name: "Try again" }));
 
@@ -138,11 +140,16 @@ describe("Manage Devices (DEV-002, DEV-003)", () => {
     expect(document.body.textContent).not.toContain("SECRET");
   });
 
-  it("says honestly what is not built yet", async () => {
+  it("offers to approve a new device, and says honestly that removing one is not built yet", async () => {
     await open();
 
+    const link = await screen.findByRole("link", {
+      name: "Approve a new device",
+    });
+
+    expect(link.getAttribute("href")).toBe("/settings/devices/approve");
     expect(
-      await screen.findByText(/unlock with your recovery key/),
+      screen.getByText("Removing a device is not built yet."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: /revoke|remove/i })).toBeNull();
   });

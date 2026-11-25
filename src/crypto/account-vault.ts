@@ -17,6 +17,7 @@ import type {
   StoredRecoveryEnvelope,
 } from "../api/recovery-envelope-store";
 import type { AuthClient, AuthSession } from "../auth/auth-client";
+import type { RootKeyAccess, RootKeyCredential } from "../devices/pairing";
 import { deviceEnrollmentVerifier } from "../devices/signing";
 import {
   DeviceLockedOutError,
@@ -57,7 +58,7 @@ function zero(bytes: Uint8Array): void {
 }
 
 /** See the module comment. */
-export class AccountVault implements KeyVault {
+export class AccountVault implements KeyVault, RootKeyAccess {
   readonly #auth: AuthClient;
   readonly #envelopes: RecoveryEnvelopeStore;
   readonly #device: DeviceKeyStore | undefined;
@@ -207,17 +208,19 @@ export class AccountVault implements KeyVault {
     await this.#confirm("create", "keys_already_exist");
   }
 
-  async unlock(devicePassphrase: string): Promise<void> {
-    const session = await this.#session();
+  /** Open this device's stored root key, in the vault's own error terms. */
+  async #openOnDevice(
+    session: AuthSession,
+    devicePassphrase: string,
+  ): Promise<Uint8Array<ArrayBuffer>> {
     if (
       this.#device === undefined ||
       !(await this.#device.has(session.userId))
     ) {
       throw new VaultError("no_keys_on_device");
     }
-    let rootKeyBytes: Uint8Array<ArrayBuffer>;
     try {
-      rootKeyBytes = await this.#device.open(session.userId, devicePassphrase);
+      return await this.#device.open(session.userId, devicePassphrase);
     } catch (error) {
       if (error instanceof DevicePassphraseError) {
         throw new VaultError("wrong_device_passphrase");
@@ -233,11 +236,50 @@ export class AccountVault implements KeyVault {
       }
       throw error;
     }
+  }
+
+  async unlock(devicePassphrase: string): Promise<void> {
+    const session = await this.#session();
+    const rootKeyBytes = await this.#openOnDevice(session, devicePassphrase);
     try {
       await this.#adopt(session.userId, rootKeyBytes, false);
     } finally {
       zero(rootKeyBytes);
     }
+  }
+
+  async withRootKeyBytes<T>(
+    credential: RootKeyCredential,
+    use: (rootKeyBytes: Uint8Array<ArrayBuffer>) => Promise<T>,
+  ): Promise<T> {
+    const session = await this.#session();
+    const unlocked = this.#root;
+    if (unlocked === undefined) {
+      throw new VaultError("locked");
+    }
+    const rootKeyBytes =
+      credential.kind === "device_passphrase"
+        ? await this.#openOnDevice(session, credential.passphrase)
+        : (await this.#open(session, credential.recoveryKey)).rootKeyBytes;
+    try {
+      // The key released is the one this device is unlocked with, never
+      // some other key the credential happens to open.
+      const same =
+        (await fingerprint(await importRootKey(rootKeyBytes))) ===
+        (await fingerprint(unlocked));
+      if (!same) {
+        throw new VaultError("locked");
+      }
+      return await use(rootKeyBytes);
+    } finally {
+      zero(rootKeyBytes);
+    }
+  }
+
+  async acceptRootKey(rootKeyBytes: Uint8Array<ArrayBuffer>): Promise<void> {
+    const session = await this.#session();
+    // Offered trust, as after a recovery: this device has no stored key yet.
+    await this.#adopt(session.userId, rootKeyBytes, true);
   }
 
   deviceTrustPending(): boolean {

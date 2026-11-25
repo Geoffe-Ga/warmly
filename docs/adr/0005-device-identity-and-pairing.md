@@ -1,7 +1,6 @@
 # ADR-0005: Device identity, request signing and pairing
 
-- **Status:** Accepted (identity and request signing). The pairing section is
-  a placeholder until issue #22.
+- **Status:** Accepted
 - **Date:** 2026-11-25
 - **PRD references:** §4.3 [DEV-001, DEV-002, DEV-003, DEV-010], §4.2
   [SEC-006], §8; AC-05, AC-20
@@ -142,7 +141,7 @@ interrupted registration completes itself.
 | `GET /v1/recovery-envelope` | A new device must read the envelope before it can hold the root key, and so before it can register. What it returns is useless without the 256-bit recovery key. |
 | `PUT /v1/recovery-envelope` when creating (version 0) | No device can register before the envelope and its verifier exist. It can only succeed once per account. |
 | `POST /v1/devices` | Signed by the new key and carrying the enrollment proof instead. |
-| `POST /v1/enrollments`, `GET /v1/enrollments/{id}` | A device asking to be approved has no registered key yet. These are stubs until #22. |
+| `POST /v1/enrollments`, `GET /v1/enrollments/{id}`, `POST /v1/enrollments/{id}/reveal` | A device asking to be approved has no registered key yet. Nothing these routes do can release a key: see Pairing below. |
 
 Everything else, including replacing the recovery envelope, renaming a
 device and every sync route, requires a registered device's signature. A
@@ -207,6 +206,140 @@ on this list.
 
 ## Pairing
 
-To be completed by issue #22 (D-07): how an unlocked device hands the root
-key to a new one through a short-lived, human-verified exchange in which the
-server relays only ciphertext.
+How an unlocked device hands the root key to a new one (PRD DEV-001 path A,
+AC-19; D-07). The alternative, unlocking the new device with the recovery
+key, already exists (ADR-0003).
+
+### What has to be true
+
+- The server relays the messages and must learn nothing: not the root key,
+  and not enough to get it.
+- A server that misbehaves, or someone holding a stolen session token, must
+  not be able to get the key by putting themselves between the two devices.
+- The same must hold in the other direction: the new device must not end
+  up holding a key that the server, rather than the other device, chose.
+  Otherwise it would encrypt the journal under a key the server knows.
+- A person has to be able to check that, without a camera and with a screen
+  reader.
+
+### Options
+
+1. **Encrypt the root key to the new device's public key and trust the
+   server to relay that key honestly.** One message, but a server in the
+   middle substitutes its own key and receives the root key.
+2. **Add a six-digit code derived from both public keys and a server
+   challenge** (D-07 as first written). Better, but the server picks the
+   challenge and can see everything the code is derived from before either
+   device commits to it. It can try keys and challenges until its
+   substitute produces the same six digits: about a million tries, which
+   takes no time.
+3. **The same code, with each device fixing a random value before it learns
+   the other's** (commit, then reveal). This is the construction Bluetooth
+   numeric comparison and ZRTP use. A relay in the middle has to choose its
+   values blind, so it gets one guess in a million per attempt.
+
+### Decision
+
+Option 3. This strengthens D-07 rather than replacing it: the code is still
+derived from the public key and the server challenge, with two random values
+added.
+
+The exchange, relayed through `/v1/enrollments`:
+
+| Step | Who | What |
+| --- | --- | --- |
+| 1. start | New device | Sends its device ID, a one-time P-256 public key, and a **commitment**: SHA-256 over the device ID, that key and a 32-byte random value it keeps to itself. The server adds a random challenge. |
+| 2. claim | Approving device | Reads the request and sends its own 32-byte random value. |
+| 3. reveal | New device | Only now sends its random value. |
+| 4. check | Approving device | Recomputes the commitment from the revealed value. If it does not match, it refuses the request. |
+| 5. compare | Person | The new device shows a six-digit code. The person **types it** into the approving device. |
+| 6. approve | Approving device | If the typed code equals the code it computed, it picks a random six-digit **confirmation code**, encrypts the root key and that code together to the new device's public key, sends the result, and shows the confirmation code. |
+| 7. confirm | Person, new device | The new device opens the message and asks for the confirmation code. It keeps the key only if the person types the one the approving device shows. |
+
+- **The code** is SHA-256 over the account, the request ID, the device ID,
+  the public key, the commitment, the challenge and both random values,
+  reduced to six digits. Each device computes it from what *it* saw, so any
+  substitution on the way makes the two codes differ.
+- **Typed, not just confirmed.** A "yes, they match" button gets pressed
+  without looking. Typing the code is the comparison. The approving device
+  never displays its own code.
+- **Why a second code.** The first code only protects the approving device:
+  it knows it is sending to the real new device. The new device knows
+  nothing yet. HPKE in base mode does not say who sealed a message, and
+  everything needed to seal one to the new device (its public key and the
+  whole transcript) passes through the relay. So a relay could seal a key
+  of its own to the new device, with or without a real approval. The
+  confirmation code closes that: it travels only inside the encrypted
+  message and on the approving device's screen, so the relay cannot know
+  the one the person will type. Signing the transfer with a key the
+  approving device contributes was considered and is not enough by itself:
+  a relay that substitutes that key makes the first code mismatch on the
+  approving device, which refuses, but the new device has no way to learn
+  of the refusal except through the relay. Only something the person
+  carries between the two screens can tell it.
+- **One guess, for each code.** A wrong first code refuses the request. A
+  wrong confirmation code makes the new device discard what it received.
+  Neither code can be searched for. The person starts again.
+- **Re-authentication.** The unlocked root key cannot be exported, so the
+  approving device opens it again with its device passphrase, or with the
+  recovery key on a device that has no passphrase. That also confirms the
+  person approving is the owner, not someone who picked up an unlocked
+  phone. A wrong passphrase releases nothing and can be corrected.
+- **Key transfer** uses HPKE (RFC 9180) in base mode with DHKEM(P-256,
+  HKDF-SHA256), HKDF-SHA256 and AES-256-GCM, single-shot. The HPKE `info`
+  is the whole transcript, so a wrapped key cannot be moved into another
+  pairing. The new device's private key is non-extractable and lives only
+  in memory for the few minutes of the pairing.
+- **Why not a library.** The project takes no cryptography dependency
+  (ADR-0003). `src/crypto/hpke.ts` is about 150 lines on WebCrypto and is
+  checked against the RFC's own test vectors for this suite
+  (`tests/fixtures/hpke/`), both sealing with the vector's one-time key and
+  opening its ciphertext.
+- **Nothing is unlocked early.** The received key is held in memory, not
+  adopted, until the confirmation code is typed. Leaving the screen wipes
+  it.
+- **After the confirmation** the new device holds the root key, so it registers
+  itself exactly as a device that used the recovery key does: with the
+  enrollment proof described above.
+
+What the server enforces (`warmly/api/enrollment.py`,
+`warmly/db/enrollment_store.py`):
+
+- A request lasts **5 minutes**. After that it reads as `expired`, cannot be
+  advanced, and gives up no wrapped key.
+- A revealed value that does not match the commitment is refused and
+  leaves the request as it was, so someone holding only a session token
+  cannot spoil a pairing by revealing a made-up value first. This is a
+  courtesy: the approving device makes the same check and is the one that
+  must not be fooled.
+- Each step is one `UPDATE` that names the state it expects, so it happens
+  once and in order. A request cannot be claimed twice, a value cannot be
+  revealed twice, and a second wrapped key cannot replace the first.
+- Only the device that claimed a request can approve or reject it.
+- Starting a new request ends the account's earlier open ones, so there is
+  only ever one for an approving device to take up.
+- Claiming, approving and rejecting need a registered, non-revoked device's
+  signature. Starting, reading and revealing need only the session token.
+- Requests are owner-scoped by row-level security. Another account's request
+  is a 404. There is no way to name another account, so devices can only be
+  paired within one account.
+
+### Consequences
+
+- A stolen session token can start a request and reveal a value. It cannot
+  claim or approve one, and the owner would have to type the attacker's
+  code into their own unlocked device and enter their passphrase.
+- A stolen token can also start requests to keep ending the owner's own
+  (starting a new one ends the old). This is a nuisance, not a breach; rate
+  limits arrive with #38.
+- A dishonest server can refuse to relay, which prevents pairing. The
+  recovery key still works.
+- The remaining risk is the person: approving a device that is not theirs
+  because someone asked them to type a code. The screens say to approve
+  only a device you are holding.
+- The person types two codes, one on each device. That is one step more
+  than a single comparison, and is the price of protecting both directions
+  without a camera.
+- Six digits give a one-in-a-million chance per attempt that a relay's blind
+  guess goes unnoticed. Each attempt needs the owner to start a pairing, so
+  attempts are few.

@@ -11,7 +11,7 @@ import {
   DeviceStoreDamagedError,
   IndexedDbDeviceKeyStore,
 } from "../../../src/crypto/device-key-store";
-import { toBase64 } from "../../../src/crypto/encoding";
+import { fromBase64, toBase64 } from "../../../src/crypto/encoding";
 import { VaultError } from "../../../src/crypto/key-vault";
 import { fingerprint, type RootKey } from "../../../src/crypto/root-key";
 import { deviceEnrollmentVerifier } from "../../../src/devices/signing";
@@ -753,5 +753,184 @@ describe("what the vault gives device registration (DEV-002, ADR-0005)", () => {
     await vault.beginRecoveryKeyRotation(key);
 
     expect(unlocks).toBe(0);
+  });
+});
+
+describe("releasing and accepting the root key for pairing (DEV-001 path A)", () => {
+  const PASSPHRASE = ["lamp", "river", "kettle"].join(" ");
+
+  async function trusted(): Promise<{ vault: AccountVault; key: string }> {
+    await signUp();
+    const vault = new AccountVault(
+      auth,
+      server,
+      new IndexedDbDeviceKeyStore(`vault-pair-${crypto.randomUUID()}`, 1_000),
+    );
+    const key = await vault.createAccountKeys();
+    await vault.confirmRecoveryKey();
+    await vault.trustThisDevice(PASSPHRASE);
+    return { vault, key };
+  }
+
+  it("releases the unlocked root key for the passphrase or the recovery key, then wipes it", async () => {
+    const { vault, key } = await trusted();
+    const seen: Uint8Array[] = [];
+    const copies: string[] = [];
+
+    for (const credential of [
+      { kind: "device_passphrase", passphrase: PASSPHRASE } as const,
+      { kind: "recovery_key", recoveryKey: key } as const,
+    ]) {
+      const length = await vault.withRootKeyBytes(credential, (bytes) => {
+        seen.push(bytes);
+        copies.push(toBase64(bytes));
+        return Promise.resolve(bytes.length);
+      });
+      expect(length).toBe(32);
+    }
+
+    expect(copies[0]).toBe(copies[1]);
+    expect(seen.every((bytes) => bytes.every((byte) => byte === 0))).toBe(true);
+    const other = device();
+    await other.acceptRootKey(fromBase64(copies[0] ?? ""));
+    expect(await other.fingerprint()).toBe(await vault.fingerprint());
+  });
+
+  it("wipes the key even when its use fails", async () => {
+    const { vault } = await trusted();
+    let seen: Uint8Array = new Uint8Array(1).fill(1);
+
+    await expect(
+      vault.withRootKeyBytes(
+        { kind: "device_passphrase", passphrase: PASSPHRASE },
+        (bytes) => {
+          seen = bytes;
+          return Promise.reject(new Error("could not send"));
+        },
+      ),
+    ).rejects.toThrow("could not send");
+
+    expect(seen.every((byte) => byte === 0)).toBe(true);
+  });
+
+  it.each([
+    [
+      { kind: "device_passphrase", passphrase: "not the passphrase" } as const,
+      "wrong_device_passphrase",
+    ],
+    [
+      { kind: "recovery_key", recoveryKey: "nope" } as const,
+      "recovery_key_malformed",
+    ],
+  ])(
+    "releases nothing for a wrong credential",
+    async (credential, expected) => {
+      const { vault } = await trusted();
+      let used = false;
+
+      expect(
+        await code(
+          vault.withRootKeyBytes(credential, () => {
+            used = true;
+            return Promise.resolve();
+          }),
+        ),
+      ).toBe(expected);
+      expect(used).toBe(false);
+    },
+  );
+
+  it("releases nothing while locked, or on a device with no stored key", async () => {
+    const { vault, key } = await trusted();
+    const untrusted = device();
+    await untrusted.unlockWithRecoveryKey(key);
+    const use = (): Promise<void> => Promise.reject(new Error("must not run"));
+
+    expect(
+      await code(
+        untrusted.withRootKeyBytes(
+          { kind: "device_passphrase", passphrase: PASSPHRASE },
+          use,
+        ),
+      ),
+    ).toBe("no_keys_on_device");
+    vault.lock();
+    expect(
+      await code(
+        vault.withRootKeyBytes(
+          { kind: "device_passphrase", passphrase: PASSPHRASE },
+          use,
+        ),
+      ),
+    ).toBe("locked");
+  });
+
+  it("never releases a key other than the one this device is unlocked with", async () => {
+    await signUp();
+    const first = device();
+    const firstKey = await first.createAccountKeys();
+    await first.confirmRecoveryKey();
+    // A second envelope for the same account, wrapping a different root key
+    // under a different recovery key, as a hostile server could present.
+    const elsewhere = new FakeRecoveryEnvelopeStore(sessionStorage);
+    const second = device(elsewhere);
+    const secondKey = await second.createAccountKeys();
+    await second.confirmRecoveryKey();
+    let swapped = false;
+    const switching: RecoveryEnvelopeStore = {
+      read: (session) => (swapped ? elsewhere : server).read(session),
+      write: (session, change) => server.write(session, change),
+    };
+    const vault = device(switching);
+    await vault.unlockWithRecoveryKey(firstKey);
+    let used = false;
+
+    swapped = true;
+    const refused = await code(
+      vault.withRootKeyBytes(
+        { kind: "recovery_key", recoveryKey: secondKey },
+        () => {
+          used = true;
+          return Promise.resolve();
+        },
+      ),
+    );
+
+    expect(refused).toBe("locked");
+    expect(used).toBe(false);
+    expect(await second.fingerprint()).not.toBe(await vault.fingerprint());
+  });
+
+  it("accepting a key unlocks, offers device trust and tells the registration hook", async () => {
+    const { vault, key } = await trusted();
+    let hooked = 0;
+    const fresh = new AccountVault(
+      auth,
+      server,
+      new IndexedDbDeviceKeyStore(`vault-pair-${crypto.randomUUID()}`, 1_000),
+      () => {
+        hooked += 1;
+      },
+    );
+    const copy = await vault.withRootKeyBytes(
+      { kind: "recovery_key", recoveryKey: key },
+      (bytes) => Promise.resolve(bytes.slice()),
+    );
+
+    await fresh.acceptRootKey(copy);
+
+    expect(await fresh.fingerprint()).toBe(await vault.fingerprint());
+    expect(fresh.deviceTrustPending()).toBe(true);
+    expect(hooked).toBe(1);
+  });
+
+  it("accepting a key needs a signed-in user and exactly 32 bytes", async () => {
+    await signUp();
+    await expect(device().acceptRootKey(new Uint8Array(31))).rejects.toThrow();
+    await auth.signOut();
+
+    expect(await code(device().acceptRootKey(new Uint8Array(32)))).toBe(
+      "signed_out",
+    );
   });
 });
