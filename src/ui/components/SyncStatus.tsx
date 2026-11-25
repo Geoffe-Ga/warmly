@@ -1,6 +1,8 @@
 import type { JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 
+import { Link } from "../../app/navigation";
+import { pathFor } from "../../app/routes";
 import type { SyncControl, SyncState } from "../../sync/engine";
 import { Button } from "./Button";
 
@@ -34,7 +36,8 @@ export function describeSync(state: SyncState): string {
 /**
  * The sync status line and the button that runs a sync (PRD SYNC-010,
  * AC-23). The status is announced politely when it changes. Sync also runs
- * on its own; the button is for the person who wants it now.
+ * on its own; the button is for the person who wants it now. When a record
+ * needs the person, a link leads to where they can see why.
  *
  * @param props - The sync engine.
  * @returns The indicator.
@@ -58,6 +61,9 @@ export function SyncStatus(props: { readonly sync: SyncControl }): JSX.Element {
       <p role="status" aria-live="polite">
         {describeSync(state)}
       </p>
+      {state.status === "attention" && (
+        <Link href={pathFor("sync-conflicts")}>Review what changed</Link>
+      )}
       <Button
         disabled={busy}
         onClick={() => {

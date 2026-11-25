@@ -266,6 +266,52 @@ describe("a server version that cannot replace a local one (SYNC-002, invariant 
     expect(await a.store.parkedCount()).toBe(0);
   });
 
+  it("is not kept when it is older than what this device's change was made on", async () => {
+    const server = new MemoryServer();
+    const a = await device(server);
+    const written = await entry();
+    await a.store.put("journal-entry", written);
+    await a.sync();
+    await a.store.put("journal-entry", { ...written, feelings: ["calm"] });
+    await a.sync();
+    // Unsent, on top of revision 2. The feed is then read again from the
+    // start and an out-of-date page still carries revision 1.
+    await a.store.put("journal-entry", { ...written, feelings: ["sad"] });
+
+    expect(
+      await apply(a.store, change({ recordId: written.id, revision: 1 })),
+    ).toBe("unchanged");
+    expect(
+      await apply(a.store, change({ recordId: written.id, revision: 2 })),
+    ).toBe("unchanged");
+
+    expect(await a.store.parkedCount()).toBe(0);
+    expect(await a.sync()).toEqual({ status: "synced", waiting: 0 });
+  });
+
+  it("keeps a deletion made elsewhere beside an unsent change, and deletes nothing here", async () => {
+    const a = await device(new MemoryServer());
+    const written = await entry();
+    await a.store.put("journal-entry", written);
+
+    expect(
+      await apply(
+        a.store,
+        change({
+          recordId: written.id,
+          revision: 3,
+          tombstone: true,
+          payload: null,
+        }),
+      ),
+    ).toBe("conflict");
+
+    expect(await a.store.get("journal-entry", written.id)).toEqual(written);
+    expect(await readRows<ParkedRecord>(a.name, PARKED)).toMatchObject([
+      { id: written.id, tombstone: true, envelope: null },
+    ]);
+  });
+
   it("is not kept for a record already deleted here: that record never comes back", async () => {
     const server = new MemoryServer();
     const a = await device(server);

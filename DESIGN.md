@@ -401,6 +401,8 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`offline-notice`** — One line under the header while the device is offline, in `{typography.small}` on `{colors.blush}` with a `{colors.border-strong}` bar: "Offline: your writing is saved on this device." It never shows private text, and it is gone while online.
 
+**`versions`** — Two `{component.card}`s side by side, stacking on a narrow screen, each one whole version of an entry: a muted "Last changed" line, then each question in bold with its answer under it, line breaks kept. Used where the person chooses between two versions. The two are told apart by their headings ("On this device", "On your other device"), never by colour.
+
 **`sync-status`** — In the header while unlocked: one line in `{typography.small}` and `{colors.ink-muted}` ("All changes saved", "3 changes waiting to sync", "Couldn't sync. Your writing is saved on this device.", "Needs your attention") beside a `{component.button-secondary}` "Sync now". It is a state and a count, never private text.
 
 ### Status Banners

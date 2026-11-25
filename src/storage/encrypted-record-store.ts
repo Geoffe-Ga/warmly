@@ -37,11 +37,17 @@ import type {
 import type { RemoteChange } from "../sync/protocol";
 import { queueOperation, type OutboxOperation } from "./outbox";
 import {
+  ConflictChangedError,
+  RecordDeletedError,
   StaleRecordError,
+  type Keep,
+  type RecordConflict,
   type RecordKind,
   type RecordKinds,
   type RecordStore,
 } from "./record-store";
+
+export { RecordDeletedError } from "./record-store";
 
 export { StaleRecordError } from "./record-store";
 
@@ -70,17 +76,6 @@ export class StoreLockedError extends Error {
   constructor() {
     super("The record store is locked");
     this.name = "StoreLockedError";
-  }
-}
-
-/**
- * A record with this ID was deleted. A deletion is kept so that it can reach
- * the person's other devices, and nothing may be written over it.
- */
-export class RecordDeletedError extends Error {
-  constructor() {
-    super("A deleted record cannot be written again");
-    this.name = "RecordDeletedError";
   }
 }
 
@@ -324,6 +319,150 @@ function readAll(
   );
 }
 
+/** Read every server version kept beside a local record. */
+function readParked(database: IDBDatabase): Promise<ParkedRecord[]> {
+  return transact<ParkedRecord[]>(
+    database,
+    [PARKED],
+    "readonly",
+    (transaction, result) => {
+      const reading = transaction.objectStore(PARKED).getAll();
+      reading.onsuccess = () => {
+        result(reading.result as ParkedRecord[]);
+      };
+    },
+  );
+}
+
+/** What settling a record in conflict did. */
+type Settled =
+  /**
+   * Nothing was done: the record was not in conflict (`none`), keeping that
+   * version is not allowed (`deleted`), or the server's version is not the
+   * one the person was shown (`changed`).
+   */
+  | { readonly kind: "none" | "deleted" | "changed" }
+  /** Settled. `row` is the local row if it was written. */
+  | { readonly kind: "settled"; readonly row?: StoredRecord };
+
+/** A choice between two versions of one record. */
+interface Choice {
+  readonly type: number;
+  readonly id: string;
+  readonly keep: Keep;
+  /** The parked revision the person was shown. */
+  readonly seen: number;
+  /** With `mine`: what replaces this device's version. */
+  readonly replacement:
+    Pick<StoredRecord, "envelope" | "schemaVersion"> | undefined;
+}
+
+/**
+ * Keep one version of a record in conflict and remove the other, in one
+ * transaction (ADR-0006).
+ */
+function settle(database: IDBDatabase, choice: Choice): Promise<Settled> {
+  const { type, id, keep, replacement } = choice;
+  return transact<Settled>(
+    database,
+    [RECORDS, OUTBOX, PARKED],
+    "readwrite",
+    (transaction, result) => {
+      const records = transaction.objectStore(RECORDS);
+      const outbox = transaction.objectStore(OUTBOX);
+      const parked = transaction.objectStore(PARKED);
+      const key = [type, id];
+      const kept = parked.get(key);
+      const reading = records.get(key);
+      const queued = outbox.getAll();
+      queued.onsuccess = () => {
+        const theirs = kept.result as ParkedRecord | undefined;
+        const mine = reading.result as StoredRecord | undefined;
+        if (theirs === undefined) {
+          result({ kind: "none" });
+          return;
+        }
+        if (theirs.revision !== choice.seen) {
+          // A newer version arrived after the person was shown the other
+          // one. It is not removed unseen.
+          result({ kind: "changed" });
+          return;
+        }
+        // A record deleted on either side never comes back under this ID.
+        const revives =
+          keep === "mine"
+            ? theirs.tombstone
+            : mine?.tombstone === true && !theirs.tombstone;
+        if (revives) {
+          result({ kind: "deleted" });
+          return;
+        }
+        parked.delete(key);
+        if (keep === "mine") {
+          result(keepLocal(transaction, mine, theirs, replacement));
+          return;
+        }
+        const row: StoredRecord = {
+          type,
+          id,
+          envelope: theirs.envelope,
+          schemaVersion: theirs.schemaVersion,
+          localRevision: (mine?.localRevision ?? 0) + 1,
+          baseRevision: theirs.revision,
+          tombstone: theirs.tombstone,
+          dirty: false,
+        };
+        records.put(row);
+        // This device's version is given up, so nothing is left to send.
+        for (const operation of queued.result as OutboxOperation[]) {
+          if (operation.type === type && operation.id === id) {
+            outbox.delete(operation.seq);
+          }
+        }
+        result({ kind: "settled", row });
+      };
+    },
+  );
+}
+
+/**
+ * Keep this device's version, or what the person wrote in its place, on
+ * top of the server's: still unsent, so the next sync sends it and the
+ * server accepts it.
+ */
+function keepLocal(
+  transaction: IDBTransaction,
+  mine: StoredRecord | undefined,
+  theirs: ParkedRecord,
+  replacement: Choice["replacement"],
+): Settled {
+  if (mine === undefined) {
+    return { kind: "settled" };
+  }
+  const row: StoredRecord = {
+    ...mine,
+    ...replacement,
+    localRevision: mine.localRevision + (replacement === undefined ? 0 : 1),
+    baseRevision: theirs.revision,
+    dirty: true,
+  };
+  transaction.objectStore(RECORDS).put(row);
+  if (replacement === undefined) {
+    return { kind: "settled" };
+  }
+  // New text is a new change: queued like any other.
+  queueOperation(transaction, {
+    opId: crypto.randomUUID(),
+    type: row.type,
+    id: row.id,
+    localRevision: row.localRevision,
+    baseRevision: row.baseRevision,
+    schemaVersion: row.schemaVersion,
+    tombstone: false,
+  });
+  return { kind: "settled", row };
+}
+
 /** What applying one change from the server did. */
 interface Applied {
   readonly outcome: RemoteOutcome;
@@ -346,8 +485,10 @@ function meet(
     return "applied";
   }
   if (row.dirty) {
-    // The server is still where this device's unsent change started.
-    return change.revision === row.baseRevision ? "unchanged" : "conflict";
+    // At the base, the server is still where this device's unsent change
+    // started. Below it, the change is one this device has already seen,
+    // met again because the feed was read from the start.
+    return change.revision <= row.baseRevision ? "unchanged" : "conflict";
   }
   if (change.revision <= row.baseRevision) {
     return "unchanged";
@@ -483,6 +624,96 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
 
   async unreadable(kind: RecordKind): Promise<number> {
     return (await this.#read())?.unreadable[kind].size ?? 0;
+  }
+
+  async conflicts<K extends RecordKind>(
+    kind: K,
+  ): Promise<RecordConflict<RecordKinds[K]>[]> {
+    const session = this.#session;
+    const opened = await this.#read();
+    if (session === undefined || opened === undefined || opened.superseded) {
+      return [];
+    }
+    const { type } = FORMATS[kind];
+    const parked = (await readParked(opened.database)).filter(
+      (kept) => kept.type === type,
+    );
+    return Promise.all(
+      parked.map(async (kept) => ({
+        id: kept.id,
+        mine: opened.records[kind].get(kept.id)?.record,
+        theirs: await decrypt(
+          kind,
+          // Only the envelope and the fields that say how to read it matter.
+          {
+            ...kept,
+            localRevision: 0,
+            baseRevision: kept.revision,
+            dirty: false,
+          },
+          session.root,
+          session.owner,
+        ),
+        theirsDeleted: kept.tombstone,
+        revision: kept.revision,
+      })),
+    );
+  }
+
+  async resolve<K extends RecordKind>(
+    kind: K,
+    id: string,
+    keep: Keep,
+    seen: number,
+    merged?: RecordKinds[K],
+  ): Promise<boolean> {
+    const session = this.#session;
+    const opened = await this.#read();
+    if (session === undefined || opened === undefined) {
+      throw new StoreLockedError();
+    }
+    if (opened.superseded) {
+      throw new NewerDatabaseError();
+    }
+    const { type, schemaVersion } = FORMATS[kind];
+    // Encrypted before the transaction, which cannot wait for it.
+    const replacement =
+      merged === undefined
+        ? undefined
+        : {
+            schemaVersion,
+            envelope: await sealJson(
+              session.root,
+              { owner: session.owner, recordId: id, type },
+              merged,
+            ),
+          };
+    if (this.#session !== session) {
+      throw new StoreLockedError();
+    }
+    const settled = await settle(opened.database, {
+      type,
+      id,
+      keep,
+      seen,
+      replacement,
+    });
+    if (settled.kind === "deleted") {
+      throw new RecordDeletedError();
+    }
+    if (settled.kind === "changed") {
+      throw new ConflictChangedError();
+    }
+    if (settled.kind !== "settled") {
+      return false;
+    }
+    if (this.#session === session) {
+      if (settled.row !== undefined) {
+        await this.#remember(opened, session, settled.row);
+      }
+      this.#changed();
+    }
+    return true;
   }
 
   /**
@@ -746,7 +977,13 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
           await this.#remember(opened, session, row);
         }
       }
-      if (written.some(({ row }) => row !== undefined)) {
+      // A version kept aside changes what needs the person, so listeners
+      // are told about that too.
+      if (
+        written.some(
+          ({ row, outcome }) => row !== undefined || outcome === "conflict",
+        )
+      ) {
         this.#changed();
       }
     }

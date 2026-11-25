@@ -28,7 +28,9 @@ export interface SyncState {
    * - `failed`: the server was reached but sync did not finish; changes
    *   are kept here.
    * - `attention`: the server refused a change, or a record was changed in
-   *   two places. Nothing was discarded; the person has to decide.
+   *   two places. Nothing was discarded; the person has to decide. This is
+   *   shown in preference to `offline` and `failed`, because the person can
+   *   act on it without a connection.
    */
   readonly status: "synced" | "pending" | "offline" | "failed" | "attention";
   /** How many records have changes the server has not accepted. */
@@ -201,6 +203,11 @@ export class SyncEngine {
       this.#source.pendingCount().catch(() => 0),
       this.#source.parkedCount().catch(() => 0),
     ]);
+    if (waiting === 0) {
+      // Nothing is waiting, so nothing can still be refused: the person
+      // settled it another way, for example by keeping the server's version.
+      this.#refused = new Set();
+    }
     return { waiting, attention: parked > 0 || this.#refused.size > 0 };
   }
 
@@ -212,10 +219,10 @@ export class SyncEngine {
       return;
     }
     const { status } = this.#state;
-    if (status === "offline" || status === "failed") {
-      this.#set({ status, waiting });
-    } else if (attention) {
+    if (attention) {
       this.#set({ status: "attention", waiting });
+    } else if (status === "offline" || status === "failed") {
+      this.#set({ status, waiting });
     } else {
       this.#set({ status: waiting > 0 ? "pending" : "synced", waiting });
     }
@@ -245,6 +252,12 @@ export class SyncEngine {
   /** Send one pass of pending changes. @returns Whether to send again. */
   async #pushOnce(): Promise<boolean> {
     const pending = await this.#source.pending();
+    // A refused record that is no longer waiting was settled some other
+    // way, for example by the person keeping the server's version.
+    const waiting = new Set(pending.map((change) => change.operation.recordId));
+    this.#refused = new Set(
+      [...this.#refused].filter((recordId) => waiting.has(recordId)),
+    );
     let again = false;
     for (
       let start = 0;
@@ -344,12 +357,14 @@ export class SyncEngine {
       return this.#state;
     }
     this.#outcome = outcome;
-    if (outcome === "offline") {
+    if (attention) {
+      // Shown whatever the network is doing: choosing between two versions
+      // needs no connection, and the person should not have to wait for one.
+      this.#set({ status: "attention", waiting });
+    } else if (outcome === "offline") {
       this.#set({ status: "offline", waiting });
     } else if (outcome === "retry" || outcome === "stopped") {
       this.#set({ status: "failed", waiting });
-    } else if (attention) {
-      this.#set({ status: "attention", waiting });
     } else {
       this.#set({ status: waiting > 0 ? "pending" : "synced", waiting });
     }

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthSession } from "../../../src/auth/auth-client";
 import { AccountVault } from "../../../src/crypto/account-vault";
@@ -83,6 +83,10 @@ function device(through: PairingRelay = relay): {
     ),
   };
 }
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 beforeEach(async () => {
   sessionStorage.clear();
@@ -787,7 +791,36 @@ describe("a request is short-lived and single use", () => {
     expect(await codeOf(joining.done)).toBe("pairing_cancelled");
   });
 
+  it("leaving is reported as leaving even when an answer on its way says the request is gone", async () => {
+    // The relay is asked whether the request has moved on. Before it
+    // answers, the person leaves, which cancels the request, so the answer
+    // that then arrives says there is no such request.
+    let answer: (() => void) | undefined;
+    const slow: PairingRelay = {
+      ...tampering((request) => request),
+      read: () =>
+        new Promise((resolve) => {
+          answer = () => {
+            resolve(undefined);
+          };
+        }),
+    };
+    const joining = startJoining(device(slow).pairing);
+    await requested(joining);
+    await expect.poll(() => answer).toBeDefined();
+
+    joining.abort.abort();
+    answer?.();
+
+    expect(await codeOf(joining.done)).toBe("pairing_cancelled");
+  });
+
   it("the default timing waits, and stops waiting when the screen is left", async () => {
+    // The default timing reads the real clock, and the relay in these tests
+    // runs on a fixed one. Hold the real clock at the same moment, or the
+    // request would look expired to anyone running this after that time.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(clock);
     const pairing = new AccountPairing(
       auth,
       new MemoryIdentityStore(),

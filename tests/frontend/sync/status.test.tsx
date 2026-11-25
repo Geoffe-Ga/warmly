@@ -119,6 +119,24 @@ describe("the sync status indicator (SYNC-010, AC-23)", () => {
     });
   });
 
+  it("links to the review only when something needs the person", async () => {
+    const sync = control({ status: "pending", waiting: 1 });
+    render(<SyncStatus sync={sync} />);
+    expect(screen.queryByRole("link")).toBeNull();
+
+    sync.set({ status: "attention", waiting: 1 });
+
+    const link = await screen.findByRole("link", {
+      name: "Review what changed",
+    });
+    expect(link.getAttribute("href")).toBe("/sync/conflicts");
+
+    sync.set({ status: "synced", waiting: 0 });
+    await waitFor(() => {
+      expect(screen.queryByRole("link")).toBeNull();
+    });
+  });
+
   it("stops following the state when it is removed", async () => {
     const sync = control({ status: "offline", waiting: 1 });
     render(<SyncStatus sync={sync} />);

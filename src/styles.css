@@ -402,6 +402,40 @@ textarea.field__control {
   background: var(--color-surface);
 }
 
+/* Two versions of one entry, side by side where there is room */
+.versions {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  margin-bottom: var(--space-3);
+}
+
+.version {
+  margin: 0;
+}
+
+.version__changed {
+  margin: 0;
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-small);
+}
+
+.version dt {
+  font-weight: 700;
+  margin-top: var(--space-3);
+}
+
+.version dd {
+  margin: var(--space-1) 0 0;
+  /* Line breaks the person typed are kept. */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.conflict {
+  margin-bottom: var(--space-5);
+}
+
 /* Detail list: short label and value pairs inside a card */
 
 .detail-list {
