@@ -5,11 +5,16 @@
  * the hash of each entry it was built from, so the app can tell when that
  * entry has since changed.
  *
+ * The hash is private. It is an unsalted hash of what was written, so
+ * anyone who saw it could test guesses at a short answer such as "nothing".
+ * It is stored only inside the entry's encrypted envelope and must never be
+ * sent or stored in the clear, for example as sync metadata.
+ *
  * It covers the three answers and nothing else. Feelings are left out on
  * purpose: changing a feeling must not throw away work built from the text.
  */
 import { utf8 } from "../../crypto/encoding";
-import type { Responses } from "./types";
+import type { Responses } from "./prompts";
 
 /**
  * The version of the hash's canonical form. It is part of what is hashed,

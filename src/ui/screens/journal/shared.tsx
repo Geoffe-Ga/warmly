@@ -4,46 +4,12 @@
  */
 import { useEffect, useState } from "preact/hooks";
 
-import { useServices, type Services } from "../../../app/services";
-import type { Feeling } from "../../../domain/journal/feelings";
-import {
-  newEntry,
-  type EntryDate,
-  type JournalEntry,
-  type Responses,
-} from "../../../domain/journal/types";
+import { useServices } from "../../../app/services";
+import type { EntryDate, JournalEntry } from "../../../domain/journal/types";
 
 /** Said when this device's saved records cannot be opened at all. */
 export const CANNOT_OPEN =
   "Warmly couldn't open what is saved on this device. Nothing has been changed or deleted. Close other Warmly tabs and reload this page; if a newer version of Warmly has been used here, update to it.";
-
-/**
- * Store a new entry built from what was typed, unless the app has locked in
- * the meantime.
- *
- * Building an entry takes a moment, because its content is hashed. If the
- * app locks during that moment the keys have already gone, so the
- * session is checked again just before the write and the entry is dropped
- * if it is no longer unlocked. The store itself also refuses to write
- * while locked.
- *
- * @param services - The app's services.
- * @param responses - The three answers, as typed.
- * @param feelings - Feelings the person chose to note, if any.
- * @returns The stored entry, or `undefined` if the app locked first.
- */
-export async function saveNewEntry(
-  services: Pick<Services, "records" | "session">,
-  responses: Responses,
-  feelings: readonly Feeling[] = [],
-): Promise<JournalEntry | undefined> {
-  const entry = await newEntry(responses, new Date(), feelings);
-  if (services.session.state !== "unlocked") {
-    return undefined;
-  }
-  await services.records.put("journal-entry", entry);
-  return entry;
-}
 
 /**
  * Write an entry's day for people, such as "November 10, 2026".

@@ -215,6 +215,16 @@ describe("a transaction", () => {
     database.close();
   });
 
+  it("fails when the work never reports a result, so a forgotten report cannot pass as success", async () => {
+    const database = await openRecordsDatabase(freshName());
+
+    await expect(
+      transact(database, [RECORDS], "readonly", () => undefined),
+    ).rejects.toThrow("The transaction reported no result");
+
+    database.close();
+  });
+
   it("stores nothing when the work throws", async () => {
     const database = await openRecordsDatabase(freshName());
 
@@ -231,8 +241,9 @@ describe("a transaction", () => {
 
   it("stores nothing when a request in it fails", async () => {
     const database = await openRecordsDatabase(freshName());
-    await transact(database, [OUTBOX], "readwrite", (transaction) => {
+    await transact(database, [OUTBOX], "readwrite", (transaction, result) => {
       transaction.objectStore(OUTBOX).add({ seq: 1 });
+      result(undefined);
     });
 
     await expect(

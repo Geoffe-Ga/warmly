@@ -6,31 +6,11 @@
  */
 import { contentHash } from "./content-hash";
 import { inListOrder, isFeeling, type Feeling } from "./feelings";
+import { PROMPTS, type Responses } from "./prompts";
 import { canComplete } from "./validation";
 
-/** Which of the three prompts a response answers. */
-export type PromptKey = "good" | "improve" | "loved";
-
-/** One journal prompt. */
-export interface Prompt {
-  readonly key: PromptKey;
-  /** The question, word for word as the PRD gives it. */
-  readonly label: string;
-}
-
-/** The three prompts, in the order every entry shows them (JR-001). */
-export const PROMPTS: readonly Prompt[] = [
-  { key: "good", label: "What's going well?" },
-  { key: "improve", label: "What would you like to improve?" },
-  {
-    key: "loved",
-    label:
-      "Since your last journal entry, how has your partner helped you feel loved?",
-  },
-];
-
-/** The answers to the three prompts. */
-export type Responses = Readonly<Record<PromptKey, string>>;
+export { PROMPTS } from "./prompts";
+export type { Prompt, PromptKey, Responses } from "./prompts";
 
 /** The day an entry is about, in the time zone it was written in. */
 export interface EntryDate {
@@ -137,8 +117,8 @@ export function entryDateFor(
  * Build a new entry from what was typed.
  *
  * It is `complete` when all three answers have some text and a `draft`
- * otherwise. Telling the person what is missing belongs to the compose
- * screen, not here.
+ * otherwise. The compose screen builds its entries with `drafts.ts`, where
+ * the status is chosen by what the person did, not by what is filled in.
  *
  * @param responses - The three answers, as typed.
  * @param now - The current time.

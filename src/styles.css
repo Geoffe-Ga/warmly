@@ -311,6 +311,28 @@ textarea.field__control {
   accent-color: var(--color-coral-strong);
 }
 
+/* Save status: where a draft stands, under the form */
+
+.save-status {
+  min-height: calc(var(--font-size-small) * var(--line-height));
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-small);
+}
+
+.save-status p {
+  margin: 0;
+}
+
+/* Read by a screen reader, not shown */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* Card */
 
 .card {

@@ -74,6 +74,13 @@ write the row and its outbox operation in a single read-write transaction.
 The revision is read inside that transaction, so two writes cannot claim
 the same one. If any part fails, neither is stored.
 
+**No silent overwrite.** The store remembers the local revision each record
+was read at. A `put` is refused (`StaleRecordError`) unless the stored row
+is still at that revision, or is absent when the store holds no copy. So a
+tab with an out-of-date copy cannot replace another tab's newer record, and
+a row this version cannot read is never written over. The refused tab sees
+the newer record after its next unlock.
+
 **Deletion.** A delete replaces the row with a tombstone that has no
 envelope, and queues a tombstone operation. A `put` onto a tombstone is
 refused (`RecordDeletedError`): a deletion is never undone by a later write.
@@ -105,11 +112,14 @@ and the outbox is intact. A test fails if a version has no dump.
 - Unlock decrypts every record into memory. That is what local search needs
   anyway, and is fine for thousands of entries; it must be measured before
   the account sizes in PRD §10 are claimed.
-- **Two tabs of the same account are not coordinated yet.** Each has its own
-  in-memory copy, so one does not see the other's changes until it is
-  unlocked again. Revisions stay correct, because they are read inside the
-  transaction. This must be solved before a saved record can be changed,
-  which starts with draft autosave (#27).
+- **Two tabs of the same account do not see each other's changes live.**
+  Each has its own in-memory copy until it is unlocked again. Nothing is
+  lost: a write from the out-of-date tab is refused, and the compose screen
+  tells the person to carry on in the other tab. Telling tabs about each
+  other's changes as they happen is left for later.
+- The database name contains the account ID. Anyone who can read the
+  browser profile can see which accounts have been used in it. It is not
+  content, and the same ID is already in the stored auth session.
 - The browser may evict IndexedDB under storage pressure. Until sync exists
   an entry lives on one device only. Asking for persistent storage is left
   to the sync work.

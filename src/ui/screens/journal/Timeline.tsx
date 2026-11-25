@@ -3,6 +3,7 @@ import { useState } from "preact/hooks";
 
 import { Link } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
+import { currentDraft } from "../../../domain/journal/drafts";
 import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
@@ -25,19 +26,46 @@ function mentions(entry: JournalEntry, query: string): boolean {
 
 function EntryLink(props: { readonly entry: JournalEntry }): JSX.Element {
   const { entry } = props;
-  const date = formatEntryDate(entry.entryDate);
   return (
     <li>
       <Link href={pathFor("journal-entry", { id: entry.id })} class="action">
-        {entry.status === "draft" ? `${date} (draft)` : date}
+        {formatEntryDate(entry.entryDate)}
       </Link>
     </li>
   );
 }
 
+/** What to say when no entry is listed. */
+function emptyMessage(noEntries: boolean, hasDraft: boolean): string {
+  if (!noEntries) {
+    return "No entry mentions that.";
+  }
+  return hasDraft
+    ? "You haven't finished an entry yet."
+    : "You haven't written anything yet.";
+}
+
+/** The draft being written, kept apart from the completed entries. */
+function DraftLink(props: { readonly draft: JournalEntry }): JSX.Element {
+  return (
+    <nav aria-label="Draft">
+      <ul class="action-list">
+        <li>
+          <Link href={pathFor("journal-new")} class="action">
+            Carry on with your draft from{" "}
+            {formatEntryDate(props.draft.entryDate)}
+          </Link>
+        </li>
+      </ul>
+    </nav>
+  );
+}
+
 /**
- * The journal: entries newest first, a box to search them, and the way to a
- * new entry (PRD JR-001). Nothing here calls AI, and what is typed in the
+ * The journal: completed entries newest first, a box to search them, the
+ * draft being written if there is one, and the way to a new entry (PRD
+ * JR-001, JR-004). A draft is not a completed entry, so it is shown apart
+ * and is not searched. Nothing here calls AI, and what is typed in the
  * search box stays in memory: it is never put in the address.
  *
  * @returns The journal timeline screen.
@@ -45,15 +73,21 @@ function EntryLink(props: { readonly entry: JournalEntry }): JSX.Element {
 export function Timeline(): JSX.Element {
   const journal = useJournalEntries();
   const [query, setQuery] = useState("");
-  const entries = journal.state === "ready" ? journal.entries : undefined;
+  const all = journal.state === "ready" ? journal.entries : undefined;
+  const entries = all?.filter((entry) => entry.status === "complete");
+  const draft = currentDraft(all ?? []);
   const shown = entries?.filter((entry) => mentions(entry, query));
   const unreadable = journal.state === "ready" ? journal.unreadable : 0;
 
   return (
     <PageLayout title="Journal" lead="Your entries, newest first.">
-      <p>
-        <Link href={pathFor("journal-new")}>Write a new entry</Link>
-      </p>
+      {draft === undefined ? (
+        <p>
+          <Link href={pathFor("journal-new")}>Write a new entry</Link>
+        </p>
+      ) : (
+        <DraftLink draft={draft} />
+      )}
       <TextField
         label="Search your journal"
         name="journal-search"
@@ -80,11 +114,7 @@ export function Timeline(): JSX.Element {
         </StatusBanner>
       )}
       {shown !== undefined && shown.length === 0 && (
-        <p>
-          {entries?.length === 0
-            ? "You haven't written anything yet."
-            : "No entry mentions that."}
-        </p>
+        <p>{emptyMessage(entries?.length === 0, draft !== undefined)}</p>
       )}
       {shown !== undefined && shown.length > 0 && (
         <nav aria-label="Entries">
