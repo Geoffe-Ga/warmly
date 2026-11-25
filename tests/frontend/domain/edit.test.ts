@@ -204,10 +204,7 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
     expect(heard).toEqual([]);
   });
 
-  it("when a listener fails, the edit is already stored and the failure is reported; a second try announces nothing", async () => {
-    // This pins today's behaviour. Whether a save should report a failure
-    // that happened only in a listener is decided with the invalidation
-    // engine (#51), which must not rely on hearing the event.
+  it("succeeds once the entry is stored, even when a listener fails", async () => {
     const { records, events, heard, entry } = await setUp();
     events.on("journal.changed", () => {
       throw new Error("synthetic listener failure");
@@ -217,15 +214,11 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
       feelings: ORIGINAL.feelings,
     };
 
-    await expect(
-      editEntry({ records, events }, entry.id, rewritten),
-    ).rejects.toBeInstanceOf(AggregateError);
+    const edited = await editEntry({ records, events }, entry.id, rewritten);
 
-    expect((await records.get("journal-entry", entry.id))?.responses.good).toBe(
-      "rewritten",
-    );
-    expect(heard).toHaveLength(1);
-    await editEntry({ records, events }, entry.id, rewritten);
+    expect(edited.responses.good).toBe("rewritten");
+    expect(await records.get("journal-entry", entry.id)).toEqual(edited);
+    // The other listener still heard it.
     expect(heard).toHaveLength(1);
   });
 

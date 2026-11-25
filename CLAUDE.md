@@ -14,10 +14,10 @@ tokens and device signatures on every `/v1` route but health, stores recovery
 envelopes and device identities, and serves the remaining routes as typed
 stubs. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
-servers outside production) and a journal that can be written, listed, read
+servers outside production) and a journal that can be written, listed, read,
 searched, edited in place and deleted for good, with drafts saved as they
-are typed, stored encrypted in IndexedDB with an outbox that nothing sends yet; other routes
-render accessible placeholders.
+are typed, stored encrypted in IndexedDB with an outbox that nothing sends
+yet; other routes render accessible placeholders.
 
 ---
 
@@ -221,8 +221,10 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   content hash changes it announces `journal.changed` on `services.events`
   (`src/domain/events.ts`) after the entry is stored. Events carry IDs and
   hashes only, never text, and stay in memory on this device. An event is
-  announced at most once and can be missed, so anything that depends on an
-  entry also stores its content hash and checks it again on unlock.
+  announced at most once and can be missed, and a listener that fails never
+  makes the stored change look failed (`emit` does not reject). So anything
+  that depends on an entry also stores its content hash and checks it again
+  on unlock.
 - An entry or draft is deleted only through `deleteEntry`
   (`src/domain/journal/delete.ts`), after the person confirms. There is no
   trash and no undo. A completed entry's deletion announces

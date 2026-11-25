@@ -55,15 +55,19 @@ export interface EventBus {
   /**
    * Announce an event and wait for every listener to finish.
    *
+   * It never rejects. By the time an event is announced the change it
+   * describes is already stored, so a listener that fails must not make the
+   * change look as if it failed. Every listener is run, whatever the others
+   * do, and what failed is handed back.
+   *
    * @param type - The event's name.
    * @param event - What happened.
-   * @throws AggregateError if any listener failed. Every listener is still
-   *   run: one that fails does not stop the others.
+   * @returns What each failed listener threw; empty when all succeeded.
    */
   emit<K extends DomainEventType>(
     type: K,
     event: DomainEvents[K],
-  ): Promise<void>;
+  ): Promise<readonly unknown[]>;
 }
 
 /**
@@ -91,12 +95,9 @@ export function createEventBus(): EventBus {
           Promise.resolve().then(() => listener(event)),
         ),
       );
-      const failures = outcomes
+      return outcomes
         .filter((outcome) => outcome.status === "rejected")
         .map((outcome) => outcome.reason as unknown);
-      if (failures.length > 0) {
-        throw new AggregateError(failures, `A listener to ${type} failed`);
-      }
     },
   };
 }

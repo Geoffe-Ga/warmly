@@ -23,6 +23,18 @@ type Found =
   | { readonly kind: "deleted" }
   | { readonly kind: "entry"; readonly entry: JournalEntry };
 
+/**
+ * What the screen shows once the store has answered. Once the entry has
+ * been deleted here the screen keeps saying so, whatever the store reports
+ * afterwards.
+ */
+function afterLoading(was: Found, entry: JournalEntry | undefined): Found {
+  if (was.kind === "deleted") {
+    return was;
+  }
+  return entry === undefined ? { kind: "missing" } : { kind: "entry", entry };
+}
+
 /** What is said when there is no entry to show. */
 const NOTICES = {
   loading: { tone: "info", label: "Loading", text: "Getting your entry." },
@@ -98,15 +110,7 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
       ).then(
         (entry) => {
           if (current) {
-            // Once the entry has been deleted here, the screen keeps saying
-            // so, whatever the store reports afterwards.
-            setFound((was) =>
-              was.kind === "deleted"
-                ? was
-                : entry === undefined
-                  ? { kind: "missing" }
-                  : { kind: "entry", entry },
-            );
+            setFound((was) => afterLoading(was, entry));
           }
         },
         () => {

@@ -139,6 +139,24 @@ describe("editing a saved entry (JR-006, AC-06)", () => {
     );
   });
 
+  it("shows the saved entry, not an error, when only a listener to the event fails", async () => {
+    const { services } = await openEdit();
+    services.events.on("journal.changed", () => {
+      throw new Error("synthetic listener failure");
+    });
+
+    await userEvent.type(box(0), " and more");
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(`/journal/entries/${ID}`);
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      (await services.records.get("journal-entry", ID))?.responses.good,
+    ).toBe("Good one and more");
+  });
+
   it("saves nothing while an answer is blank, and says so on that field (JR-002)", async () => {
     const { services, heard } = await openEdit();
 
@@ -391,6 +409,29 @@ describe("deleting an entry (JR-007, OPS-003)", () => {
     expect(await services.records.get("journal-entry", ID)).toBeUndefined();
     expect(heard).toEqual([{ entryId: ID, oldHash: "0".repeat(64) }]);
     expect(window.location.pathname).toBe(`/journal/entries/${ID}`);
+  });
+
+  it("says the entry was deleted, not that deleting failed, when only a listener to the event fails", async () => {
+    const { services } = await openEntry();
+    services.events.on("journal.deleted", () => {
+      throw new Error("synthetic listener failure");
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Delete this entry" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete entry",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(heading().textContent).toBe("Entry deleted");
+    });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByText("Good one")).toBeNull();
+    expect(await services.records.get("journal-entry", ID)).toBeUndefined();
   });
 
   it("never shows a deleted entry in the timeline or in search", async () => {

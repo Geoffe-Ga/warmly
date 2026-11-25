@@ -231,9 +231,12 @@ export function useDraft(): DraftForm {
     draftGone,
     discard: async () => {
       await settle();
-      if (draft.current !== undefined) {
-        await deleteEntry({ records, events }, draft.current.id);
+      const discarded = draft.current;
+      if (discarded !== undefined) {
+        // Forgotten first: whatever happens next, nothing may be saved onto
+        // the deleted draft's ID.
         draft.current = undefined;
+        await deleteEntry({ records, events }, discarded.id);
       }
       setContent(BLANK);
       setResumed(undefined);

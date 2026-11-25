@@ -74,6 +74,22 @@ describe("deleting an entry for good (JR-007, AC-17)", () => {
     expect(stillThere).toBe(false);
   });
 
+  it("succeeds once the deletion is stored, even when a listener fails", async () => {
+    const records = new MemoryRecordStore();
+    const events = createEventBus();
+    events.on("journal.deleted", () => {
+      throw new Error("synthetic listener failure");
+    });
+    const heard = listening(events);
+    const entry = await completedFrom(CONTENT);
+    await records.put("journal-entry", entry);
+
+    expect(await deleteEntry({ records, events }, entry.id)).toBe(true);
+
+    expect(await records.get("journal-entry", entry.id)).toBeUndefined();
+    expect(heard.deleted).toHaveLength(1);
+  });
+
   it("removes a draft without announcing anything: nothing was built from it", async () => {
     const records = new MemoryRecordStore();
     const events = createEventBus();

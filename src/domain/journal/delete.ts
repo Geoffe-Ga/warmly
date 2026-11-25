@@ -16,6 +16,11 @@ import type { RecordStore } from "../../storage/record-store";
  * is stored, so that work built from the entry can be dealt with. A draft
  * was never built on, so deleting one announces nothing.
  *
+ * Once the deletion is stored it has succeeded, whatever a listener does.
+ * A listener that fails is not reported as a failed deletion: whatever
+ * depends on the entry also checks for it when the app is next unlocked
+ * (see `events.ts`).
+ *
  * @param deps - The record store and the event bus.
  * @param id - The entry's ID.
  * @returns Whether there was an entry to delete.
