@@ -319,6 +319,38 @@ describe("what the person is shown before agreeing (AI-015, AI-016)", () => {
     }).toThrow(TypeError);
   });
 
+  it("seals what a request holds even if the request itself was already frozen", () => {
+    const { gateway } = connected();
+    const entry = { ...ENTRY, responses: { ...ENTRY.responses } };
+    const entries = [entry];
+    const request = Object.freeze({
+      kind: "reflect" as const,
+      question: "Synthetic question",
+      entries,
+    });
+
+    gateway.disclose(request);
+
+    expect(() => {
+      entries.push(ENTRY);
+    }).toThrow(TypeError);
+    expect(() => {
+      entry.responses.good = "Changed";
+    }).toThrow(TypeError);
+  });
+
+  it("seals a request that refers to itself without looping", () => {
+    const request: ReflectRequest & { self?: unknown } = {
+      kind: "reflect",
+      question: "Synthetic question",
+      entries: [],
+    };
+    request.self = request;
+
+    expect(Object.isFrozen(grantConsent(request))).toBe(true);
+    expect(Object.isFrozen(request.entries)).toBe(true);
+  });
+
   it("a request cannot be changed between agreeing and sending", async () => {
     const { gateway, provider } = connected();
     const request = {

@@ -22,13 +22,16 @@ export interface ConsentToken {
   readonly [consent]: true;
 }
 
-function deepFreeze(value: unknown): void {
-  if (typeof value !== "object" || value === null || Object.isFrozen(value)) {
+function deepFreeze(value: unknown, seen: WeakSet<object>): void {
+  // An object that is already frozen is still looked into: being frozen
+  // itself says nothing about what it holds. `seen` stops a loop.
+  if (typeof value !== "object" || value === null || seen.has(value)) {
     return;
   }
+  seen.add(value);
   Object.freeze(value);
   for (const inner of Object.values(value)) {
-    deepFreeze(inner);
+    deepFreeze(inner, seen);
   }
 }
 
@@ -46,7 +49,7 @@ function deepFreeze(value: unknown): void {
  * @returns The same request.
  */
 export function sealRequest<T extends AiRequest>(request: T): T {
-  deepFreeze(request);
+  deepFreeze(request, new WeakSet());
   return request;
 }
 
