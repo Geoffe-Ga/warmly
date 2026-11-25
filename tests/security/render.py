@@ -46,6 +46,10 @@ _NOT_PROVEN = """\
 - **Floods without a valid session.** Rate limits count requests per
   account and per device. Requests with no valid token are refused before
   they are counted and must be limited at the hosting edge.
+- **The per-device limit against a signed-in attacker.** A request is
+  counted before its signature is checked, under the device ID it states.
+  Someone with a valid token can state a new ID each time and avoid the
+  per-device limit. The per-account limit still applies to them.
 - **Routes that do not exist yet.** A new route is covered only once it has
   a row here, which the suite insists on.
 - **The auth provider.** Tokens are signed by a test key. That the real

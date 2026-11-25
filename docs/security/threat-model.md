@@ -45,7 +45,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Cross-site scripting | Framework escapes text; CSP forbids inline and evaluated code | **In place** (this issue) |
 | Logs leaking secrets | Closed log schema; no bodies, headers, paths or query strings | **In place** (this issue) |
 | Data sent to unexpected hosts | CSP `connect-src` allowlist; test egress guards | **In place** (this issue) |
-| Oversized or abusive requests | Request body cap; per-account and per-device request limits, counted in the database so they hold across instances (`warmly/api/rate_limit.py`) | **In place** for signed-in requests. Requests with no valid token are refused before they are counted and must be limited at the hosting edge (#61) |
+| Oversized or abusive requests | Request body cap; per-account and per-device request limits, counted in the database so they hold across instances (`warmly/api/rate_limit.py`) | **In place** for signed-in requests. Requests with no valid token are refused before they are counted and must be limited at the hosting edge (#61). If the counter cannot be written the request fails (500) rather than going uncounted: this is deliberate. Windows are fixed, so a burst across a boundary can reach about twice the limit |
 | Prompt injection in journal text | Evidence framing; citation grounding | Planned: #43, #52 |
 
 ## Known windows

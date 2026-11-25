@@ -95,6 +95,8 @@ class RateLimiter:
         """
         now = self._clock()
         window = self._limits.window_seconds
+        # Fixed windows: a burst that straddles a boundary can reach about
+        # twice the limit. That is acceptable for limits this generous.
         started = now - now % window
         device = device_scope(device_header)
         scopes = (ACCOUNT_SCOPE,) if device is None else (ACCOUNT_SCOPE, device)
