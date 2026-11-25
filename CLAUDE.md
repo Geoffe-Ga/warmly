@@ -284,8 +284,10 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   following `docs/runbooks/sync-versions.md`.
 - A new version of the app is applied only when the person presses "Update
   now" (`UpdateNotice`, `src/app/App.tsx`), and only after
-  `services.lockHooks.flush()` has saved unsaved writing. Never call the
-  service worker's update function anywhere else.
+  `services.lockHooks.flush()` has saved unsaved writing. The service
+  worker's update function is handed to `services.updates` in `src/main.tsx`
+  and run only by `services.updates.apply()`, which only `UpdateNotice`
+  calls. Never call it any other way.
 - Every AI call goes through `AiGateway` (`src/ai/gateway.ts`), reached as
   `services.ai` (D-17). Only the gateway imports a provider, and it needs a
   consent token for the very request being sent. A token is made only by

@@ -46,9 +46,32 @@ export interface ApiRequest {
   readonly signedBy: DeviceIdentity | undefined;
   /**
    * Extra request headers with fixed values, such as a protocol version.
-   * Never anything private: headers are not encrypted by the app.
+   * Never anything private: headers are not encrypted by the app. A header
+   * the client sets itself (the token, the signature, the content type) may
+   * not be given here: the request is refused before anything is sent.
    */
   readonly headers?: Readonly<Record<string, string>>;
+}
+
+/** Headers only the client itself may set. Compared in lower case. */
+const OWN_HEADERS: ReadonlySet<string> = new Set([
+  "accept",
+  "authorization",
+  "content-type",
+  "cookie",
+  "warmly-device",
+  "warmly-timestamp",
+  "warmly-nonce",
+  "warmly-signature",
+]);
+
+/** Refuse extra headers that would stand in for the client's own. */
+function checkExtraHeaders(headers: ApiRequest["headers"]): void {
+  for (const name of Object.keys(headers ?? {})) {
+    if (OWN_HEADERS.has(name.toLowerCase())) {
+      throw new TypeError("A request may not set the API client's own headers");
+    }
+  }
 }
 
 const DEVICE_ERRORS: Readonly<Record<string, ApiErrorCode>> = {
@@ -142,6 +165,7 @@ export class ApiClient {
    *   `clock_wrong` for a 401.
    */
   async send(session: AuthSession, request: ApiRequest): Promise<Response> {
+    checkExtraHeaders(request.headers);
     const hasBody = request.body !== undefined;
     // Serialised once: the bytes that are signed are the bytes that are sent.
     const body = utf8(hasBody ? JSON.stringify(request.body) : "");
