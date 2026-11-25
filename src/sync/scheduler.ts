@@ -153,6 +153,11 @@ export class SyncScheduler implements SyncControl {
   #cycle: Promise<SyncState> | undefined;
   /** Changes at every lock, so a cycle from before it plans nothing. */
   #generation = 0;
+  /**
+   * Whether a local change arrived while a cycle was running. That cycle
+   * may have read what to send before the change was made.
+   */
+  #missed = false;
 
   /**
    * @param engine - The sync engine.
@@ -207,6 +212,7 @@ export class SyncScheduler implements SyncControl {
     this.#started = false;
     this.#generation += 1;
     this.#cycle = undefined;
+    this.#missed = false;
     this.#cancel();
     for (const stop of this.#stops) {
       stop();
@@ -242,7 +248,14 @@ export class SyncScheduler implements SyncControl {
     this.#waiting = waiting;
     // While backing off, a new change waits for the retry already planned:
     // typing must not turn a slow retry into a fast one.
-    if (more && this.#started && this.#failures === 0) {
+    if (!more || !this.#started) {
+      return;
+    }
+    if (this.#cycle !== undefined) {
+      // Planned when the running cycle ends: a timer set now would be
+      // replaced by that cycle's own plan.
+      this.#missed = true;
+    } else if (this.#failures === 0) {
       this.#plan(this.#timings.quiet);
     }
   }
@@ -256,11 +269,18 @@ export class SyncScheduler implements SyncControl {
   }
 
   async #once(generation: number): Promise<SyncState> {
-    const state = await this.#engine.sync();
-    // The app may have locked, and unlocked again, while this ran. What a
-    // cycle from before the lock found says nothing about now.
+    this.#missed = false;
+    let state: SyncState;
+    try {
+      state = await this.#engine.sync();
+    } finally {
+      // The app may have locked, and unlocked again, while this ran. What
+      // a cycle from before the lock found says nothing about now.
+      if (generation === this.#generation) {
+        this.#cycle = undefined;
+      }
+    }
     if (generation === this.#generation) {
-      this.#cycle = undefined;
       this.#next(this.#engine.outcome());
     }
     return state;
@@ -271,6 +291,8 @@ export class SyncScheduler implements SyncControl {
     switch (outcome) {
       case "offline":
       case "retry":
+        // The count goes up after the wait is worked out, so the first
+        // retry uses the base wait.
         this.#plan(
           retryDelay(this.#failures, this.#timings, this.#environment.random()),
         );
@@ -286,7 +308,8 @@ export class SyncScheduler implements SyncControl {
         return;
       case "done":
         this.#failures = 0;
-        this.#plan(this.#timings.idle);
+        // A change made while the cycle ran may not have been in it.
+        this.#plan(this.#missed ? this.#timings.quiet : this.#timings.idle);
         return;
     }
   }

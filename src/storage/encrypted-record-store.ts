@@ -694,6 +694,10 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
             const existing = reading.result as StoredRecord | undefined;
             const outcome = meet(existing, change);
             applied[index] = { outcome };
+            // A record deleted here and already settled with the server
+            // is the other kind of "conflict": a live version of it is
+            // ignored on purpose and not kept, because a deleted record
+            // never comes back (ADR-0006).
             if (outcome === "conflict" && existing?.dirty === true) {
               // Not applied over the local change. Kept, still encrypted,
               // for the person to choose.

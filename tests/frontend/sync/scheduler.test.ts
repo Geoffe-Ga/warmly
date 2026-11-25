@@ -401,6 +401,55 @@ describe("when sync runs on its own (SYNC-008, SYNC-010)", () => {
     expect(browser.planned()).toEqual([]);
   });
 
+  it("sends a change made while a cycle was running soon after it ends, not at the idle wait", async () => {
+    let finish: (() => void) | undefined;
+    const sync = engine("done", "done");
+    const real = sync.sync;
+    sync.sync = () =>
+      new Promise((resolve) => {
+        finish = () => {
+          void real().then(resolve);
+        };
+      });
+    const browser = environment();
+    new SyncScheduler(sync, browser, TIMINGS).start();
+
+    // The cycle has already read what to send when this change is made.
+    sync.waiting(1);
+    expect(browser.planned()).toEqual([]);
+    finish?.();
+
+    await vi.waitFor(() => {
+      expect(browser.planned()).toEqual([TIMINGS.quiet]);
+    });
+    sync.sync = real;
+    await browser.fire();
+    expect(sync.runs).toBe(2);
+    // Nothing new arrived during that one, so it goes back to the idle wait.
+    expect(browser.planned()).toEqual([TIMINGS.idle]);
+  });
+
+  it("does not hurry a retry for a change made during a cycle that failed", async () => {
+    let finish: (() => void) | undefined;
+    const sync = engine("offline");
+    const real = sync.sync;
+    sync.sync = () =>
+      new Promise((resolve) => {
+        finish = () => {
+          void real().then(resolve);
+        };
+      });
+    const browser = environment();
+    new SyncScheduler(sync, browser, TIMINGS).start();
+
+    sync.waiting(1);
+    finish?.();
+
+    await vi.waitFor(() => {
+      expect(browser.planned()).toEqual([1_000]);
+    });
+  });
+
   it("counts one failed cycle once, however many asked for it", async () => {
     let finish: (() => void) | undefined;
     const sync = engine("offline", "offline");
