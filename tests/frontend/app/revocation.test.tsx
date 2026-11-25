@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ApiError } from "../../../src/api/client";
 import { endRevokedDevice } from "../../../src/app/SessionControls";
 import { PairingError } from "../../../src/devices/pairing";
+import { saveNewEntry } from "../../../src/ui/screens/journal/shared";
 import {
   FAKE_DEVICES,
   FakeDeviceDirectory,
@@ -250,6 +251,67 @@ describe("a device that finds out it was removed (DEV-003, DEV-004)", () => {
 
     expect(order).toEqual(["saved with keys", "/removed"]);
     expect(services.session.state).toBe("signed_out");
+  });
+
+  it("an entry still being prepared when the device is removed is never stored", async () => {
+    const services = await unlocked();
+    let forgetting: () => void = () => undefined;
+    const slow = {
+      ...services,
+      // Forgetting touches storage and takes a while; the save finishes
+      // during it.
+      forgetThisDevice: () =>
+        new Promise<void>((resolve) => {
+          forgetting = resolve;
+        }),
+    };
+
+    const saving = saveNewEntry(slow, {
+      good: "Private",
+      improve: "x",
+      loved: "y",
+    });
+    const ending = endRevokedDevice(slow, () => undefined);
+    expect(await saving).toBeUndefined();
+    expect(await services.records.list("journal-entry")).toEqual([]);
+    expect(services.session.state).toBe("signed_out");
+
+    forgetting();
+    await ending;
+    expect(await services.records.list("journal-entry")).toEqual([]);
+  });
+
+  it("copes with the person signing out while unsaved work is being saved", async () => {
+    const services = await unlocked();
+    services.lockHooks.register(() => {
+      services.session.signOut();
+      return Promise.resolve();
+    });
+    let landed = "";
+
+    await endRevokedDevice(services, (path) => {
+      landed = path;
+    });
+
+    expect(landed).toBe("/removed");
+    expect(services.session.state).toBe("signed_out");
+    expect(services.vault.isUnlocked).toBe(false);
+  });
+
+  it("the session has ended by the time anything is awaited", async () => {
+    const services = await unlocked();
+    const seen: string[] = [];
+    const watching = {
+      ...services,
+      forgetThisDevice: () => {
+        seen.push(services.session.state);
+        return Promise.resolve();
+      },
+    };
+
+    await endRevokedDevice(watching, () => undefined);
+
+    expect(seen).toEqual(["signed_out"]);
   });
 
   it("still ends the session when saving or forgetting fails", async () => {

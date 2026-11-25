@@ -17,6 +17,10 @@ import type { SessionState } from "./session";
  * onboarding, such as an unconfirmed recovery key. Used by both Lock and Sign out, so neither can leave key
  * material behind for whoever uses the device next.
  *
+ * Whoever calls this must change the session in the same step, with nothing
+ * awaited in between: code that is part-way through saving checks the
+ * session to learn that the records have gone.
+ *
  * @param services - The app's services.
  */
 export function dropSecrets(services: Services): void {
@@ -117,14 +121,21 @@ async function endOnce(
   if (state() === "unlocked") {
     await services.lockHooks.flush().catch(() => undefined);
   }
+  // The session ends in the same step as the keys and records are dropped,
+  // with nothing awaited in between. Work that was already under way, such
+  // as a save still hashing its entry, checks the session before it writes,
+  // so it can never write into a store that has just been emptied.
   dropSecrets(services);
-  // Before the session ends: afterwards nobody is signed in to forget for.
-  // If the storage cannot be cleared, the server still refuses the device.
-  await services.forgetThisDevice().catch(() => undefined);
   if (state() !== "signed_out") {
+    // It can already be signed out if the person did so while work was
+    // being saved above.
     services.session.signOut();
   }
   navigate(REVOKED_PATH);
+  // The auth client still knows who was signed in, which is what forgetting
+  // needs. If the storage cannot be cleared, the server still refuses the
+  // device.
+  await services.forgetThisDevice().catch(() => undefined);
   services.auth.signOut().catch(() => undefined);
 }
 
