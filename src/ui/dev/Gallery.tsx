@@ -1,6 +1,8 @@
 import type { JSX } from "preact";
 import { useState } from "preact/hooks";
 
+import type { ReflectRequest } from "../../ai/provider";
+import { AiDisclosureDialog } from "../components/AiDisclosureDialog";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { CheckboxGroup } from "../components/CheckboxGroup";
@@ -8,6 +10,13 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { TextArea, TextField } from "../components/Field";
 import { PageLayout } from "../components/PageLayout";
 import { StatusBanner } from "../components/StatusBanner";
+
+/** A synthetic request for the disclosure sample. It is never sent. */
+const SAMPLE_REQUEST: ReflectRequest = {
+  kind: "reflect",
+  question: "Synthetic question",
+  entries: [],
+};
 
 /** Path of the gallery. It never exists in a production build. */
 export const GALLERY_PATH = "/dev/components";
@@ -25,6 +34,8 @@ export function Gallery(): JSX.Element {
   const [feelings, setFeelings] = useState<string[]>(["calm"]);
   const [open, setOpen] = useState(false);
   const [outcome, setOutcome] = useState("Nothing chosen yet.");
+  const [asking, setAsking] = useState(false);
+  const [sent, setSent] = useState("Nothing sent yet.");
 
   return (
     <PageLayout title="Component gallery" lead="Synthetic content only.">
@@ -112,6 +123,36 @@ export function Gallery(): JSX.Element {
         >
           <p>This cannot be undone.</p>
         </ConfirmDialog>
+      </Card>
+
+      <Card heading="AI disclosure">
+        <p role="status">{sent}</p>
+        <Button
+          onClick={() => {
+            setAsking(true);
+          }}
+        >
+          Ask before sending
+        </Button>
+        <AiDisclosureDialog
+          open={asking}
+          request={SAMPLE_REQUEST}
+          disclosure={{
+            provider: "Example AI",
+            entries: 14,
+            also: "your question",
+            estimatedTokens: 5_200,
+            large: true,
+          }}
+          onConfirm={() => {
+            setAsking(false);
+            setSent("You chose to send.");
+          }}
+          onCancel={() => {
+            setAsking(false);
+            setSent("Nothing was sent.");
+          }}
+        />
       </Card>
     </PageLayout>
   );

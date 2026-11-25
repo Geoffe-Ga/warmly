@@ -17,7 +17,9 @@ route is a stub. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
 servers outside production) and a journal that can be written, listed, read,
 searched, edited in place and deleted for good, with drafts saved as they
-are typed, stored encrypted in IndexedDB. A sync engine sends the outbox
+are typed, stored encrypted in IndexedDB. The AI seam exists (gateway,
+consent dialog, a stand-in provider outside production) but no screen calls
+it and no real provider is connected. A sync engine sends the outbox
 and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Other routes render accessible placeholders.
 
 ---
@@ -284,6 +286,14 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   now" (`UpdateNotice`, `src/app/App.tsx`), and only after
   `services.lockHooks.flush()` has saved unsaved writing. Never call the
   service worker's update function anywhere else.
+- Every AI call goes through `AiGateway` (`src/ai/gateway.ts`), reached as
+  `services.ai` (D-17). Only the gateway imports a provider, and it needs a
+  consent token for the very request being sent. A token is made only by
+  the confirm button of `AiDisclosureDialog`, and works once. Never make,
+  store or reuse a token anywhere else, never call a provider directly, and
+  never add a retry or a second provider. A lint rule and
+  `tests/frontend/ai/dependencies.test.ts` enforce the imports. A provider's
+  answer is `unknown` until it has been validated.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

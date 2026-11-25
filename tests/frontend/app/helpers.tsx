@@ -10,6 +10,7 @@ import { createRevocationSignal } from "../../../src/devices/revocation";
 import { createEventBus } from "../../../src/domain/events";
 import { browserPersistence } from "../../../src/storage/persistence";
 import { MemoryRecordStore } from "../../../src/storage/record-store";
+import { createGateway } from "../../../src/ai/gateway";
 import { createUpdates } from "../../../src/app/updates";
 import { SyncEngine } from "../../../src/sync/engine";
 import { SyncScheduler } from "../../../src/sync/scheduler";
@@ -85,6 +86,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     events: createEventBus(),
     persistence: browserPersistence(undefined),
     updates: createUpdates(),
+    ai: createGateway(),
     sync: new SyncScheduler(
       new SyncEngine(NOTHING_TO_SYNC, UNAVAILABLE_TRANSPORT),
     ),

@@ -4,6 +4,7 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 
+import { createGateway, type AiGateway } from "../ai/gateway";
 import { ApiClient } from "../api/client";
 import {
   ApiRecoveryEnvelopeStore,
@@ -88,6 +89,8 @@ export interface Services {
   readonly lockHooks: LockHooks;
   /** Sends local changes to the server and fetches remote ones. */
   readonly sync: SyncControl;
+  /** The only way to reach an AI provider (D-17). */
+  readonly ai: AiGateway;
   /** A new version of the app waiting to be used. */
   readonly updates: AppUpdates;
   /** Asks the browser to keep this device's data, and reports the answer. */
@@ -388,6 +391,7 @@ export function createServices(): Services {
     records,
     sync,
     updates: appUpdates,
+    ai: createGateway(),
     persistence,
     session: createSession(),
     onboarding: createOnboarding(),
