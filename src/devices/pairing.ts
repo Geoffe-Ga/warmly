@@ -389,6 +389,12 @@ export class AccountPairing implements DevicePairing {
         throw new PairingError("pairing_cancelled");
       }
       const request = await this.#relay.read(session, id);
+      if (signal.aborted) {
+        // Leaving the screen cancels the request on the relay, and an
+        // answer already on its way can then say the request is gone. The
+        // person left: that is what happened, not an expiry.
+        throw new PairingError("pairing_cancelled");
+      }
       if (
         request === undefined ||
         request.status === "expired" ||
