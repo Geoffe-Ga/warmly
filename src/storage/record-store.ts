@@ -125,8 +125,9 @@ export interface RecordStore {
    *   conflict.
    * @throws ConflictChangedError if the server's version is no longer the
    *   one the person was shown. Nothing is changed.
-   * @throws RecordDeletedError if keeping that version would bring a
-   *   deleted record back.
+   * @throws RecordDeletedError if keeping that version would bring back a
+   *   record the server holds as deleted. A deletion made on this device
+   *   that the server never accepted can be taken back.
    */
   resolve<K extends RecordKind>(
     kind: K,
@@ -260,7 +261,11 @@ export class MemoryRecordStore implements RecordStore {
     if (parked.revision !== seen) {
       return Promise.reject(new ConflictChangedError());
     }
-    if (keep === "mine" && parked.theirs === undefined) {
+    if (
+      keep === "mine" &&
+      parked.theirs === undefined &&
+      this.#kind(kind).has(id)
+    ) {
       return Promise.reject(new RecordDeletedError());
     }
     if (keep === "theirs") {

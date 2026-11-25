@@ -242,26 +242,6 @@ describe("reviewing an entry changed in two places (SYNC-004, AC-16)", () => {
     ).toBeTruthy();
   });
 
-  it("says what happened, and offers no choice, when one side is deleted", async () => {
-    await open(MINE, null);
-
-    await waitFor(() => {
-      expect(document.body.textContent).toMatch(
-        /deleted on another device after you changed it here\. Your version is still on this device/,
-      );
-    });
-    expect(screen.queryByRole("button", { name: /Keep/ })).toBeNull();
-  });
-
-  it("says the entry stays deleted here when it was deleted on this device", async () => {
-    await open(null, THEIRS);
-
-    await waitFor(() => {
-      expect(document.body.textContent).toMatch(/It stays deleted here/);
-    });
-    expect(screen.queryByText("Theirs improve")).toBeNull();
-  });
-
   /** The other device changes the entry again just as a choice is stored. */
   function changesAgain(services: TestServices): JournalEntry {
     const newer = version({
@@ -427,6 +407,127 @@ describe("reviewing an entry changed in two places (SYNC-004, AC-16)", () => {
 
     expect(screen.queryByText("Theirs improve")).toBeNull();
     expect(heading().textContent).not.toBe("Changed in two places");
+  });
+});
+
+describe("an entry deleted on one device and changed on another (SYNC-005, AC-17)", () => {
+  /** Record what is announced as gone. */
+  function gone(services: TestServices): DomainEvents["journal.deleted"][] {
+    const heard: DomainEvents["journal.deleted"][] = [];
+    services.events.on("journal.deleted", (event) => {
+      heard.push(event);
+    });
+    return heard;
+  }
+
+  it("deleted elsewhere: shows this device's version and says a deleted entry does not come back", async () => {
+    await open(MINE, null);
+
+    await screen.findByRole("heading", { name: "Entry from November 3, 2026" });
+    expect(
+      screen.getByText(/deleted on another device after you changed it here/),
+    ).toBeTruthy();
+    expect(within(card("On this device")).getByText("Mine good")).toBeTruthy();
+    expect(screen.queryByText("On your other device")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Keep/ })).toBeNull();
+  });
+
+  it("deleted elsewhere: saves what was written as a new entry and leaves the old one deleted", async () => {
+    const { services, synced } = await open(MINE, null);
+    const heard = gone(services);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Save as a new entry" }),
+    );
+
+    await screen.findByText(/Saved what you wrote as a new entry/);
+    const [saved, ...others] = await services.records.list("journal-entry");
+    expect(others).toEqual([]);
+    expect(saved).toEqual({ ...MINE, id: saved?.id });
+    expect(saved?.id).not.toBe(ID);
+    expect(await services.records.get("journal-entry", ID)).toBeUndefined();
+    expect(heard).toEqual([{ entryId: ID, oldHash: MINE.contentHash }]);
+    expect(synced).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(heading());
+  });
+
+  it("deleted elsewhere: discards this device's version when asked", async () => {
+    const { services } = await open(MINE, null);
+    const heard = gone(services);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Discard this version" }),
+    );
+
+    await screen.findByText(/Removed this device's version/);
+    expect(await services.records.list("journal-entry")).toEqual([]);
+    expect(heard).toEqual([{ entryId: ID, oldHash: MINE.contentHash }]);
+    expect(screen.getByText("Nothing needs your attention.")).toBeTruthy();
+  });
+
+  it("deleted here: shows the other device's version and says nothing has been deleted elsewhere yet", async () => {
+    await open(null, THEIRS);
+
+    await screen.findByText(
+      /Nothing has been deleted from\s+your other devices yet/,
+    );
+    expect(
+      within(card("On your other device")).getByText("Theirs improve"),
+    ).toBeTruthy();
+    expect(screen.queryByText("On this device")).toBeNull();
+  });
+
+  it("deleted here: deletes it everywhere when asked", async () => {
+    const { services, synced } = await open(null, THEIRS);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Delete it anyway" }),
+    );
+
+    await screen.findByText(/will be deleted from your other devices/);
+    expect(await services.records.list("journal-entry")).toEqual([]);
+    expect(await services.records.conflicts("journal-entry")).toEqual([]);
+    expect(synced).toHaveBeenCalledTimes(1);
+  });
+
+  it("deleted here: takes the deletion back and keeps the edited version when asked", async () => {
+    const { services } = await open(null, THEIRS);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Keep the edited version" }),
+    );
+
+    await screen.findByText(/The entry is back on this device/);
+    expect(await services.records.get("journal-entry", ID)).toEqual(THEIRS);
+  });
+
+  it("says so when the other version cannot be read by this version of the app", async () => {
+    const services = testServices("unlocked");
+    await services.records.put("journal-entry", MINE);
+    vi.spyOn(services.records, "conflicts").mockResolvedValue([
+      {
+        id: ID,
+        mine: MINE,
+        theirs: undefined,
+        theirsDeleted: false,
+        revision: 2,
+      },
+    ]);
+
+    await renderApp(PATH, services);
+
+    await waitFor(() => {
+      expect(document.body.textContent).toMatch(
+        /newer version of Warmly, which this version cannot read/,
+      );
+    });
+    expect(
+      screen.queryByRole("button", { name: /Keep|Save|Discard|Delete/ }),
+    ).toBeNull();
   });
 });
 

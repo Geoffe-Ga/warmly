@@ -19,12 +19,20 @@ import {
   ConflictChangedError,
   ConflictGoneError,
   IncompleteMergeError,
+  deleteAnyway,
+  discardMine,
+  keepEdited,
   keepMerged,
   keepMine,
   keepTheirs,
   listConflicts,
+  isDeletedElsewhere,
+  isDeletedHere,
   isEdited,
+  saveAsNew,
   type ConflictDeps,
+  type DeletedElsewhere,
+  type DeletedHere,
   type EditedConflict,
 } from "../../../src/sync/conflicts";
 import type { RemoteChange } from "../../../src/sync/protocol";
@@ -472,35 +480,286 @@ describe("a version that is deleted or cannot be read (SYNC-005)", () => {
     expect(await b.store.get("journal-entry", gone.id)).toEqual(gone);
     expect(await b.store.parkedCount()).toBe(2);
   });
+});
 
-  it("an entry deleted here is listed as that, and the other version cannot bring it back", async () => {
-    const { server, a, b, fromA } = await (async () => {
-      const made = new MemoryServer();
-      const [first, second] = [await device(made), await device(made)];
-      const shared = await entry("shared");
-      await first.store.put("journal-entry", shared);
-      await first.sync();
-      await second.sync();
-      const edited = await completedFrom(answers("from A"), shared);
-      await first.store.put("journal-entry", edited);
-      await second.store.delete("journal-entry", shared.id);
-      await first.sync();
-      await second.sync();
-      return { server: made, a: first, b: second, fromA: edited };
-    })();
+/** The conflict as shown for an entry changed here and deleted elsewhere. */
+async function there(
+  deps: ConflictDeps,
+  id: string,
+): Promise<DeletedElsewhere> {
+  const conflict = (await listConflicts(deps.records)).find(
+    (each) => each.id === id,
+  );
+  if (conflict === undefined || !isDeletedElsewhere(conflict)) {
+    throw new Error("an entry deleted elsewhere is expected");
+  }
+  return conflict;
+}
+
+/** The conflict as shown for an entry deleted here and changed elsewhere. */
+async function here(deps: ConflictDeps, id: string): Promise<DeletedHere> {
+  const conflict = (await listConflicts(deps.records)).find(
+    (each) => each.id === id,
+  );
+  if (conflict === undefined || !isDeletedHere(conflict)) {
+    throw new Error("an entry deleted here is expected");
+  }
+  return conflict;
+}
+
+/** `b` deleted an entry that `a` had meanwhile changed; `b` synced second. */
+async function deletedHere(): Promise<{
+  server: MemoryServer;
+  a: Device;
+  b: Device;
+  fromA: JournalEntry;
+}> {
+  const server = new MemoryServer();
+  const [a, b] = [await device(server), await device(server)];
+  const shared = await entry("shared");
+  await a.store.put("journal-entry", shared);
+  await a.sync();
+  await b.sync();
+  const fromA = await completedFrom(answers("from A"), shared);
+  await a.store.put("journal-entry", fromA);
+  await b.store.delete("journal-entry", shared.id);
+  await a.sync();
+  await b.sync();
+  return { server, a, b, fromA };
+}
+
+/** `a` deleted an entry that `b` had meanwhile changed; `b` synced second. */
+async function deletedElsewhere(): Promise<{
+  server: MemoryServer;
+  a: Device;
+  b: Device;
+  fromB: JournalEntry;
+}> {
+  const server = new MemoryServer();
+  const [a, b] = [await device(server), await device(server)];
+  const shared = await entry("shared");
+  await a.store.put("journal-entry", shared);
+  await a.sync();
+  await b.sync();
+  const fromB = await completedFrom(answers("from B"), shared);
+  await a.store.delete("journal-entry", shared.id);
+  await b.store.put("journal-entry", fromB);
+  await a.sync();
+  await b.sync();
+  return { server, a, b, fromB };
+}
+
+describe("an entry deleted on one device and changed on another (SYNC-005, AC-17)", () => {
+  it("deleted here: the deletion waits, the other version is kept, and nothing is sent meanwhile", async () => {
+    const { server, a, b, fromA } = await deletedHere();
 
     expect(await listConflicts(b.store)).toEqual([
       { id: fromA.id, revision: 2, kind: "deleted-here", theirs: fromA },
     ]);
-    await expect(
-      b.store.resolve("journal-entry", fromA.id, "theirs", 2),
-    ).rejects.toThrow(RecordDeletedError);
+    expect(b.engine.state()).toEqual({ status: "attention", waiting: 1 });
     expect(await b.store.list("journal-entry")).toEqual([]);
-    // Nothing was sent that could delete or restore anything meanwhile.
     expect(server.pull(OWNER, "0").changes).toMatchObject([
       { revision: 2, tombstone: false },
     ]);
     expect(await a.store.get("journal-entry", fromA.id)).toEqual(fromA);
+  });
+
+  it("deleted here, 'delete anyway': the entry is deleted everywhere and stays deleted", async () => {
+    const { server, a, b, fromA } = await deletedHere();
+    const { deps } = listening(b.store);
+
+    await deleteAnyway(deps, await here(deps, fromA.id));
+
+    expect(await b.sync()).toEqual({ status: "synced", waiting: 0 });
+    await a.sync();
+    expect(await a.store.list("journal-entry")).toEqual([]);
+    expect(await b.store.list("journal-entry")).toEqual([]);
+    expect(server.pull(OWNER, "0").changes).toMatchObject([
+      { revision: 3, tombstone: true, payload: null },
+    ]);
+  });
+
+  it("deleted here, 'keep the edited version': the deletion is taken back and nothing is sent", async () => {
+    const { server, a, b, fromA } = await deletedHere();
+    const { deps, deleted } = listening(b.store);
+
+    await keepEdited(deps, await here(deps, fromA.id));
+
+    expect(await b.store.get("journal-entry", fromA.id)).toEqual(fromA);
+    expect(await readRows(b.name, OUTBOX)).toEqual([]);
+    expect(await b.sync()).toEqual({ status: "synced", waiting: 0 });
+    expect(server.pull(OWNER, "0").changes).toMatchObject([
+      { revision: 2, tombstone: false },
+    ]);
+    expect(await a.store.get("journal-entry", fromA.id)).toEqual(fromA);
+    expect(deleted).toEqual([]);
+  });
+
+  it("deleted elsewhere: the edit is refused, kept here, and never brings the entry back", async () => {
+    const { server, a, b, fromB } = await deletedElsewhere();
+
+    expect(await listConflicts(b.store)).toEqual([
+      { id: fromB.id, revision: 2, kind: "deleted-elsewhere", mine: fromB },
+    ]);
+    expect(b.engine.state()).toEqual({ status: "attention", waiting: 1 });
+    // The text is still here for the person to decide about.
+    expect(await b.store.get("journal-entry", fromB.id)).toEqual(fromB);
+    expect(server.pull(OWNER, "0").changes).toMatchObject([
+      { revision: 2, tombstone: true, payload: null },
+    ]);
+    expect(await a.store.list("journal-entry")).toEqual([]);
+  });
+
+  it("deleted elsewhere, 'save as a new entry': the text lives on under a new ID and the old one stays deleted", async () => {
+    const { server, a, b, fromB } = await deletedElsewhere();
+    const { deps, deleted } = listening(b.store);
+
+    const copy = await saveAsNew(deps, await there(deps, fromB.id));
+
+    expect(copy).toEqual({ ...fromB, id: copy.id });
+    expect(copy.id).not.toBe(fromB.id);
+    expect(await b.store.list("journal-entry")).toEqual([copy]);
+    expect(deleted).toEqual([
+      { entryId: fromB.id, oldHash: fromB.contentHash },
+    ]);
+    expect(await b.sync()).toEqual({ status: "synced", waiting: 0 });
+    await a.sync();
+    expect(await a.store.list("journal-entry")).toEqual([copy]);
+    const stored = server.pull(OWNER, "0").changes;
+    expect(stored).toHaveLength(2);
+    expect(stored).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ recordId: fromB.id, tombstone: true }),
+        expect.objectContaining({ recordId: copy.id, tombstone: false }),
+      ]),
+    );
+  });
+
+  it("deleted elsewhere, 'discard': this device's version is removed and nothing is sent", async () => {
+    const { server, a, b, fromB } = await deletedElsewhere();
+    const { deps, deleted } = listening(b.store);
+
+    await discardMine(deps, await there(deps, fromB.id));
+
+    expect(await b.store.list("journal-entry")).toEqual([]);
+    expect(await readRows(b.name, OUTBOX)).toEqual([]);
+    expect(deleted).toEqual([
+      { entryId: fromB.id, oldHash: fromB.contentHash },
+    ]);
+    expect(await b.sync()).toEqual({ status: "synced", waiting: 0 });
+    expect(server.pull(OWNER, "0").changes).toMatchObject([
+      { revision: 2, tombstone: true },
+    ]);
+    expect(await a.store.list("journal-entry")).toEqual([]);
+  });
+
+  it("a draft deleted elsewhere is discarded without announcing anything", async () => {
+    const store = new MemoryRecordStore();
+    const draft = await draftFrom(answers("draft"));
+    await store.put("journal-entry", draft);
+    store.park(draft.id, undefined);
+    const { deps, deleted } = listening(store);
+
+    await discardMine(deps, await there(deps, draft.id));
+
+    expect(deleted).toEqual([]);
+    expect(await store.list("journal-entry")).toEqual([]);
+  });
+
+  it("a choice made twice, or after the entry was settled elsewhere, is refused and changes nothing", async () => {
+    const { b, fromB } = await deletedElsewhere();
+    const elsewhere = listening(b.store);
+    const shownThere = await there(elsewhere.deps, fromB.id);
+    await discardMine(elsewhere.deps, shownThere);
+    const local = await deletedHere();
+    const hereDeps = listening(local.b.store);
+    const shownHere = await here(hereDeps.deps, local.fromA.id);
+    await keepEdited(hereDeps.deps, shownHere);
+
+    const asked: (() => Promise<unknown>)[] = [
+      () => discardMine(elsewhere.deps, shownThere),
+      () => saveAsNew(elsewhere.deps, shownThere),
+      () => deleteAnyway(hereDeps.deps, shownHere),
+      () => keepEdited(hereDeps.deps, shownHere),
+    ];
+    for (const ask of asked) {
+      await expect(ask()).rejects.toThrow(ConflictGoneError);
+    }
+
+    // The copy that "save as new" made before it was refused is gone again.
+    expect(await b.store.list("journal-entry")).toEqual([]);
+    expect(elsewhere.deleted).toHaveLength(1);
+    expect(await local.b.store.get("journal-entry", local.fromA.id)).toEqual(
+      local.fromA,
+    );
+  });
+
+  it("a choice about a deleted entry is refused if the other version changed again", async () => {
+    const { a, b, fromA } = await deletedHere();
+    const { deps } = listening(b.store);
+    const reading = await here(deps, fromA.id);
+    const again = await completedFrom(answers("from A again"), fromA);
+    await a.store.put("journal-entry", again);
+    await a.sync();
+    await b.sync();
+
+    for (const settle of [deleteAnyway, keepEdited]) {
+      await expect(settle(deps, reading)).rejects.toThrow(ConflictChangedError);
+    }
+
+    expect(await listConflicts(b.store)).toEqual([
+      { id: fromA.id, revision: 3, kind: "deleted-here", theirs: again },
+    ]);
+  });
+
+  it("new text is never written over a deletion made here", async () => {
+    const { b, fromA } = await deletedHere();
+    const before = await readRows(b.name, RECORDS);
+    const queued = await readRows(b.name, OUTBOX);
+
+    await expect(
+      b.store.resolve("journal-entry", fromA.id, "mine", 2, fromA),
+    ).rejects.toThrow(RecordDeletedError);
+
+    expect(await readRows(b.name, RECORDS)).toEqual(before);
+    expect(await readRows(b.name, OUTBOX)).toEqual(queued);
+    expect(await b.store.parkedCount()).toBe(1);
+  });
+
+  it("a deletion the server has accepted cannot be taken back", async () => {
+    const server = new MemoryServer();
+    const b = await device(server);
+    const written = await entry();
+    await b.store.put("journal-entry", written);
+    await b.store.delete("journal-entry", written.id);
+    await b.sync();
+    // Left over from before the deletion was accepted.
+    const database = await new Promise<IDBDatabase>((resolve) => {
+      const opening = indexedDB.open(b.name);
+      opening.onsuccess = () => {
+        resolve(opening.result);
+      };
+    });
+    await new Promise<void>((resolve) => {
+      const transaction = database.transaction(PARKED, "readwrite");
+      transaction.objectStore(PARKED).put({
+        type: 1,
+        id: written.id,
+        envelope: new Uint8Array(40).fill(1),
+        schemaVersion: 1,
+        revision: 9,
+        tombstone: false,
+      });
+      transaction.oncomplete = () => {
+        resolve();
+      };
+    });
+    database.close();
+
+    await expect(
+      b.store.resolve("journal-entry", written.id, "theirs", 9),
+    ).rejects.toThrow(RecordDeletedError);
+    expect(await b.store.list("journal-entry")).toEqual([]);
   });
 });
 

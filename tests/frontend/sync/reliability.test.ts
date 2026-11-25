@@ -230,8 +230,9 @@ describe("a server version that cannot replace a local one (SYNC-002, invariant 
     const a = await device(new MemoryServer());
     const written = await entry();
     await a.store.put("journal-entry", written);
-    await apply(a.store, change({ recordId: written.id, revision: 4 }));
+    // Read before the clash arrives, as a push already under way would have.
     const [pending] = await a.store.pending();
+    await apply(a.store, change({ recordId: written.id, revision: 4 }));
     if (pending === undefined) {
       throw new Error("a pending change is expected");
     }
@@ -251,8 +252,8 @@ describe("a server version that cannot replace a local one (SYNC-002, invariant 
     await a.sync();
     // Left over from an earlier clash, with the local record since settled.
     await a.store.put("journal-entry", { ...written, feelings: ["calm"] });
-    await apply(a.store, change({ recordId: written.id, revision: 7 }));
     const [pending] = await a.store.pending();
+    await apply(a.store, change({ recordId: written.id, revision: 7 }));
     if (pending === undefined) {
       throw new Error("a pending change is expected");
     }
@@ -264,6 +265,26 @@ describe("a server version that cannot replace a local one (SYNC-002, invariant 
     ).toBe("applied");
 
     expect(await a.store.parkedCount()).toBe(0);
+  });
+
+  it("is not sent again while it waits for the person to choose (SYNC-005)", async () => {
+    const server = new MemoryServer();
+    const transport = through(server, {});
+    const a = await device(server, transport);
+    const [clashing, other] = [await entry("clashing"), await entry("other")];
+    await a.store.put("journal-entry", clashing);
+    await apply(a.store, change({ recordId: clashing.id, revision: 4 }));
+    await a.store.put("journal-entry", other);
+
+    expect(await a.sync()).toEqual({ status: "attention", waiting: 1 });
+    await a.sync();
+
+    // Only the other record went, once. The clashing one stays queued.
+    expect(transport.pushed.flat().map((each) => each.recordId)).toEqual([
+      other.id,
+    ]);
+    expect(await a.store.pendingCount()).toBe(1);
+    expect(await readRows(a.name, OUTBOX)).toHaveLength(1);
   });
 
   it("is not kept when it is older than what this device's change was made on", async () => {
