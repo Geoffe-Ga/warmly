@@ -20,6 +20,7 @@ import type { AuthClient, AuthSession } from "../auth/auth-client";
 import type { DeviceKeyStore } from "./device-key-store";
 import { VaultError, type KeyVault } from "./key-vault";
 import {
+  RECOVERY_FORMAT_VERSION,
   RecoveryKeyError,
   RecoveryUnwrapError,
   formatRecoveryKey,
@@ -171,15 +172,21 @@ export class AccountVault implements KeyVault {
     if (rootKeyBytes === undefined) {
       throw new VaultError("no_keys_on_device");
     }
-    this.#root = await importRootKey(rootKeyBytes);
-    zero(rootKeyBytes);
+    try {
+      this.#root = await importRootKey(rootKeyBytes);
+    } finally {
+      zero(rootKeyBytes);
+    }
   }
 
   async unlockWithRecoveryKey(recoveryKey: string): Promise<void> {
     const session = await this.#session();
     const { rootKeyBytes } = await this.#open(session, recoveryKey);
-    await this.#adopt(session.userId, rootKeyBytes);
-    zero(rootKeyBytes);
+    try {
+      await this.#adopt(session.userId, rootKeyBytes);
+    } finally {
+      zero(rootKeyBytes);
+    }
   }
 
   async beginRecoveryKeyRotation(currentRecoveryKey: string): Promise<string> {
@@ -225,6 +232,7 @@ export class AccountVault implements KeyVault {
       session,
       pending.expectedVersion,
       envelope,
+      RECOVERY_FORMAT_VERSION,
     );
     if (!saved) {
       this.#dropPending();

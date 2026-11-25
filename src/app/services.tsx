@@ -85,15 +85,21 @@ export function createKeyVault(
   if (doubles !== undefined) {
     return new AccountVault(auth, doubles.envelopes, doubles.device);
   }
-  if (readSupabaseAuthConfig(env) === undefined) {
+  const apiOrigin = env["VITE_API_ORIGIN"];
+  // Both must be configured. Without the API's origin the vault would send
+  // requests to the static host, so the app says keys are unavailable
+  // instead of failing in a confusing way later.
+  if (
+    readSupabaseAuthConfig(env) === undefined ||
+    typeof apiOrigin !== "string" ||
+    apiOrigin === ""
+  ) {
     return new UnavailableKeyVault();
   }
-  const apiOrigin = env["VITE_API_ORIGIN"];
   return new AccountVault(
     auth,
-    new ApiRecoveryEnvelopeStore(
-      typeof apiOrigin === "string" ? apiOrigin : "",
-      (input, init) => fetch(input, init),
+    new ApiRecoveryEnvelopeStore(apiOrigin, (input, init) =>
+      fetch(input, init),
     ),
   );
 }

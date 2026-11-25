@@ -131,10 +131,10 @@ describe("creating account keys (AC-01, DEV-006)", () => {
     let failing = true;
     const flaky: RecoveryEnvelopeStore = {
       read: (session) => server.read(session),
-      write: (session, expected, envelope) =>
+      write: (session, expected, envelope, format) =>
         failing
           ? Promise.reject(new VaultError("offline"))
-          : server.write(session, expected, envelope),
+          : server.write(session, expected, envelope, format),
     };
     const vault = device(flaky);
     const key = await vault.createAccountKeys();
@@ -231,6 +231,7 @@ describe("recovering on a new device (DEV-001 path B)", () => {
       theirSession,
       0,
       (stolen as StoredRecoveryEnvelope).envelope,
+      1,
     );
 
     expect(await code(device().unlockWithRecoveryKey(key))).toBe(
@@ -350,10 +351,10 @@ describe("replacing the recovery key (SEC-003)", () => {
     let failing = true;
     const flaky: RecoveryEnvelopeStore = {
       read: (session) => server.read(session),
-      write: (session, expected, envelope) =>
+      write: (session, expected, envelope, format) =>
         failing
           ? Promise.reject(new VaultError("offline"))
-          : server.write(session, expected, envelope),
+          : server.write(session, expected, envelope, format),
     };
     const vault = device(flaky);
     const newKey = await vault.beginRecoveryKeyRotation(key);

@@ -87,7 +87,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
     );
     const store = new ApiRecoveryEnvelopeStore("", api.fetch);
 
-    expect(await store.write(SESSION, 0, ENVELOPE)).toBe(true);
+    expect(await store.write(SESSION, 0, ENVELOPE, 1)).toBe(true);
 
     expect(api.calls[0]?.init.method).toBe("PUT");
     expect(JSON.parse(String(api.calls[0]?.init.body))).toEqual({
@@ -100,6 +100,23 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
     });
   });
 
+  it("sends the format version it is given, not one guessed from the bytes", async () => {
+    const api = server(() =>
+      json(200, { version: 1, format_version: 2, wrapped_key: "AQIDBA==" }),
+    );
+
+    await new ApiRecoveryEnvelopeStore("", api.fetch).write(
+      SESSION,
+      0,
+      ENVELOPE,
+      2,
+    );
+
+    expect(JSON.parse(String(api.calls[0]?.init.body))).toMatchObject({
+      format_version: 2,
+    });
+  });
+
   it("reports a version conflict as false", async () => {
     const api = server(() => json(409, { code: "recovery.version_conflict" }));
 
@@ -108,6 +125,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
         SESSION,
         2,
         ENVELOPE,
+        1,
       ),
     ).toBe(false);
   });
@@ -121,7 +139,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
       const attempt =
         operation === "read"
           ? store.read(SESSION)
-          : store.write(SESSION, 0, ENVELOPE);
+          : store.write(SESSION, 0, ENVELOPE, 1);
 
       await expect(attempt).rejects.toMatchObject({ code: "offline" });
     },
@@ -135,7 +153,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
       const attempt =
         operation === "read"
           ? store.read(SESSION)
-          : store.write(SESSION, 0, ENVELOPE);
+          : store.write(SESSION, 0, ENVELOPE, 1);
 
       await expect(attempt).rejects.toMatchObject({ code: "signed_out" });
     },
@@ -160,7 +178,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
       server(() => json(503, {})).fetch,
     );
 
-    await expect(store.write(SESSION, 0, ENVELOPE)).rejects.toThrow(
+    await expect(store.write(SESSION, 0, ENVELOPE, 1)).rejects.toThrow(
       "The recovery envelope could not be saved",
     );
   });
@@ -184,11 +202,11 @@ describe("the in-memory stand-in follows the same rules", () => {
 
   it("creates once, then replaces only the expected version", async () => {
     expect(await store.read(SESSION)).toBeUndefined();
-    expect(await store.write(SESSION, 1, ENVELOPE)).toBe(false);
-    expect(await store.write(SESSION, 0, ENVELOPE)).toBe(true);
-    expect(await store.write(SESSION, 0, ENVELOPE)).toBe(false);
-    expect(await store.write(SESSION, 1, new Uint8Array([9]))).toBe(true);
-    expect(await store.write(SESSION, 1, ENVELOPE)).toBe(false);
+    expect(await store.write(SESSION, 1, ENVELOPE, 1)).toBe(false);
+    expect(await store.write(SESSION, 0, ENVELOPE, 1)).toBe(true);
+    expect(await store.write(SESSION, 0, ENVELOPE, 1)).toBe(false);
+    expect(await store.write(SESSION, 1, new Uint8Array([9]), 1)).toBe(true);
+    expect(await store.write(SESSION, 1, ENVELOPE, 1)).toBe(false);
 
     const stored = await store.read(SESSION);
     expect(stored?.version).toBe(2);
@@ -196,8 +214,8 @@ describe("the in-memory stand-in follows the same rules", () => {
   });
 
   it("keeps accounts apart and survives a reload", async () => {
-    await store.write(SESSION, 0, ENVELOPE);
-    await store.write(OTHER, 0, new Uint8Array([7]));
+    await store.write(SESSION, 0, ENVELOPE, 1);
+    await store.write(OTHER, 0, new Uint8Array([7]), 1);
 
     const reloaded = new FakeRecoveryEnvelopeStore();
 

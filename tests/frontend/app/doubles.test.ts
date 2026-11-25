@@ -404,8 +404,16 @@ describe("createKeyVault", () => {
     expect(vault).toBeInstanceOf(AccountVault);
     // No device store until trusted-device unlock exists.
     expect(await vault.hasKeysOnThisDevice()).toBe(false);
-    expect(createKeyVault(CONFIGURED, auth)).toBeInstanceOf(AccountVault);
   });
+
+  it.each([{}, { VITE_API_ORIGIN: "" }, { VITE_API_ORIGIN: 7 }])(
+    "is unavailable when signed-in accounts are configured but the API origin is not (%j)",
+    (extra) => {
+      expect(createKeyVault({ ...CONFIGURED, ...extra }, auth)).toBeInstanceOf(
+        UnavailableKeyVault,
+      );
+    },
+  );
 
   it("is unavailable in a production build with no backend configured", () => {
     expect(createKeyVault({}, auth)).toBeInstanceOf(UnavailableKeyVault);

@@ -29,17 +29,18 @@ export interface RecoveryEnvelopeStore {
    * Create (`expectedVersion` 0) or replace the envelope, only if the stored
    * version is still the expected one.
    *
+   * @param formatVersion - The envelope format the bytes were written in.
    * @returns `false` if the stored version had moved on; nothing was changed.
    */
   write(
     session: AuthSession,
     expectedVersion: number,
     envelope: Uint8Array<ArrayBuffer>,
+    formatVersion: number,
   ): Promise<boolean>;
 }
 
 const PATH = "/v1/recovery-envelope";
-const FORMAT_VERSION_FIELD = 1;
 
 function isWireEnvelope(value: unknown): value is WireEnvelope {
   return (
@@ -113,10 +114,11 @@ export class ApiRecoveryEnvelopeStore implements RecoveryEnvelopeStore {
     session: AuthSession,
     expectedVersion: number,
     envelope: Uint8Array<ArrayBuffer>,
+    formatVersion: number,
   ): Promise<boolean> {
     const request: WireRequest = {
       expected_version: expectedVersion,
-      format_version: envelope[0] ?? FORMAT_VERSION_FIELD,
+      format_version: formatVersion,
       wrapped_key: toBase64(envelope),
     };
     const response = await this.#request(session, {
