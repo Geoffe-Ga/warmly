@@ -48,6 +48,7 @@
     "workbox-window": "7.4.1"
   },
   "dependencies": {
+    "@supabase/auth-js": "2.119.2",
     "preact": "11.2.0"
   }
 }

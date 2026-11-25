@@ -1,7 +1,7 @@
 /**
  * The account-authentication seam. Screens depend on this interface only, so
- * the real Supabase client (issue #18) replaces the stand-ins without touching
- * any screen.
+ * the real client (`supabase-auth-client.ts`), the in-memory double and the
+ * "unavailable" stand-in are interchangeable.
  *
  * Authentication proves who the user is. It never unlocks their data: that
  * takes key material from the {@link KeyVault} (PRD DEV-006).
@@ -9,7 +9,13 @@
 
 /** Why an authentication request failed. */
 export type AuthErrorCode =
-  "invalid_credentials" | "email_not_verified" | "unavailable";
+  | "invalid_credentials"
+  | "email_not_verified"
+  | "weak_password"
+  | "rate_limited"
+  | "offline"
+  | "reset_link_invalid"
+  | "unavailable";
 
 /** A failed authentication request, with a code the UI can explain. */
 export class AuthError extends Error {
@@ -41,12 +47,24 @@ export interface AuthClient {
   completeVerification(): Promise<boolean>;
   /** @throws AuthError `invalid_credentials` or `email_not_verified`. */
   signIn(email: string, password: string): Promise<void>;
+  /**
+   * End the session on this device. The local session is always removed,
+   * whether or not the server could be told.
+   */
   signOut(): Promise<void>;
   /**
    * Send a password-reset email. Resolves the same way for any address.
    * Resetting a password never unlocks encrypted data.
    */
   requestPasswordReset(email: string): Promise<void>;
+  /**
+   * Set a new password, using the reset link the user arrived by. Leaves the
+   * user signed out, so they sign in with the new password.
+   *
+   * @throws AuthError `reset_link_invalid` if the page was not opened from a
+   *   valid, unused link, or `weak_password`.
+   */
+  completePasswordReset(newPassword: string): Promise<void>;
 }
 
 /**
@@ -76,6 +94,10 @@ export class UnavailableAuthClient implements AuthClient {
   }
 
   requestPasswordReset(): Promise<void> {
+    return Promise.reject(new AuthError("unavailable"));
+  }
+
+  completePasswordReset(): Promise<void> {
     return Promise.reject(new AuthError("unavailable"));
   }
 }

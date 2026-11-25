@@ -35,6 +35,7 @@ describe("route guard (DEV-005, UI-008)", () => {
       "recovery-key",
       "sign-in",
       "reset-password",
+      "new-password",
       "recover",
       "locked",
     ]);

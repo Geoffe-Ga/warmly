@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  connectSourcesFromEnv,
   cspDirectives,
   cspHeader,
   cspMeta,
@@ -73,5 +74,45 @@ describe("securityHeaders", () => {
         "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
       "Strict-Transport-Security": "max-age=63072000; includeSubDomains",
     });
+  });
+});
+
+describe("connect sources from the build environment", () => {
+  it("allows nothing extra when nothing is configured", () => {
+    expect(connectSourcesFromEnv({})).toEqual({});
+    expect(
+      connectSourcesFromEnv({ VITE_API_ORIGIN: "", VITE_SUPABASE_URL: "" }),
+    ).toEqual({});
+  });
+
+  it("allows exactly the origin of the configured Supabase project", () => {
+    const sources = connectSourcesFromEnv({
+      VITE_SUPABASE_URL: "https://abcd.supabase.example/some/path?x=1",
+      VITE_API_ORIGIN: "https://api.warmly.example",
+    });
+
+    expect(sources).toEqual({
+      apiOrigin: "https://api.warmly.example",
+      authOrigin: "https://abcd.supabase.example",
+    });
+    expect(cspDirectives(sources).get("connect-src")).toEqual([
+      "'self'",
+      "https://api.warmly.example",
+      "https://abcd.supabase.example",
+    ]);
+  });
+
+  it("refuses a production policy for a plain-http auth host", () => {
+    const sources = connectSourcesFromEnv({
+      VITE_SUPABASE_URL: "http://127.0.0.1:54321",
+    });
+
+    expect(() => cspHeader(sources)).toThrow(/https origins/);
+  });
+
+  it("refuses a Supabase URL that is not a URL", () => {
+    expect(() =>
+      connectSourcesFromEnv({ VITE_SUPABASE_URL: "not a url" }),
+    ).toThrow(TypeError);
   });
 });

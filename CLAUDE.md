@@ -129,6 +129,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   comes from the verified session, never from a request field.
 - Every table lives in `warmly_private`, enables and forces row-level security, and
   has the owner-only policy. Copy the four statements from the baseline migration.
+- The API takes the owner only from the verified token, through
+  `warmly.auth.dependency.CurrentOwner`
+  ([docs/security/authentication.md](docs/security/authentication.md)). Never
+  read an owner or account ID from a path, query, header or body. Tests sign
+  tokens with `tests/auth/tokens.py`; no test contacts a real auth provider.
 - Database tests need `WARMLY_TEST_DATABASE_URL` (see README). They fail when it is
   missing; never mark them to skip.
 
@@ -148,6 +153,8 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - All encryption goes through `src/crypto/envelope.ts` (ADR-0003). Use WebCrypto
   only; add no crypto dependency. Never edit a directory under
   `tests/fixtures/crypto/`: a format change adds a new version beside it.
+- The browser talks to Supabase Auth only, through `@supabase/auth-js`. Never
+  add the full Supabase client or call the Data API from the browser.
 - External services (auth, key vault) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.

@@ -9,6 +9,8 @@ from fastapi import FastAPI
 from warmly import __version__
 from warmly.api import API_PREFIX, build_api_router
 from warmly.api.errors import install_error_handlers
+from warmly.auth.keys import remote_key_source
+from warmly.auth.verifier import TokenVerifier
 from warmly.config import Settings, load_settings
 from warmly.db.database import Database
 from warmly.middleware.body_limit import BodyLimitMiddleware
@@ -35,8 +37,23 @@ class DatabaseLike(Protocol):
         """Report whether a query can be run."""
 
 
+def _verifier_from(settings: Settings) -> TokenVerifier:
+    """Build the verifier for the configured auth provider.
+
+    No key is fetched here; that happens when the first token arrives.
+    """
+    return TokenVerifier(
+        issuer=settings.auth_issuer,
+        audience=settings.auth_audience,
+        keys=remote_key_source(settings.auth_jwks_url),
+    )
+
+
 def create_app(
-    settings: Settings | None = None, *, database: DatabaseLike | None = None
+    settings: Settings | None = None,
+    *,
+    database: DatabaseLike | None = None,
+    token_verifier: TokenVerifier | None = None,
 ) -> FastAPI:
     """Build the FastAPI application.
 
@@ -48,12 +65,18 @@ def create_app(
         settings: Configuration to use; read from the environment if omitted.
         database: Database handle to use instead of one built from the
             settings. Tests pass a double here.
+        token_verifier: Verifier to use instead of one built from the
+            settings. Tests pass one that trusts a locally generated key.
 
     Returns:
         The configured application.
     """
-    if database is None:
-        database = Database((settings or load_settings()).database_url)
+    if database is None or token_verifier is None:
+        loaded = settings or load_settings()
+        if database is None:
+            database = Database(loaded.database_url)
+        if token_verifier is None:
+            token_verifier = _verifier_from(loaded)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -73,6 +96,7 @@ def create_app(
         redoc_url=None,
         lifespan=lifespan,
     )
+    app.state.token_verifier = token_verifier
     install_error_handlers(app)
     app.include_router(build_api_router({"database": database.ping}))
     # Starlette runs the middleware added last first. Order, outermost first:

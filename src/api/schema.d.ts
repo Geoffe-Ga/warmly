@@ -728,8 +728,26 @@ export interface operations {
           "application/json": components["schemas"]["DeviceList"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -761,8 +779,26 @@ export interface operations {
           "application/json": components["schemas"]["Device"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -796,8 +832,26 @@ export interface operations {
           "application/json": components["schemas"]["Device"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -827,8 +881,26 @@ export interface operations {
           "application/json": components["schemas"]["Device"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -860,8 +932,26 @@ export interface operations {
           "application/json": components["schemas"]["Enrollment"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -891,8 +981,26 @@ export interface operations {
           "application/json": components["schemas"]["Enrollment"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -926,8 +1034,26 @@ export interface operations {
           "application/json": components["schemas"]["Enrollment"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -1004,8 +1130,26 @@ export interface operations {
           "application/json": components["schemas"]["RecoveryEnvelope"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -1037,8 +1181,26 @@ export interface operations {
           "application/json": components["schemas"]["RecoveryEnvelope"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -1069,8 +1231,26 @@ export interface operations {
           "application/json": components["schemas"]["ChangesResponse"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };
@@ -1102,8 +1282,26 @@ export interface operations {
           "application/json": components["schemas"]["OperationsResponse"];
         };
       };
+      /** @description Missing or unacceptable access token */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
         headers: {
           [name: string]: unknown;
         };

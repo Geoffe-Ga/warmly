@@ -29,6 +29,7 @@ describe("route table", () => {
       "recovery-key",
       "sign-in",
       "reset-password",
+      "new-password",
       "recover",
       "locked",
     ]);

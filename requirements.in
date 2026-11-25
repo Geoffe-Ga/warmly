@@ -6,3 +6,5 @@ pydantic==2.14.4
 uvicorn==0.54.0
 psycopg[binary]==3.3.9
 psycopg-pool==3.3.3
+# JWT verification against the auth provider's published signing keys.
+pyjwt[crypto]==2.15.1
