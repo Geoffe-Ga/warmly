@@ -258,6 +258,37 @@ async def reveal_enrollment(
 
 
 @router.post(
+    "/{enrollment_id}/cancel",
+    summary="Give up a pairing request",
+    responses=_NOT_FOUND,
+)
+async def cancel_enrollment(
+    enrollment_id: UUID, owner: CurrentOwner, enrollments: Enrollments
+) -> Enrollment:
+    """End an open request early, for a new device that no longer wants it.
+
+    It needs only the session token, like the new device's other routes, and
+    can only ever end a request: someone holding a stolen token gains nothing
+    they could not already do by starting a new request.
+
+    Args:
+        enrollment_id: The request to end.
+        owner: The verified account.
+        enrollments: Where pairing requests are kept.
+
+    Returns:
+        The request as it now stands. A finished request is unchanged.
+
+    Raises:
+        ProblemError: 404 if the request is not one of the caller's.
+    """
+    ended = await enrollments.cancel(owner.id, enrollment_id)
+    if ended is None:
+        raise ProblemError(HTTPStatus.NOT_FOUND, NOT_FOUND_CODE)
+    return ended
+
+
+@router.post(
     "/{enrollment_id}/approve",
     summary="Approve a pairing request",
     responses=_STEP,

@@ -56,10 +56,56 @@ async def test_a_valid_token_names_its_subject_as_the_owner(
     verifier: TokenVerifier, signer: Signer
 ) -> None:
     """The owner is the token subject."""
-    assert await verifier.verify(signer.token()) == Owner(id=UUID(OWNER_ID))
-    assert await verifier.verify(signer.token(sub=OTHER_OWNER_ID)) == Owner(
-        id=UUID(OTHER_OWNER_ID)
-    )
+    owner = await verifier.verify(signer.token())
+
+    assert owner.id == UUID(OWNER_ID)
+
+
+@pytest.mark.parametrize(
+    ("amr", "expected"),
+    [
+        ([{"method": "password", "timestamp": 1_800_000_000}], 1_800_000_000),
+        (
+            [
+                {"method": "password", "timestamp": 5},
+                {"method": "password", "timestamp": 9},
+                {"method": "otp", "timestamp": 99},
+            ],
+            9,
+        ),
+        (["password"], None),
+        ([{"method": "otp", "timestamp": 5}], None),
+        ([{"method": "password", "timestamp": True}], None),
+        ([{"method": "password", "timestamp": "5"}], None),
+        ("password", None),
+        (None, None),
+    ],
+)
+async def test_the_owner_carries_when_the_password_was_last_entered(
+    verifier: TokenVerifier, signer: Signer, amr: object, expected: int | None
+) -> None:
+    """Only a timed password entry counts; anything else is "unknown"."""
+    owner = await verifier.verify(signer.token(amr=amr))
+
+    assert owner.password_entered_at == expected
+
+
+async def test_a_token_without_the_claim_says_nothing_about_the_password(
+    verifier: TokenVerifier, signer: Signer
+) -> None:
+    """A token without the claim says nothing about the password."""
+    owner = await verifier.verify(signer.token(amr=REMOVE))
+
+    assert owner == Owner(id=UUID(OWNER_ID), password_entered_at=None)
+
+
+async def test_the_owner_is_whoever_the_subject_names(
+    verifier: TokenVerifier, signer: Signer
+) -> None:
+    """A different subject is a different owner."""
+    other = await verifier.verify(signer.token(sub=OTHER_OWNER_ID))
+
+    assert other.id == UUID(OTHER_OWNER_ID)
 
 
 async def test_an_rs256_token_is_accepted() -> None:

@@ -1023,7 +1023,7 @@
     },
     "/v1/devices/{device_id}/revoke": {
       "post": {
-        "description": "Revoke a device so it can no longer sync.\n\nStub: returns a revoked device without changing anything.\n\nArgs:\n    device_id: The device to revoke.\n\nReturns:\n    The device with ``revoked_at`` set.",
+        "description": "Revoke a device so that nothing it sends is accepted again.\n\nThe request must be signed by one of the account's devices, and the\nsession must show that the password was entered in the last few minutes:\nsomeone who picks up an unlocked device cannot revoke the owner's others.\nA device may revoke itself. A revoked device ID can never be used again.\n\nArgs:\n    device_id: The device to revoke.\n    http_request: The request, for the application's clock.\n    caller: The verified account and device.\n    devices: Where devices are kept.\n\nReturns:\n    The device with ``revoked_at`` set.\n\nRaises:\n    ProblemError: 403 if the password was not entered recently; 404 if\n        the device is not one of the caller's, whether or not it exists\n        on another account.",
         "operationId": "revoke_device_v1_devices__device_id__revoke_post",
         "parameters": [
           {
@@ -1057,6 +1057,26 @@
               }
             },
             "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The password must be entered again before doing this"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such device on this account"
           },
           "422": {
             "content": {
@@ -1397,6 +1417,85 @@
           }
         ],
         "summary": "Approve a pairing request",
+        "tags": [
+          "enrollment"
+        ]
+      }
+    },
+    "/v1/enrollments/{enrollment_id}/cancel": {
+      "post": {
+        "description": "End an open request early, for a new device that no longer wants it.\n\nIt needs only the session token, like the new device's other routes, and\ncan only ever end a request: someone holding a stolen token gains nothing\nthey could not already do by starting a new request.\n\nArgs:\n    enrollment_id: The request to end.\n    owner: The verified account.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The request as it now stands. A finished request is unchanged.\n\nRaises:\n    ProblemError: 404 if the request is not one of the caller's.",
+        "operationId": "cancel_enrollment_v1_enrollments__enrollment_id__cancel_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "enrollment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Enrollment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrollment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such pairing request on this account"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Sign-in cannot be checked right now"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Give up a pairing request",
         "tags": [
           "enrollment"
         ]

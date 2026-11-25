@@ -12,9 +12,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request, status
 
 from warmly.api.errors import SIGNED_IN_RESPONSES, ProblemError
-from warmly.api.fixtures import STUB_CIPHERTEXT, STUB_PUBLIC_KEY, STUB_TIME
 from warmly.api.ports import DeviceStore, RecoveryStore
-from warmly.api.stub import mark_stub
 from warmly.auth.dependency import CurrentOwner
 from warmly.auth.device import (
     NOT_AUTHORIZED,
@@ -23,9 +21,9 @@ from warmly.auth.device import (
     DeviceVerifier,
     enrollment_proof_is_valid,
     read_signed_request,
-    require_device,
     signature_is_valid,
 )
+from warmly.auth.verifier import LEEWAY_SECONDS
 from warmly.schemas.devices import (
     Device,
     DeviceList,
@@ -37,9 +35,18 @@ from warmly.schemas.problem import Problem
 NOT_FOUND_CODE = "device.not_found"
 ALREADY_REGISTERED_CODE = "device.already_registered"
 ACCOUNT_NOT_READY_CODE = "device.account_not_ready"
+REAUTHENTICATION_REQUIRED_CODE = "auth.reauthentication_required"
+# How recently the password must have been entered to revoke a device.
+REAUTHENTICATION_SECONDS = 300
 
 _NOT_FOUND: dict[int | str, dict[str, Any]] = {
     404: {"model": Problem, "description": "No such device on this account"}
+}
+_REAUTHENTICATE: dict[int | str, dict[str, Any]] = {
+    403: {
+        "model": Problem,
+        "description": "The password must be entered again before doing this",
+    }
 }
 _CONFLICT: dict[int | str, dict[str, Any]] = {
     409: {
@@ -178,24 +185,40 @@ async def rename_device(
 @router.post(
     "/{device_id}/revoke",
     summary="Revoke a device",
-    dependencies=[Depends(require_device), Depends(mark_stub)],
+    responses=_NOT_FOUND | _REAUTHENTICATE,
 )
-def revoke_device(device_id: UUID) -> Device:
-    """Revoke a device so it can no longer sync.
+async def revoke_device(
+    device_id: UUID, http_request: Request, caller: CurrentCaller, devices: Devices
+) -> Device:
+    """Revoke a device so that nothing it sends is accepted again.
 
-    Stub: returns a revoked device without changing anything.
+    The request must be signed by one of the account's devices, and the
+    session must show that the password was entered in the last few minutes:
+    someone who picks up an unlocked device cannot revoke the owner's others.
+    A device may revoke itself. A revoked device ID can never be used again.
 
     Args:
         device_id: The device to revoke.
+        http_request: The request, for the application's clock.
+        caller: The verified account and device.
+        devices: Where devices are kept.
 
     Returns:
         The device with ``revoked_at`` set.
+
+    Raises:
+        ProblemError: 403 if the password was not entered recently; 404 if
+            the device is not one of the caller's, whether or not it exists
+            on another account.
     """
-    return Device(
-        id=device_id,
-        name_ciphertext=STUB_CIPHERTEXT,
-        public_key=STUB_PUBLIC_KEY,
-        created_at=STUB_TIME,
-        revoked_at=STUB_TIME,
-        is_current=False,
-    )
+    now: float = http_request.app.state.clock()
+    entered_at = caller.owner.password_entered_at
+    if (
+        entered_at is None
+        or not -LEEWAY_SECONDS <= now - entered_at <= REAUTHENTICATION_SECONDS
+    ):
+        raise ProblemError(HTTPStatus.FORBIDDEN, REAUTHENTICATION_REQUIRED_CODE)
+    device = await devices.revoke(caller.owner.id, device_id, caller.device_id)
+    if device is None:
+        raise ProblemError(HTTPStatus.NOT_FOUND, NOT_FOUND_CODE)
+    return device

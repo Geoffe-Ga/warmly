@@ -42,6 +42,21 @@ _RENAME = """
  RETURNING id, name_ciphertext, public_key, created_at, last_sync_at, revoked_at
 """
 
+# Revoking twice changes nothing: the first time stands.
+_REVOKE = """
+    UPDATE warmly_private.devices
+       SET revoked_at = COALESCE(revoked_at, now())
+     WHERE id = %s
+ RETURNING id, name_ciphertext, public_key, created_at, last_sync_at, revoked_at
+"""
+
+_RECORD_REVOCATION = """
+    INSERT INTO warmly_private.device_revocations
+                (device_id, owner_id, revoked_by, revoked_at)
+         VALUES (%s, %s, %s, %s)
+    ON CONFLICT (device_id) DO NOTHING
+"""
+
 # Expired nonces are removed as new ones arrive, so the table stays as small
 # as the number of requests made in the last few minutes.
 _FORGET_EXPIRED = """
@@ -197,3 +212,27 @@ class PostgresDeviceStore:
             cursor = await tx.execute(_RENAME, (name_ciphertext, device_id))
             row = await cursor.fetchone()
         return None if row is None else _device(row, current)
+
+    async def revoke(
+        self, owner_id: UUID, device_id: UUID, current: UUID
+    ) -> Device | None:
+        """Revoke a device and record it in the append-only ledger.
+
+        Both happen in one transaction. Revoking a device that is already
+        revoked changes nothing and returns it as it stands.
+
+        Args:
+            owner_id: The verified owner.
+            device_id: The device to revoke.
+            current: The device making the request.
+
+        Returns:
+            The revoked device, or ``None`` if it is not one of the owner's.
+        """
+        async with self._database.as_owner(owner_id) as tx:
+            cursor = await tx.execute(_REVOKE, (device_id,))
+            row = await cursor.fetchone()
+            if row is None:
+                return None
+            await tx.execute(_RECORD_REVOCATION, (device_id, owner_id, current, row[5]))
+        return _device(row, current)

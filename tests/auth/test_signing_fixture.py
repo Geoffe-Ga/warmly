@@ -43,6 +43,7 @@ def signed(request: dict[str, Any], **overrides: Any) -> SignedRequest:
 
 
 def test_fixture_is_for_the_version_the_server_verifies() -> None:
+    """Fixture is for the version the server verifies."""
     assert FIXTURE["signatureVersion"] == SIGNATURE_VERSION
 
 
@@ -50,11 +51,13 @@ def test_fixture_is_for_the_version_the_server_verifies() -> None:
 def test_server_builds_the_same_message_the_browser_signed(
     request_: dict[str, Any],
 ) -> None:
+    """Server builds the same message the browser signed."""
     assert signed(request_).message() == request_["message"].encode()
 
 
 @pytest.mark.parametrize("request_", REQUESTS, ids=itemgetter("name"))
 def test_server_accepts_a_browser_signature(request_: dict[str, Any]) -> None:
+    """Server accepts a browser signature."""
     request = signed(request_)
 
     assert signature_is_valid(
@@ -77,6 +80,7 @@ def test_server_accepts_a_browser_signature(request_: dict[str, Any]) -> None:
 def test_changing_any_signed_part_invalidates_a_browser_signature(
     overrides: dict[str, Any],
 ) -> None:
+    """Changing any signed part invalidates a browser signature."""
     request = signed(REQUESTS[1], **overrides)
 
     assert not signature_is_valid(
@@ -85,6 +89,7 @@ def test_changing_any_signed_part_invalidates_a_browser_signature(
 
 
 def test_server_accepts_a_browser_enrollment_proof() -> None:
+    """Server accepts a browser enrollment proof."""
     enrollment = FIXTURE["enrollment"]
 
     assert enrollment_proof_is_valid(

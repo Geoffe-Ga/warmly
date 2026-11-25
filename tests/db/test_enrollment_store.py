@@ -52,7 +52,8 @@ async def db(database_url: str) -> AsyncIterator[Database]:
     await database.open()
     with psycopg.connect(database_url) as conn:
         conn.execute(
-            f"TRUNCATE {TABLE}, warmly_private.device_request_nonces,"
+            f"TRUNCATE {TABLE}, warmly_private.device_revocations,"
+            " warmly_private.device_request_nonces,"
             " warmly_private.devices"
         )
     devices = PostgresDeviceStore(database)
@@ -105,6 +106,7 @@ async def _revealed(store: PostgresEnrollmentStore) -> Enrollment:
 async def test_a_started_request_is_pending_with_a_fresh_challenge_and_expiry(
     store: PostgresEnrollmentStore,
 ) -> None:
+    """A started request is pending with a fresh challenge and expiry."""
     before = datetime.now(tz=UTC)
 
     first = await store.start(OWNER_A, _start())
@@ -131,6 +133,7 @@ async def test_a_started_request_is_pending_with_a_fresh_challenge_and_expiry(
 async def test_a_whole_pairing_ends_with_the_wrapped_key_relayed_unchanged(
     store: PostgresEnrollmentStore,
 ) -> None:
+    """A whole pairing ends with the wrapped key relayed unchanged."""
     started = await store.start(OWNER_A, _start())
 
     claimed = await store.claim(OWNER_A, started.id, APPROVER, VALUE_2)
@@ -149,6 +152,7 @@ async def test_a_whole_pairing_ends_with_the_wrapped_key_relayed_unchanged(
 async def test_each_step_happens_once_and_in_order(
     store: PostgresEnrollmentStore,
 ) -> None:
+    """Each step happens once and in order."""
     started = await store.start(OWNER_A, _start())
 
     assert await store.reveal(OWNER_A, started.id, VALUE_1) is None
@@ -178,6 +182,7 @@ async def test_each_step_happens_once_and_in_order(
 async def test_only_one_of_several_devices_claiming_at_once_wins(
     store: PostgresEnrollmentStore,
 ) -> None:
+    """Only one of several devices claiming at once wins."""
     started = await store.start(OWNER_A, _start())
 
     results = await asyncio.gather(
@@ -193,6 +198,7 @@ async def test_only_one_of_several_devices_claiming_at_once_wins(
 async def test_only_the_claiming_device_can_approve_or_reject(
     store: PostgresEnrollmentStore,
 ) -> None:
+    """Only the claiming device can approve or reject."""
     revealed = await _revealed(store)
 
     assert await store.approve(OWNER_A, revealed.id, OTHER_APPROVER, WRAPPED) is None
@@ -217,6 +223,7 @@ async def test_an_approver_must_be_a_registered_device(
 async def test_an_expired_request_reads_as_expired_and_cannot_be_advanced(
     store: PostgresEnrollmentStore, database_url: str
 ) -> None:
+    """An expired request reads as expired and cannot be advanced."""
     revealed = await _revealed(store)
     pending = await store.start(OWNER_B, _start())
     _expire(database_url, revealed.id)
@@ -234,6 +241,7 @@ async def test_an_expired_request_reads_as_expired_and_cannot_be_advanced(
 async def test_an_expired_request_gives_up_no_wrapped_key(
     store: PostgresEnrollmentStore, database_url: str
 ) -> None:
+    """An expired request gives up no wrapped key."""
     revealed = await _revealed(store)
     await store.approve(OWNER_A, revealed.id, APPROVER, WRAPPED)
     _expire(database_url, revealed.id)
@@ -247,6 +255,7 @@ async def test_an_expired_request_gives_up_no_wrapped_key(
 async def test_starting_again_ends_the_owners_open_requests_only(
     store: PostgresEnrollmentStore,
 ) -> None:
+    """Starting again ends the owners open requests only."""
     mine = await store.start(OWNER_A, _start())
     await store.claim(OWNER_A, mine.id, APPROVER, VALUE_2)
     theirs = await store.start(OWNER_B, _start())
@@ -268,6 +277,7 @@ async def test_starting_again_ends_the_owners_open_requests_only(
 async def test_starting_again_does_not_disturb_a_finished_request(
     store: PostgresEnrollmentStore,
 ) -> None:
+    """Starting again does not disturb a finished request."""
     revealed = await _revealed(store)
     await store.approve(OWNER_A, revealed.id, APPROVER, WRAPPED)
 
@@ -281,6 +291,7 @@ async def test_starting_again_does_not_disturb_a_finished_request(
 async def test_the_open_request_is_the_one_nobody_has_claimed(
     store: PostgresEnrollmentStore,
 ) -> None:
+    """The open request is the one nobody has claimed."""
     assert await store.open_request(OWNER_A) is None
     started = await store.start(OWNER_A, _start())
     assert await store.open_request(OWNER_A) == started
@@ -293,6 +304,7 @@ async def test_the_open_request_is_the_one_nobody_has_claimed(
 async def test_requests_long_expired_are_removed_when_a_new_one_starts(
     store: PostgresEnrollmentStore, database_url: str
 ) -> None:
+    """Requests long expired are removed when a new one starts."""
     old = await store.start(OWNER_A, _start())
     recent = await store.start(OWNER_A, _start())
     with psycopg.connect(database_url) as conn:
@@ -332,6 +344,7 @@ async def test_accounts_cannot_see_or_advance_each_others_requests(
 async def test_row_security_holds_even_for_a_query_with_no_owner_filter(
     store: PostgresEnrollmentStore, db: Database
 ) -> None:
+    """Row security holds even for a query with no owner filter."""
     await store.start(OWNER_A, _start())
     await store.start(OWNER_B, _start())
 
@@ -345,6 +358,7 @@ async def test_row_security_holds_even_for_a_query_with_no_owner_filter(
 async def test_an_owner_cannot_insert_a_request_for_someone_else(
     db: Database,
 ) -> None:
+    """An owner cannot insert a request for someone else."""
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         async with db.as_owner(OWNER_A) as tx:
             await tx.execute(
@@ -369,6 +383,7 @@ async def test_browser_roles_cannot_read_pairing_requests(
 
 
 async def test_the_table_refuses_an_unknown_status(database_url: str) -> None:
+    """The table refuses an unknown status."""
     with (
         psycopg.connect(database_url) as conn,
         pytest.raises(psycopg.errors.CheckViolation),
@@ -379,3 +394,69 @@ async def test_the_table_refuses_an_unknown_status(database_url: str) -> None:
             " VALUES (%s, %s, %s, 'a2V5', 'Yw==', 'Yw==', 'done', now())",
             (UNKNOWN, OWNER_A, NEW_DEVICE),
         )
+
+
+async def test_reading_an_expired_request_removes_its_wrapped_key_for_good(
+    store: PostgresEnrollmentStore, database_url: str
+) -> None:
+    """Reading an expired request removes its wrapped key for good."""
+    revealed = await _revealed(store)
+    await store.approve(OWNER_A, revealed.id, APPROVER, WRAPPED)
+    _expire(database_url, revealed.id)
+
+    await store.read(OWNER_A, revealed.id)
+
+    with psycopg.connect(database_url) as conn:
+        row = conn.execute(
+            f"SELECT wrapped_key FROM {TABLE} WHERE id = %s", (revealed.id,)
+        ).fetchone()
+    assert row == (None,)
+
+
+async def test_reading_a_live_request_keeps_its_wrapped_key(
+    store: PostgresEnrollmentStore,
+) -> None:
+    """Reading a live request keeps its wrapped key."""
+    revealed = await _revealed(store)
+    await store.approve(OWNER_A, revealed.id, APPROVER, WRAPPED)
+
+    first = await store.read(OWNER_A, revealed.id)
+    second = await store.read(OWNER_A, revealed.id)
+
+    assert first is not None
+    assert second is not None
+    assert (first.wrapped_key, second.wrapped_key) == (WRAPPED, WRAPPED)
+
+
+async def test_the_new_device_can_cancel_an_open_request(
+    store: PostgresEnrollmentStore,
+) -> None:
+    """The new device can cancel an open request."""
+    started = await store.start(OWNER_A, _start())
+    await store.claim(OWNER_A, started.id, APPROVER, VALUE_2)
+
+    cancelled = await store.cancel(OWNER_A, started.id)
+
+    assert cancelled is not None
+    assert cancelled.status == "expired"
+    assert await store.reveal(OWNER_A, started.id, VALUE_1) is None
+    assert await store.open_request(OWNER_A) is None
+
+
+async def test_cancelling_leaves_a_finished_request_and_other_accounts_alone(
+    store: PostgresEnrollmentStore,
+) -> None:
+    """Cancelling leaves a finished request and other accounts alone."""
+    revealed = await _revealed(store)
+    await store.approve(OWNER_A, revealed.id, APPROVER, WRAPPED)
+    theirs = await store.start(OWNER_B, _start())
+
+    finished = await store.cancel(OWNER_A, revealed.id)
+
+    assert finished is not None
+    assert (finished.status, finished.wrapped_key) == ("approved", WRAPPED)
+    assert await store.cancel(OWNER_A, theirs.id) is None
+    assert await store.cancel(OWNER_A, UNKNOWN) is None
+    still_open = await store.open_request(OWNER_B)
+    assert still_open is not None
+    assert still_open.id == theirs.id

@@ -102,15 +102,26 @@ export interface paths {
     put?: never;
     /**
      * Revoke a device
-     * @description Revoke a device so it can no longer sync.
+     * @description Revoke a device so that nothing it sends is accepted again.
      *
-     *     Stub: returns a revoked device without changing anything.
+     *     The request must be signed by one of the account's devices, and the
+     *     session must show that the password was entered in the last few minutes:
+     *     someone who picks up an unlocked device cannot revoke the owner's others.
+     *     A device may revoke itself. A revoked device ID can never be used again.
      *
      *     Args:
      *         device_id: The device to revoke.
+     *         http_request: The request, for the application's clock.
+     *         caller: The verified account and device.
+     *         devices: Where devices are kept.
      *
      *     Returns:
      *         The device with ``revoked_at`` set.
+     *
+     *     Raises:
+     *         ProblemError: 403 if the password was not entered recently; 404 if
+     *             the device is not one of the caller's, whether or not it exists
+     *             on another account.
      */
     post: operations["revoke_device_v1_devices__device_id__revoke_post"];
     delete?: never;
@@ -237,6 +248,41 @@ export interface paths {
      *         The approved request carrying the wrapped key.
      */
     post: operations["approve_enrollment_v1_enrollments__enrollment_id__approve_post"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/enrollments/{enrollment_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Give up a pairing request
+     * @description End an open request early, for a new device that no longer wants it.
+     *
+     *     It needs only the session token, like the new device's other routes, and
+     *     can only ever end a request: someone holding a stolen token gains nothing
+     *     they could not already do by starting a new request.
+     *
+     *     Args:
+     *         enrollment_id: The request to end.
+     *         owner: The verified account.
+     *         enrollments: Where pairing requests are kept.
+     *
+     *     Returns:
+     *         The request as it now stands. A finished request is unchanged.
+     *
+     *     Raises:
+     *         ProblemError: 404 if the request is not one of the caller's.
+     */
+    post: operations["cancel_enrollment_v1_enrollments__enrollment_id__cancel_post"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1126,6 +1172,24 @@ export interface operations {
           "application/json": components["schemas"]["Problem"];
         };
       };
+      /** @description The password must be entered again before doing this */
+      403: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description No such device on this account */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
       /** @description Invalid request */
       422: {
         headers: {
@@ -1355,6 +1419,64 @@ export interface operations {
       };
       /** @description The request has expired, or is not at the step this call needs */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Invalid request */
+      422: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description Sign-in cannot be checked right now */
+      503: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+    };
+  };
+  cancel_enrollment_v1_enrollments__enrollment_id__cancel_post: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        enrollment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Enrollment"];
+        };
+      };
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description No such pairing request on this account */
+      404: {
         headers: {
           [name: string]: unknown;
         };

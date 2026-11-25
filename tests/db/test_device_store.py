@@ -51,7 +51,8 @@ async def db(database_url: str) -> AsyncIterator[Database]:
     await database.open()
     with psycopg.connect(database_url) as conn:
         conn.execute(
-            "TRUNCATE warmly_private.device_enrollments,"
+            "TRUNCATE warmly_private.device_revocations,"
+            " warmly_private.device_enrollments,"
             " warmly_private.device_request_nonces, warmly_private.devices,"
             " warmly_private.recovery_envelopes"
         )
@@ -288,3 +289,144 @@ async def test_the_enrollment_verifier_is_stored_with_the_first_envelope_only(
 
     assert await recovery.enrollment_verifier(OWNER_A) == "dmVyaWZpZXI="
     assert await recovery.enrollment_verifier(OWNER_B) is None
+
+
+async def test_revoking_marks_the_device_and_writes_the_ledger(
+    store: PostgresDeviceStore, db: Database
+) -> None:
+    """Both happen together, and the device is refused from then on (AC-20)."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    await store.register(OWNER_A, _registration(DEVICE_2))
+
+    revoked = await store.revoke(OWNER_A, DEVICE_2, DEVICE_1)
+
+    assert revoked is not None
+    assert revoked.id == DEVICE_2
+    assert revoked.revoked_at is not None
+    assert revoked.is_current is False
+    found = await store.find(OWNER_A, DEVICE_2)
+    assert found is not None
+    assert found.revoked is True
+    still_fine = await store.find(OWNER_A, DEVICE_1)
+    assert still_fine is not None
+    assert still_fine.revoked is False
+    async with db.as_owner(OWNER_A) as tx:
+        cursor = await tx.execute(
+            "SELECT device_id, owner_id, revoked_by, revoked_at"
+            " FROM warmly_private.device_revocations"
+        )
+        ledger = await cursor.fetchall()
+    assert ledger == [(DEVICE_2, OWNER_A, DEVICE_1, revoked.revoked_at)]
+
+
+async def test_a_device_can_revoke_itself(store: PostgresDeviceStore) -> None:
+    """A device can revoke itself."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+
+    revoked = await store.revoke(OWNER_A, DEVICE_1, DEVICE_1)
+
+    assert revoked is not None
+    assert revoked.is_current is True
+    assert revoked.revoked_at is not None
+
+
+async def test_revoking_twice_keeps_the_first_time_and_one_ledger_row(
+    store: PostgresDeviceStore, db: Database
+) -> None:
+    """Revoking twice keeps the first time and one ledger row."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    await store.register(OWNER_A, _registration(DEVICE_2))
+    first = await store.revoke(OWNER_A, DEVICE_2, DEVICE_1)
+
+    again = await asyncio.gather(
+        *(store.revoke(OWNER_A, DEVICE_2, DEVICE_1) for _ in range(6))
+    )
+
+    assert first is not None
+    assert all(r is not None and r.revoked_at == first.revoked_at for r in again)
+    async with db.as_owner(OWNER_A) as tx:
+        cursor = await tx.execute(
+            "SELECT count(*) FROM warmly_private.device_revocations"
+        )
+        assert await cursor.fetchone() == (1,)
+
+
+async def test_another_owner_cannot_revoke_or_see_the_ledger(
+    store: PostgresDeviceStore, db: Database
+) -> None:
+    """Owner B can neither revoke owner A's device nor learn it was revoked."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    await store.register(OWNER_B, _registration(DEVICE_2))
+
+    assert await store.revoke(OWNER_B, DEVICE_1, DEVICE_2) is None
+
+    untouched = await store.find(OWNER_A, DEVICE_1)
+    assert untouched is not None
+    assert untouched.revoked is False
+    await store.revoke(OWNER_A, DEVICE_1, DEVICE_1)
+    async with db.as_owner(OWNER_B) as tx:
+        cursor = await tx.execute("SELECT 1 FROM warmly_private.device_revocations")
+        assert await cursor.fetchall() == []
+
+
+async def test_a_revoked_device_id_cannot_be_registered_again(
+    store: PostgresDeviceStore,
+) -> None:
+    """Rejoining takes a new device ID (DEV-003)."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    await store.revoke(OWNER_A, DEVICE_1, DEVICE_1)
+
+    assert await store.register(OWNER_A, _registration(DEVICE_1, "bmV3")) is None
+    assert await store.register(OWNER_B, _registration(DEVICE_1, "bmV3")) is None
+    found = await store.find(OWNER_A, DEVICE_1)
+    assert found is not None
+    assert (found.public_key, found.revoked) == (KEY, True)
+
+
+async def test_the_database_refuses_to_undo_or_move_a_revocation(
+    store: PostgresDeviceStore, db: Database
+) -> None:
+    """Even code that tried could not re-activate a device."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    await store.revoke(OWNER_A, DEVICE_1, DEVICE_1)
+
+    for value in ("NULL", "now() + interval '1 day'"):
+        with pytest.raises(psycopg.errors.CheckViolation):
+            async with db.as_owner(OWNER_A) as tx:
+                await tx.execute(
+                    f"UPDATE warmly_private.devices SET revoked_at = {value}"
+                    " WHERE id = %s",
+                    (DEVICE_1,),
+                )
+    # A rename still works: only the revocation is frozen.
+    assert await store.rename(OWNER_A, DEVICE_1, "bmV3", DEVICE_1) is not None
+
+
+@pytest.mark.parametrize("statement", ["UPDATE", "DELETE"])
+async def test_the_ledger_is_append_only(
+    store: PostgresDeviceStore, db: Database, statement: str
+) -> None:
+    """The ledger is append only."""
+    await store.register(OWNER_A, _registration(DEVICE_1))
+    await store.revoke(OWNER_A, DEVICE_1, DEVICE_1)
+    sql = {
+        "UPDATE": "UPDATE warmly_private.device_revocations SET revoked_at = now()",
+        "DELETE": "DELETE FROM warmly_private.device_revocations",
+    }[statement]
+
+    with pytest.raises(psycopg.errors.InsufficientPrivilege):
+        async with db.as_owner(OWNER_A) as tx:
+            await tx.execute(sql)
+
+
+@pytest.mark.parametrize("role", BROWSER_ROLES)
+async def test_browser_roles_cannot_read_the_ledger(
+    database_url: str, role: str
+) -> None:
+    """Browser roles cannot read the ledger."""
+    with (
+        psycopg.connect(database_url) as conn,
+        pytest.raises(psycopg.errors.InsufficientPrivilege),
+    ):
+        conn.execute(f"SET ROLE {role}")
+        conn.execute("SELECT 1 FROM warmly_private.device_revocations")

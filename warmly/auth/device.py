@@ -54,12 +54,16 @@ _SIGNATURE_BYTES = 64
 _HALF = _SIGNATURE_BYTES // 2
 
 DeviceErrorCode = Literal[
-    "device.missing_signature", "device.stale_request", "device.not_authorized"
+    "device.missing_signature",
+    "device.stale_request",
+    "device.not_authorized",
+    "device.revoked",
 ]
 
 MISSING_SIGNATURE: DeviceErrorCode = "device.missing_signature"
 STALE_REQUEST: DeviceErrorCode = "device.stale_request"
 NOT_AUTHORIZED: DeviceErrorCode = "device.not_authorized"
+REVOKED: DeviceErrorCode = "device.revoked"
 
 
 class DeviceAuthorizationError(Exception):
@@ -266,7 +270,7 @@ class DeviceVerifier:
 
         The checks run in this order so that nothing is stored for a request
         that was not really signed by the device: shape, freshness, the
-        device, the signature, and only then the nonce.
+        device, the signature, revocation, and only then the nonce.
 
         Args:
             owner: The verified account.
@@ -292,12 +296,16 @@ class DeviceVerifier:
         # A device that belongs to another account is simply not found here,
         # so it is refused exactly like one that does not exist (DEV-010).
         device = await self._devices.find(owner.id, device_id)
-        if device is None or device.revoked:
+        if device is None:
             raise DeviceAuthorizationError(NOT_AUTHORIZED)
         if not signature_is_valid(
             device.public_key, signed.message(), signed.signature
         ):
             raise DeviceAuthorizationError(NOT_AUTHORIZED)
+        # Said only to the device itself: the signature has just shown that
+        # the caller holds its key. Nothing is recorded for it any more.
+        if device.revoked:
+            raise DeviceAuthorizationError(REVOKED)
         expires_at = datetime.fromtimestamp(int(signed.timestamp), tz=UTC) + timedelta(
             seconds=2 * MAX_CLOCK_SKEW_SECONDS
         )

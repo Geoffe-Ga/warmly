@@ -86,6 +86,7 @@ SESSION_ONLY_ROUTES = {
     ("POST", "/v1/enrollments"),
     ("GET", f"/v1/enrollments/{ENROLLMENT_ID}"),
     ("POST", f"/v1/enrollments/{ENROLLMENT_ID}/reveal"),
+    ("POST", f"/v1/enrollments/{ENROLLMENT_ID}/cancel"),
 }
 PUBLIC_ROUTES = {("GET", "/v1/health"), ("GET", "/v1/ready")}
 SIGNED_CASES = [
@@ -316,7 +317,7 @@ def test_a_revoked_device_is_refused(
     """Revocation takes effect on the very next request (DEV-003)."""
     device_store.devices[UUID(DEVICE_ID)].revoked = True
 
-    _refused(client.get(SIGNED_GET), "device.not_authorized")
+    _refused(client.get(SIGNED_GET), "device.revoked")
 
 
 def test_the_device_check_uses_the_servers_clock(

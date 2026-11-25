@@ -117,6 +117,7 @@ def create_app(
     app.state.recovery_store = recovery_store or PostgresRecoveryStore(database)
     app.state.device_store = device_store or PostgresDeviceStore(database)
     app.state.enrollment_store = enrollment_store or PostgresEnrollmentStore(database)
+    app.state.clock = clock
     app.state.device_verifier = DeviceVerifier(app.state.device_store, clock=clock)
     install_error_handlers(app)
     app.include_router(build_api_router({"database": database.ping}))

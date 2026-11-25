@@ -122,6 +122,8 @@ class InMemoryDeviceStore:
         """Start with no devices."""
         self.devices: dict[UUID, _StoredDevice] = {}
         self.nonces: set[tuple[UUID, str]] = set()
+        # (revoked device, device that asked), in order. Never shortened.
+        self.ledger: list[tuple[UUID, UUID]] = []
 
     def _own(self, owner_id: UUID, device_id: UUID) -> _StoredDevice | None:
         """Return the device only if it belongs to the owner."""
@@ -176,6 +178,21 @@ class InMemoryDeviceStore:
         stored.device = stored.device.model_copy(
             update={"name_ciphertext": name_ciphertext}
         )
+        return stored.device.model_copy(update={"is_current": device_id == current})
+
+    async def revoke(
+        self, owner_id: UUID, device_id: UUID, current: UUID
+    ) -> Device | None:
+        """Revoke a device for good; ``None`` if it is not the owner's."""
+        stored = self._own(owner_id, device_id)
+        if stored is None:
+            return None
+        if not stored.revoked:
+            stored.revoked = True
+            stored.device = stored.device.model_copy(
+                update={"revoked_at": datetime(2026, 11, 26, tzinfo=UTC)}
+            )
+            self.ledger.append((device_id, current))
         return stored.device.model_copy(update={"is_current": device_id == current})
 
     def add(self, owner_id: str, device: TestDevice) -> None:
@@ -294,10 +311,23 @@ class InMemoryEnrollmentStore:
         if stored is None or stored.owner_id != owner_id:
             return None
         if stored.expires <= self.now:
-            return stored.enrollment.model_copy(
-                update={"status": "expired", "wrapped_key": None}
+            # The key is removed for good, not just hidden.
+            stored.enrollment = stored.enrollment.model_copy(
+                update={"wrapped_key": None}
             )
+            return stored.enrollment.model_copy(update={"status": "expired"})
         return stored.enrollment
+
+    async def cancel(self, owner_id: UUID, enrollment_id: UUID) -> Enrollment | None:
+        """End an open request early; a finished one is left alone."""
+        stored = self._open(owner_id, enrollment_id)
+        if stored is not None and stored.enrollment.status in {
+            "pending",
+            "claimed",
+            "revealed",
+        }:
+            stored.expires = self.now
+        return await self.read(owner_id, enrollment_id)
 
     async def open_request(self, owner_id: UUID) -> Enrollment | None:
         """Return the owner's newest unexpired, unclaimed request."""

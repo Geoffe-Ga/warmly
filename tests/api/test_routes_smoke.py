@@ -101,11 +101,3 @@ def test_stub_operations_never_claim_to_have_applied(client: TestClient) -> None
             },
         ]
     }
-
-
-def test_revoke_returns_a_revoked_device(client: TestClient) -> None:
-    """The revoke stub returns the device with a revocation time."""
-    body = client.post(f"/v1/devices/{DEVICE_ID}/revoke").json()
-
-    assert body["id"] == DEVICE_ID
-    assert body["revoked_at"] is not None
