@@ -103,7 +103,14 @@ export function currentDraft(
 ): JournalEntry | undefined {
   return entries
     .filter((entry) => entry.status === "draft")
-    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+    .reduce<JournalEntry | undefined>(
+      // ISO 8601 instants in UTC sort as plain text.
+      (newest, entry) =>
+        newest === undefined || entry.updatedAt > newest.updatedAt
+          ? entry
+          : newest,
+      undefined,
+    );
 }
 
 /** How long after the last change a draft is saved. */

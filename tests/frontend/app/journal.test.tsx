@@ -8,7 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { lockNow } from "../../../src/app/SessionControls";
+import { endRevokedDevice, lockNow } from "../../../src/app/SessionControls";
 import { AUTOSAVE_DELAY_MS } from "../../../src/domain/journal/drafts";
 import { FEELINGS } from "../../../src/domain/journal/feelings";
 import { PROMPTS, type JournalEntry } from "../../../src/domain/journal/types";
@@ -753,25 +753,120 @@ describe("drafts (JR-004)", () => {
     // Hold the hashing of the finished entry until the app has locked.
     let release: () => void = () => undefined;
     const digest = crypto.subtle.digest.bind(crypto.subtle);
-    vi.spyOn(crypto.subtle, "digest").mockImplementation(
-      async (algorithm, data) => {
+    const hashing = vi
+      .spyOn(crypto.subtle, "digest")
+      .mockImplementation(async (algorithm, data) => {
         await new Promise<void>((resolve) => {
           release = resolve;
         });
         return digest(algorithm, data);
-      },
-    );
+      });
 
     fireEvent.submit(
       screen.getByRole("button", { name: "Save entry" }).closest("form") ??
         document.body,
     );
+    await waitFor(() => {
+      expect(hashing).toHaveBeenCalled();
+    });
     await lockNow(services, () => undefined);
     release();
     await new Promise((resolve) => setTimeout(resolve, 50));
 
     expect(puts).toEqual([]);
     expect(services.session.state).toBe("signed_in_locked");
+  });
+
+  it("text typed while the entry is being finished never becomes a second draft", async () => {
+    const services = await openCompose();
+    for (const prompt of PROMPTS) {
+      await userEvent.type(screen.getByLabelText(prompt.label), "Answer");
+    }
+    hidePage();
+    await waitFor(async () => {
+      expect(await drafts(services)).toHaveLength(1);
+    });
+    // Hold the hashing of the finished entry, so typing lands in the middle.
+    let release: () => void = () => undefined;
+    const digest = crypto.subtle.digest.bind(crypto.subtle);
+    const hashing = vi
+      .spyOn(crypto.subtle, "digest")
+      .mockImplementation(async (algorithm, data) => {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return digest(algorithm, data);
+      });
+
+    fireEvent.submit(
+      screen.getByRole("button", { name: "Save entry" }).closest("form") ??
+        document.body,
+    );
+    await waitFor(() => {
+      expect(hashing).toHaveBeenCalled();
+    });
+    fireEvent.input(first(), { target: { value: "Answer and a late word" } });
+    release();
+    await waitFor(() => {
+      expect(window.location.pathname).toMatch(/^\/journal\/entries\//);
+    });
+    vi.restoreAllMocks();
+    await new Promise((resolve) =>
+      setTimeout(resolve, AUTOSAVE_DELAY_MS + 200),
+    );
+
+    const stored = await services.records.list("journal-entry");
+    expect(stored.map((each) => each.status)).toEqual(["complete"]);
+  });
+
+  it("saves drafts again after finishing failed", async () => {
+    const services = await openCompose();
+    for (const prompt of PROMPTS) {
+      await userEvent.type(screen.getByLabelText(prompt.label), "Answer");
+    }
+    const put = services.records.put.bind(services.records);
+    services.records.put = (kind, record) =>
+      record.status === "complete"
+        ? Promise.reject(new Error("synthetic"))
+        : put(kind, record);
+
+    await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Couldn't continue",
+    );
+    await userEvent.type(first(), " still here");
+    hidePage();
+
+    await waitFor(async () => {
+      expect((await drafts(services))[0]?.responses.good).toBe(
+        "Answer still here",
+      );
+    });
+    expect(await drafts(services)).toHaveLength(1);
+  });
+
+  it("flushes the draft before a removed device drops its keys, and stores nothing after (DEV-003)", async () => {
+    const services = await openCompose();
+    const order: string[] = [];
+    const put = services.records.put.bind(services.records);
+    services.records.put = (kind, record) => {
+      order.push(`put ${record.status}: ${record.responses.good}`);
+      return put(kind, record);
+    };
+    const lock = services.vault.lock.bind(services.vault);
+    services.vault.lock = () => {
+      order.push("keys dropped");
+      lock();
+    };
+    await userEvent.type(first(), "half a thought");
+
+    await endRevokedDevice(services, () => undefined);
+    await new Promise((resolve) =>
+      setTimeout(resolve, AUTOSAVE_DELAY_MS + 200),
+    );
+
+    expect(order).toEqual(["put draft: half a thought", "keys dropped"]);
+    expect(services.session.state).toBe("signed_out");
   });
 
   it("a draft's page offers to carry on writing; a finished entry's does not", async () => {

@@ -58,13 +58,20 @@ export function useDraft(): DraftForm {
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const draft = useRef<JournalEntry | undefined>(undefined);
   const autosave = useRef<Autosave<EntryContent> | undefined>(undefined);
+  // True from the moment the entry starts being finished. Nothing typed
+  // after that may be saved as a draft: the draft is turning into the
+  // finished entry, and a late save would leave a second draft behind.
+  const finishing = useRef(false);
 
   useEffect(() => {
     let mounted = true;
     const saver = new Autosave<EntryContent>(
       async (latest) => {
         // A blank form that has no draft yet is not worth one.
-        if (draft.current === undefined && isBlank(latest)) {
+        if (
+          finishing.current ||
+          (draft.current === undefined && isBlank(latest))
+        ) {
           return;
         }
         const next = await draftFrom(latest, draft.current);
@@ -124,7 +131,8 @@ export function useDraft(): DraftForm {
       document.removeEventListener("visibilitychange", whenHidden);
       window.removeEventListener("pagehide", whenLeaving);
       unregister();
-      // Leaving the screen saves what was typed.
+      // Leaving the screen saves what was typed. The screen is gone, so
+      // the state the save reports is deliberately ignored.
       void flush();
     };
   }, [records, lockHooks]);
@@ -143,19 +151,29 @@ export function useDraft(): DraftForm {
     saveState,
     change: (next) => {
       setContent(next);
-      autosave.current?.changed(next);
+      if (!finishing.current) {
+        autosave.current?.changed(next);
+      }
     },
     complete: async () => {
-      await settle();
-      const entry = await completedFrom(content, draft.current);
-      // Preparing the entry takes a moment. If the app locked meanwhile the
-      // keys have gone, and the locked screen is already showing.
-      if (session.state !== "unlocked") {
-        return undefined;
+      finishing.current = true;
+      try {
+        await settle();
+        const entry = await completedFrom(content, draft.current);
+        // Preparing the entry takes a moment. If the app locked meanwhile
+        // the keys have gone, and the locked screen is already showing.
+        if (session.state !== "unlocked") {
+          return undefined;
+        }
+        await records.put("journal-entry", entry);
+        draft.current = undefined;
+        return entry;
+      } catch (error) {
+        // The entry was not stored, so the form is a draft again and the
+        // next change is saved as one.
+        finishing.current = false;
+        throw error;
       }
-      await records.put("journal-entry", entry);
-      draft.current = undefined;
-      return entry;
     },
     discard: async () => {
       await settle();
