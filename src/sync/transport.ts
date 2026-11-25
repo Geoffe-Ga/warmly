@@ -19,14 +19,38 @@ import type {
 } from "./protocol";
 
 /**
- * Sync cannot be used right now for a reason that is not the network: the
- * server does not offer it yet, or this device is not signed in and
- * registered. Changes stay queued. Nothing is wrong with them.
+ * Sync cannot be used right now for a reason that is not the network: this
+ * device is not signed in and registered. Changes stay queued. Nothing is
+ * wrong with them.
  */
 export class SyncUnavailableError extends Error {
   constructor() {
     super("Sync is not available");
     this.name = "SyncUnavailableError";
+  }
+}
+
+/**
+ * The server refused the request itself, as distinct from a change in it.
+ * Sending the same request again would be refused again, so it is not
+ * retried on its own.
+ */
+export class SyncRefusedError extends Error {
+  constructor() {
+    super("The server refused the sync request");
+    this.name = "SyncRefusedError";
+  }
+}
+
+/**
+ * The server does not recognise this device's place in the change feed.
+ * The device starts the feed again from the beginning; nothing is lost,
+ * because the feed carries every record as it is now.
+ */
+export class SyncCursorError extends Error {
+  constructor() {
+    super("The change feed has to be read again from the start");
+    this.name = "SyncCursorError";
   }
 }
 
@@ -37,8 +61,10 @@ export interface SyncTransport {
    *
    * @param operations - Between 1 and 100 operations.
    * @returns One result per operation, in the same order.
-   * @throws ApiError `offline` if the server could not be reached.
+   * @throws ApiError `offline` if the server could not be reached, and
+   *   `unexpected` if it failed or answered with something unreadable.
    * @throws SyncUnavailableError if sync cannot be used right now.
+   * @throws SyncRefusedError if the server refused the request.
    */
   push(operations: readonly SyncOperation[]): Promise<OperationResult[]>;
   /**
@@ -46,8 +72,11 @@ export interface SyncTransport {
    *
    * @param cursor - The last cursor received; `"0"` to start.
    * @returns One page of changes.
-   * @throws ApiError `offline` if the server could not be reached.
+   * @throws ApiError `offline` if the server could not be reached, and
+   *   `unexpected` if it failed or answered with something unreadable.
    * @throws SyncUnavailableError if sync cannot be used right now.
+   * @throws SyncRefusedError if the server refused the request.
+   * @throws SyncCursorError if the server does not recognise the cursor.
    */
   pull(cursor: string): Promise<ChangePage>;
 }
@@ -62,8 +91,8 @@ type WireOperation = components["schemas"]["SyncOperation"];
 type WireResult = components["schemas"]["OperationResult"];
 type WireChange = components["schemas"]["Change"];
 
-/** The header a route sends while it is still a stub. */
-const STUB_HEADER = "Warmly-Stub";
+/** The code the server gives a cursor it never issued (ADR-0006). */
+const CURSOR_UNKNOWN = "sync.cursor_unknown";
 
 const STATUSES: readonly OperationStatus[] = [
   "applied",
@@ -89,8 +118,40 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-function optionalNumber(value: unknown): value is number | null | undefined {
-  return value === undefined || value === null || typeof value === "number";
+/** A whole number the server could have counted to: a revision or sequence. */
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+function optionalCount(value: unknown): value is number | null | undefined {
+  return value === undefined || value === null || isCount(value);
+}
+
+/** Read the stable code of a problem response, if it has one. */
+async function problemCode(response: Response): Promise<string | undefined> {
+  try {
+    const problem: unknown = await response.json();
+    return isObject(problem) && typeof problem["code"] === "string"
+      ? problem["code"]
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Turn a response that is not a success into the error that says what to do
+ * about it. Only the status and the code are read: the server's text is
+ * never shown or kept.
+ */
+async function failure(response: Response): Promise<Error> {
+  // The server is failing or busy: the same request may work later.
+  if (response.status >= 500 || response.status === 429) {
+    return new ApiError("unexpected");
+  }
+  return (await problemCode(response)) === CURSOR_UNKNOWN
+    ? new SyncCursorError()
+    : new SyncRefusedError();
 }
 
 function isWireResult(value: unknown): value is WireResult {
@@ -98,8 +159,8 @@ function isWireResult(value: unknown): value is WireResult {
     isObject(value) &&
     typeof value["op_id"] === "string" &&
     STATUSES.some((status) => status === value["status"]) &&
-    optionalNumber(value["revision"]) &&
-    optionalNumber(value["current_revision"])
+    optionalCount(value["revision"]) &&
+    optionalCount(value["current_revision"])
   );
 }
 
@@ -119,9 +180,9 @@ function isWireChange(value: unknown): value is WireChange {
     isObject(value) &&
     typeof value["record_id"] === "string" &&
     typeof value["type"] === "number" &&
-    typeof value["revision"] === "number" &&
-    typeof value["sequence"] === "number" &&
-    typeof value["schema_version"] === "number" &&
+    isCount(value["revision"]) &&
+    isCount(value["sequence"]) &&
+    isCount(value["schema_version"]) &&
     typeof value["tombstone"] === "boolean" &&
     (value["payload"] === undefined ||
       value["payload"] === null ||
@@ -184,15 +245,14 @@ export class ApiSyncTransport implements SyncTransport {
       signedBy: identity,
       ...(body === undefined ? {} : { body }),
     });
-    // A stub answers with fixed data and stores nothing. Treating it as a
-    // real answer would report every change as refused.
-    if (response.headers.get(STUB_HEADER) === "true") {
-      throw new SyncUnavailableError();
-    }
     if (!response.ok) {
+      throw await failure(response);
+    }
+    try {
+      return (await response.json()) as unknown;
+    } catch {
       throw new ApiError("unexpected");
     }
-    return response.json();
   }
 
   async push(operations: readonly SyncOperation[]): Promise<OperationResult[]> {
@@ -224,6 +284,7 @@ export class ApiSyncTransport implements SyncTransport {
       !Array.isArray(body["changes"]) ||
       !body["changes"].every(isWireChange) ||
       typeof body["next_cursor"] !== "string" ||
+      !/^[0-9]{1,64}$/.test(body["next_cursor"]) ||
       typeof body["has_more"] !== "boolean"
     ) {
       throw new ApiError("unexpected");

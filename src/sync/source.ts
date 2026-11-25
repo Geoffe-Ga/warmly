@@ -10,11 +10,23 @@ import type { RemoteChange, SyncOperation } from "./protocol";
 export interface PendingChange {
   /** The operation to send: the record as it is now. */
   readonly operation: SyncOperation;
+  /** The outbox position of the queued change whose ID the operation uses. */
+  readonly first: number;
   /** The newest outbox position this operation covers. */
   readonly upTo: number;
   /** The record's local revision when the operation was built. */
   readonly localRevision: number;
 }
+
+/**
+ * Which of a record's queued changes the server's answer settles.
+ *
+ * - `current`: the server holds the record as it was sent just now.
+ * - `earlier`: the server had already applied the oldest queued change, on
+ *   an attempt whose answer never arrived. What it holds may be older than
+ *   the record is now, so anything changed since is still waiting.
+ */
+export type Acknowledged = "current" | "earlier";
 
 /** What happened when a change from the server met the local record. */
 export type RemoteOutcome =
@@ -24,7 +36,8 @@ export type RemoteOutcome =
   | "unchanged"
   /**
    * The local record has changes of its own, or is deleted here. Nothing
-   * was replaced: both versions are kept for the person to resolve.
+   * was replaced. When the local record has unsent changes, the server's
+   * version is kept beside it for the person to resolve.
    */
   | "conflict";
 
@@ -40,15 +53,35 @@ export interface SyncSource {
    *
    * @param change - The change that was sent.
    * @param serverRevision - The record's revision on the server now.
+   * @param acknowledged - Which queued changes that settles.
    */
-  acknowledge(change: PendingChange, serverRevision: number): Promise<void>;
+  acknowledge(
+    change: PendingChange,
+    serverRevision: number,
+    acknowledged: Acknowledged,
+  ): Promise<void>;
   /**
-   * Bring a change from the server into the store.
+   * Bring one page of the change feed into the store and move the cursor,
+   * in one step: after a crash the device has the whole page and the new
+   * cursor, or neither.
    *
-   * @param change - The record's current state on the server.
-   * @returns What was done with it.
+   * @param changes - Each record's current state on the server.
+   * @param nextCursor - The cursor to ask from next time.
+   * @returns What was done with each change, in the same order.
    */
-  applyRemote(change: RemoteChange): Promise<RemoteOutcome>;
+  applyPage(
+    changes: readonly RemoteChange[],
+    nextCursor: string,
+  ): Promise<RemoteOutcome[]>;
+  /** @returns This device's place in the change feed; `"0"` to start. */
+  cursor(): Promise<string>;
+  /** Start the change feed again from the beginning next time. */
+  forgetCursor(): Promise<void>;
+  /**
+   * @returns How many records have a server version kept beside a local
+   *   one, waiting for the person to choose. 0 while locked.
+   */
+  parkedCount(): Promise<number>;
   /** @returns How many records have unsent changes. 0 while locked. */
   pendingCount(): Promise<number>;
   /**

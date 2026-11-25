@@ -129,7 +129,10 @@ test.describe("the journal", () => {
               reject(new Error("could not read a store"));
             };
           });
-          rows += name?.includes("-records-") === true ? found.length : 0;
+          rows +=
+            name?.includes("-records-") === true && store === "records"
+              ? found.length
+              : 0;
           dump.push(name, store, found);
         }
         database.close();
@@ -141,8 +144,9 @@ test.describe("the journal", () => {
         ),
       };
     });
-    // One record and one queued operation.
-    expect(stored.rows).toBe(2);
+    // One record. What else is stored depends on whether sync has run yet,
+    // and all of it is scanned for the text below.
+    expect(stored.rows).toBe(1);
     expect(stored.text).not.toContain("CANARY");
     expect(stored.text).not.toContain("synthetic private sentence");
 

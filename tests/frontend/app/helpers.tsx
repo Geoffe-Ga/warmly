@@ -11,6 +11,7 @@ import { createEventBus } from "../../../src/domain/events";
 import { browserPersistence } from "../../../src/storage/persistence";
 import { MemoryRecordStore } from "../../../src/storage/record-store";
 import { SyncEngine } from "../../../src/sync/engine";
+import { SyncScheduler } from "../../../src/sync/scheduler";
 import type { SyncSource } from "../../../src/sync/source";
 import { UNAVAILABLE_TRANSPORT } from "../../../src/sync/transport";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
@@ -34,7 +35,10 @@ export interface TestServices extends Services {
 const NOTHING_TO_SYNC: SyncSource = {
   pending: () => Promise.resolve([]),
   acknowledge: () => Promise.resolve(),
-  applyRemote: () => Promise.resolve("unchanged"),
+  applyPage: () => Promise.resolve([]),
+  cursor: () => Promise.resolve("0"),
+  forgetCursor: () => Promise.resolve(),
+  parkedCount: () => Promise.resolve(0),
   pendingCount: () => Promise.resolve(0),
   subscribe: () => () => undefined,
 };
@@ -79,7 +83,9 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     lockHooks: createLockHooks(),
     events: createEventBus(),
     persistence: browserPersistence(undefined),
-    sync: new SyncEngine(NOTHING_TO_SYNC, UNAVAILABLE_TRANSPORT),
+    sync: new SyncScheduler(
+      new SyncEngine(NOTHING_TO_SYNC, UNAVAILABLE_TRANSPORT),
+    ),
   };
 }
 

@@ -2,14 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "../../../src/api/client";
 import { importRootKey } from "../../../src/crypto/root-key";
-import { newEntry, type JournalEntry } from "../../../src/domain/journal/types";
 import { OUTBOX, RECORDS, type StoredRecord } from "../../../src/storage/db";
 import {
   EncryptedRecordStore,
   StaleRecordError,
   StoreLockedError,
 } from "../../../src/storage/encrypted-record-store";
-import { SyncEngine } from "../../../src/sync/engine";
 import type { RemoteChange } from "../../../src/sync/protocol";
 import { MemoryServer } from "../../../src/sync/testing/memory-server";
 import {
@@ -18,47 +16,7 @@ import {
   type SyncTransport,
 } from "../../../src/sync/transport";
 import { readRows } from "../storage/idb-snapshot";
-
-const OWNER = "0b0f7c1e-5a2d-4a53-9c1d-2f6a3e1b7c90";
-let devices = 0;
-
-interface Device {
-  readonly store: EncryptedRecordStore;
-  readonly engine: SyncEngine;
-  readonly name: string;
-  readonly sync: () => ReturnType<SyncEngine["sync"]>;
-  online: boolean;
-}
-
-/** A device of the account: its own database, the same key, one server. */
-async function device(
-  server: MemoryServer,
-  transport?: SyncTransport,
-): Promise<Device> {
-  devices += 1;
-  const name = `sync-test-${String(devices)}`;
-  const store = new EncryptedRecordStore(() => name);
-  store.unlock(
-    await importRootKey(Uint8Array.from({ length: 32 }, (_, i) => i)),
-    OWNER,
-  );
-  const made: Device = {
-    store,
-    name,
-    online: true,
-    engine: new SyncEngine(
-      store,
-      transport ?? server.transportFor(() => OWNER),
-      () => made.online,
-    ),
-    sync: () => made.engine.sync(),
-  };
-  return made;
-}
-
-function entry(good = "Synthetic answer"): Promise<JournalEntry> {
-  return newEntry({ good, improve: "Synthetic two", loved: "Synthetic three" });
-}
+import { OWNER, apply, device, entry } from "./devices";
 
 describe("two devices syncing through the server double (SYNC-002, AC-23)", () => {
   it("converge on a new record", async () => {
@@ -434,7 +392,7 @@ describe("the sync status (SYNC-010)", () => {
     });
     await a.store.put("journal-entry", await entry());
 
-    await expect(a.sync()).resolves.toEqual({ status: "pending", waiting: 1 });
+    await expect(a.sync()).resolves.toEqual({ status: "failed", waiting: 1 });
   });
 });
 
@@ -460,13 +418,11 @@ describe("the store's side of sync (ADR-0006, ADR-0014)", () => {
 
     expect(await a.store.pending()).toEqual([]);
     expect(await a.store.pendingCount()).toBe(0);
-    await expect(a.store.applyRemote(change({}))).rejects.toThrow(
-      StoreLockedError,
-    );
+    await expect(apply(a.store, change({}))).rejects.toThrow(StoreLockedError);
     if (pending === undefined) {
       throw new Error("a pending change is expected");
     }
-    await expect(a.store.acknowledge(pending, 1)).rejects.toThrow(
+    await expect(a.store.acknowledge(pending, 1, "current")).rejects.toThrow(
       StoreLockedError,
     );
   });
@@ -491,6 +447,7 @@ describe("the store's side of sync (ADR-0006, ADR-0014)", () => {
           tombstone: false,
           payload: row?.envelope,
         },
+        first: 1,
         upTo: 2,
         localRevision: 2,
       },
@@ -521,7 +478,7 @@ describe("the store's side of sync (ADR-0006, ADR-0014)", () => {
     const before = await readRows(a.name, RECORDS);
 
     expect(
-      await a.store.applyRemote(change({ recordId: written.id, revision: 4 })),
+      await apply(a.store, change({ recordId: written.id, revision: 4 })),
     ).toBe("conflict");
 
     expect(await readRows(a.name, RECORDS)).toEqual(before);
@@ -540,10 +497,10 @@ describe("the store's side of sync (ADR-0006, ADR-0014)", () => {
     }
     const told = vi.fn();
 
-    expect(await b.store.applyRemote(remote)).toBe("applied");
+    expect(await apply(b.store, remote)).toBe("applied");
     b.store.subscribe(told);
-    expect(await b.store.applyRemote(remote)).toBe("unchanged");
-    expect(await a.store.applyRemote(remote)).toBe("unchanged");
+    expect(await apply(b.store, remote)).toBe("unchanged");
+    expect(await apply(a.store, remote)).toBe("unchanged");
 
     expect(told).not.toHaveBeenCalled();
     expect(await readRows<StoredRecord>(b.name, RECORDS)).toMatchObject([
@@ -560,7 +517,8 @@ describe("the store's side of sync (ADR-0006, ADR-0014)", () => {
     await a.sync();
 
     expect(
-      await a.store.applyRemote(
+      await apply(
+        a.store,
         change({ recordId: written.id, revision: 9, tombstone: false }),
       ),
     ).toBe("conflict");
@@ -574,8 +532,8 @@ describe("the store's side of sync (ADR-0006, ADR-0014)", () => {
   it("keeps a record it cannot read, counts it, and does not show it", async () => {
     const a = await device(new MemoryServer());
 
-    expect(await a.store.applyRemote(change({}))).toBe("applied");
-    expect(await a.store.applyRemote(change({ type: 200 }))).toBe("applied");
+    expect(await apply(a.store, change({}))).toBe("applied");
+    expect(await apply(a.store, change({ type: 200 }))).toBe("applied");
 
     expect(await a.store.list("journal-entry")).toEqual([]);
     expect(await a.store.unreadable("journal-entry")).toBe(1);

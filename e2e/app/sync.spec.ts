@@ -25,7 +25,7 @@ async function expectNoViolations(page: Page): Promise<void> {
 }
 
 test.describe("sync status", () => {
-  test("shows what is waiting, sends it when asked, and says so without anything private", async ({
+  test("sends changes on its own, shows what is waiting while offline, and says nothing private", async ({
     page,
     context,
   }) => {
@@ -35,7 +35,8 @@ test.describe("sync status", () => {
     await expect(status).toHaveAttribute("aria-live", "polite");
     await expectNoViolations(page);
 
-    // Writing an entry leaves a change waiting until a sync runs.
+    // Writing an entry queues a change, which is sent on its own shortly
+    // afterwards.
     await page.getByRole("link", { name: "Journal", exact: true }).click();
     await page.getByRole("link", { name: "Write a new entry" }).click();
     for (const prompt of PROMPTS) {
@@ -43,11 +44,8 @@ test.describe("sync status", () => {
     }
     await page.getByRole("button", { name: "Save entry" }).click();
     await expect(page.getByText("A journal entry.")).toBeVisible();
-    await expect(status).toHaveText("1 change waiting to sync");
-    await expect(status).not.toContainText("CANARY");
-
-    await page.getByRole("button", { name: "Sync now" }).click();
     await expect(status).toHaveText("All changes saved");
+    await expect(status).not.toContainText("CANARY");
 
     // Offline: the change waits, and the status says how many, not what.
     await context.setOffline(true);
@@ -57,6 +55,7 @@ test.describe("sync status", () => {
     await expect(page.getByText("A journal entry.")).toBeVisible();
     await page.getByRole("button", { name: "Sync now" }).click();
     await expect(status).toHaveText("1 change waiting to sync");
+    await expect(status).not.toContainText("CANARY");
     await expect(page.locator(".offline-notice")).toHaveText(
       "Offline: your writing is saved on this device.",
     );

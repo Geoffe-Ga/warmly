@@ -11,7 +11,9 @@ import {
 import {
   DB_VERSION,
   NewerDatabaseError,
+  META,
   OUTBOX,
+  PARKED,
   RECORDS,
   openRecordsDatabase,
   recordsDatabaseName,
@@ -82,7 +84,9 @@ describe("the local database schema", () => {
     expect(await dumpDatabase(name)).toEqual({
       version: DB_VERSION,
       stores: {
+        [META]: { keyPath: "key", autoIncrement: false, rows: [] },
         [OUTBOX]: { keyPath: "seq", autoIncrement: true, rows: [] },
+        [PARKED]: { keyPath: ["type", "id"], autoIncrement: false, rows: [] },
         [RECORDS]: { keyPath: ["type", "id"], autoIncrement: false, rows: [] },
       },
     });

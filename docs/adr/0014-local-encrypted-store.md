@@ -60,6 +60,15 @@ object stores:
   UUID), `type`, `id`, `localRevision`, `baseRevision`, `schemaVersion`,
   `tombstone`.
 
+Schema version 2 (ADR-0006) adds two more:
+
+- `meta`, keyed by `key`: one row, `cursor`, this device's place in the
+  server's change feed.
+- `parked`, keyed by `[type, id]`: a server version of a record that could
+  not replace the local one because the local one has unsent changes. It
+  holds the server's `envelope` (or `null` for a deletion), `schemaVersion`,
+  `revision` and `tombstone`: ciphertext and counters only.
+
 Nothing else is stored. No record content, content hash, search index or
 decrypted cache is ever written. A test writes a canary sentence and scans
 every stored value for it.

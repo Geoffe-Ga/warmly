@@ -26,13 +26,15 @@ export function describeSync(state: SyncState): string {
       return waiting;
     case "offline":
       return state.waiting > 0 ? waiting : "";
+    case "failed":
+      return "Couldn't sync. Your writing is saved on this device.";
   }
 }
 
 /**
  * The sync status line and the button that runs a sync (PRD SYNC-010,
- * AC-23). The status is announced politely when it changes. A sync also
- * runs when the network comes back.
+ * AC-23). The status is announced politely when it changes. Sync also runs
+ * on its own; the button is for the person who wants it now.
  *
  * @param props - The sync engine.
  * @returns The indicator.
@@ -48,14 +50,7 @@ export function SyncStatus(props: { readonly sync: SyncControl }): JSX.Element {
     };
     const unsubscribe = sync.subscribe(update);
     update();
-    const whenOnline = (): void => {
-      void sync.sync();
-    };
-    window.addEventListener("online", whenOnline);
-    return () => {
-      unsubscribe();
-      window.removeEventListener("online", whenOnline);
-    };
+    return unsubscribe;
   }, [sync]);
 
   return (

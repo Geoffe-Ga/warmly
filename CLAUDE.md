@@ -18,7 +18,7 @@ Manage Devices, device-pairing and device-removal flows (real cryptography; in-m
 servers outside production) and a journal that can be written, listed, read,
 searched, edited in place and deleted for good, with drafts saved as they
 are typed, stored encrypted in IndexedDB. A sync engine sends the outbox
-and fetches changes (ADR-0006). Other routes render accessible placeholders.
+and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Other routes render accessible placeholders.
 
 ---
 
@@ -243,6 +243,14 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   the in-memory server (`src/sync/testing/`, never in a production build)
   and the backend must both pass it. Never edit it: a protocol change is a
   new file. Retrying sync is always allowed; that never applies to AI.
+- Sync runs through `SyncScheduler` (`src/sync/scheduler.ts`), reached as
+  `services.sync`: never call the engine from a screen or add another
+  timer. A page of changes and the new cursor are stored in one
+  transaction (`applyPage`). A server version that cannot replace a local
+  record is kept, still encrypted, in the `parked` store; never drop it and
+  never apply it over unsent changes. A record is sent under the ID of its
+  oldest queued change, and `duplicate` settles only that change. The
+  engine never reads a clock to order anything.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

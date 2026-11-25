@@ -5,6 +5,8 @@ import { fromBase64, toBase64, utf8 } from "../../../src/crypto/encoding";
 import type { SyncOperation } from "../../../src/sync/protocol";
 import {
   ApiSyncTransport,
+  SyncCursorError,
+  SyncRefusedError,
   SyncUnavailableError,
   UNAVAILABLE_TRANSPORT,
 } from "../../../src/sync/transport";
@@ -140,6 +142,14 @@ describe("sending operations to the Warmly API (SYNC-002)", () => {
     ],
     ["a result that is not an object", json(200, { results: [7] })],
     ["an error status", json(500, { code: "internal" })],
+    [
+      "a revision of zero",
+      results([OPERATION.opId, { status: "applied", revision: 0 }]),
+    ],
+    [
+      "a current revision that is not whole",
+      results([OPERATION.opId, { status: "conflict", current_revision: 2.5 }]),
+    ],
   ])("refuses an answer with %s", async (_name, response) => {
     const { transport: sync } = await transport(() => response.clone());
 
@@ -237,6 +247,17 @@ describe("asking the Warmly API for changes (SYNC-002)", () => {
     ["a tombstone with a payload", page([{ ...CHANGE, tombstone: true }])],
     ["a payload that is not text", page([{ ...CHANGE, payload: 9 }])],
     ["an error status", json(503, {})],
+    ["a revision of zero", page([{ ...CHANGE, revision: 0 }])],
+    ["a revision that is not whole", page([{ ...CHANGE, revision: 1.5 }])],
+    [
+      "a sequence too large to count",
+      page([{ ...CHANGE, sequence: Number.MAX_SAFE_INTEGER + 1 }]),
+    ],
+    ["a negative sequence", page([{ ...CHANGE, sequence: -1 }])],
+    ["a schema version of zero", page([{ ...CHANGE, schema_version: 0 }])],
+    ["a cursor that is not digits", page([], { next_cursor: "abc" })],
+    ["an empty cursor", page([], { next_cursor: "" })],
+    ["a body that is not JSON", new Response("<html>", { status: 200 })],
   ])("refuses an answer with %s", async (_name, response) => {
     const { transport: sync } = await transport(() => response.clone());
 
@@ -244,25 +265,66 @@ describe("asking the Warmly API for changes (SYNC-002)", () => {
   });
 });
 
-describe("when sync cannot be used (SYNC-002)", () => {
-  it("treats a stub answer as unavailable, not as every change refused", async () => {
-    const stub = (body: unknown): Response =>
-      new Response(JSON.stringify(body), {
-        status: 200,
-        headers: { "Content-Type": "application/json", "Warmly-Stub": "true" },
+describe("when the server does not give an answer to use (SYNC-008)", () => {
+  it.each([500, 502, 503, 429])(
+    "treats %i as a failure worth trying again later",
+    async (status) => {
+      const { transport: sync } = await transport(() => json(status, {}));
+
+      await expect(sync.push([OPERATION])).rejects.toMatchObject({
+        code: "unexpected",
       });
-    const { transport: sync } = await transport((call) =>
-      call.url.includes("/operations")
-        ? stub({ results: [{ op_id: OPERATION.opId, status: "rejected" }] })
-        : stub({ changes: [], next_cursor: "0", has_more: false }),
+      await expect(sync.pull("0")).rejects.toMatchObject({
+        code: "unexpected",
+      });
+    },
+  );
+
+  it.each([400, 403, 404, 409, 413, 422])(
+    "treats %i as a refusal that sending again would not change",
+    async (status) => {
+      const { transport: sync } = await transport(() =>
+        json(status, { code: "request.invalid" }),
+      );
+
+      await expect(sync.push([OPERATION])).rejects.toBeInstanceOf(
+        SyncRefusedError,
+      );
+      await expect(sync.pull("0")).rejects.toBeInstanceOf(SyncRefusedError);
+    },
+  );
+
+  it("says so when the server does not recognise the cursor", async () => {
+    const { transport: sync } = await transport(() =>
+      json(409, { code: "sync.cursor_unknown" }),
     );
 
-    await expect(sync.push([OPERATION])).rejects.toBeInstanceOf(
-      SyncUnavailableError,
-    );
-    await expect(sync.pull("0")).rejects.toBeInstanceOf(SyncUnavailableError);
+    await expect(sync.pull("41")).rejects.toBeInstanceOf(SyncCursorError);
   });
 
+  it("is a plain refusal when a refusal has no readable code", async () => {
+    const { transport: sync } = await transport(
+      () => new Response("not json", { status: 409 }),
+    );
+
+    await expect(sync.pull("41")).rejects.toBeInstanceOf(SyncRefusedError);
+  });
+
+  it("never carries the server's words in an error", async () => {
+    const { transport: sync } = await transport(() =>
+      json(422, { code: "request.invalid", detail: "SERVER-TEXT" }),
+    );
+
+    const error: unknown = await sync
+      .push([OPERATION])
+      .catch((e: unknown) => e);
+
+    expect(String(error)).not.toContain("SERVER-TEXT");
+    expect(JSON.stringify(error)).not.toContain("SERVER-TEXT");
+  });
+});
+
+describe("when sync cannot be used (SYNC-002)", () => {
   it("is unavailable, and sends nothing, when nobody is signed in or the device has no key", async () => {
     for (const options of [{ signedIn: false }, { registered: false }]) {
       const { transport: sync, api } = await transport(

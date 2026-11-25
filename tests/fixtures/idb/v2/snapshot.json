@@ -1,0 +1,169 @@
+{
+  "note": "Synthetic. A database exactly as schema version 2 wrote it: version 1 plus this device's place in the change feed and one server version kept beside a local record. The root key is the bytes 0..31 and protects nothing real. Never edit or regenerate.",
+  "owner": "0b0f7c1e-5a2d-4a53-9c1d-2f6a3e1b7c90",
+  "database": {
+    "version": 2,
+    "stores": {
+      "outbox": {
+        "keyPath": "seq",
+        "autoIncrement": true,
+        "rows": [
+          {
+            "opId": "25c95fe5-496a-430d-80b8-867d1393dc6b",
+            "type": 1,
+            "id": "22222222-2222-4222-8222-222222222221",
+            "localRevision": 1,
+            "baseRevision": 0,
+            "schemaVersion": 1,
+            "tombstone": false,
+            "seq": 1
+          },
+          {
+            "opId": "9c7b8c3b-a2e1-467e-b644-ec9cbdad2194",
+            "type": 1,
+            "id": "22222222-2222-4222-8222-222222222222",
+            "localRevision": 1,
+            "baseRevision": 0,
+            "schemaVersion": 1,
+            "tombstone": false,
+            "seq": 2
+          },
+          {
+            "opId": "3dc7c399-e6da-4dce-b294-63b0aaba2df5",
+            "type": 1,
+            "id": "22222222-2222-4222-8222-222222222222",
+            "localRevision": 2,
+            "baseRevision": 0,
+            "schemaVersion": 1,
+            "tombstone": false,
+            "seq": 3
+          },
+          {
+            "opId": "27fea640-c7e3-494d-a249-f157d293fbd1",
+            "type": 1,
+            "id": "22222222-2222-4222-8222-222222222223",
+            "localRevision": 1,
+            "baseRevision": 0,
+            "schemaVersion": 1,
+            "tombstone": false,
+            "seq": 4
+          },
+          {
+            "opId": "5354ebc9-8dde-4b64-a0a5-ee9fde8688f0",
+            "type": 1,
+            "id": "22222222-2222-4222-8222-222222222223",
+            "localRevision": 2,
+            "baseRevision": 0,
+            "schemaVersion": 1,
+            "tombstone": true,
+            "seq": 5
+          }
+        ]
+      },
+      "records": {
+        "keyPath": ["type", "id"],
+        "autoIncrement": false,
+        "rows": [
+          {
+            "type": 1,
+            "id": "22222222-2222-4222-8222-222222222221",
+            "envelope": {
+              "base64": "AalwIqZBmROwgng4LJv+I4AhO8G9mg0/SrloiyEZP3IqxMnQLnbLm9aH74s6Z85zLDGY5PQkzH6Y258MIUKiX6vGTEsm29ZyOQPm5Uf0cIgqnXEIq68ZkMLXa52v0ZHGwge1uP17iWR1ILiMd9QBgojy/+SgkEm1SQcoOX/5Kr/OEMdvthARnERwspwc0vt92i5EjwWFRkhCS9O2dbLRCtLxqThXd4JEpiUkqCDotRlxWt3erOH5B717Z1tSx1DgfXjHCB24poMTPJ07mQftaHBok2FcwFcfTVGcKqu7JvGpUtyrST176dF2IdTGY7tAY1E9SVPK07cvxhEF1GgcGCnUJjvpiF7MHlvem2ItsPTLDgEbSLVFccsElJxg9PuNgr1Ya2eHBJvNduGmcpYspIkMJM8s6weS4Jfvt5ZaAjVELfiilCWg0I+befw6a04f2obg4n3WgRhBG2RtwBqXc+gcMPshrjPWeLaoqOThQ2vwlBXnrEn21JZHme0iKeV3fN0e3RvYW0ZpHeKrm3jUAxSjFGfc/U8h9AueOGmmgkZirT65uBQSj7QoEm1Sq1mRESnta0rVbh7CGMMYAk5LsPY7yxfGU1T9p7FbbyJYPfs="
+            },
+            "schemaVersion": 1,
+            "localRevision": 1,
+            "baseRevision": 0,
+            "tombstone": false,
+            "dirty": true
+          },
+          {
+            "type": 1,
+            "id": "22222222-2222-4222-8222-222222222222",
+            "envelope": {
+              "base64": "AUNuZegfvuutcj0jWurfFkQ4LYwPb9KtthVXoQHTPiqKF4RyG6EoQ08XPHyeLzOc3t8hyLcf6GwFtaH+jJ7v6yzhSv5ayUc+zhS4KA3Ex1Tl1zFjtwSU+C5+69fg1xZak4ftNi1qCkggHjCwCiPYqwhfEeFSRvka3ugMo2j1qAr6EXKbXW3qqetpFs3Rhy4ujp1o1HEEp3O8BdWFZQNUBomeXV44b41Ltsc9g8dlwgM909hNPffboMHSaT7D276K4Aci/H5jfRoNA0gj9GEY6SLJlh0psl+dv5C0HSbBLftmwyv/3w08dppQJYEn2epdEHFDjxVqTBK4D9rrts4KqvpfOraeuNmOuP1INTOkY0hj4k6naQGNbJUsRUT0mXM6xSJRy5uBaQyuCgg/SWlg0ODGMzuXB2TNtZDKNkXupiY4IokVw63UF/IGKj9uYvO5DrwoG1H6xpwzhDBnSq83AYVGAbXpidnivs8CZW9GEeS2jGv6zaot7Hq6Mce/hDXCoTxkzF67NxtAAGinDV6bvtEbH0bG947FRAcEh9hbv5rBoxUi7cZZR1T20XwLfNGtrPQvXgcVr08aebllpCY/gKdbKV0y63ZsosQmuIB7SGB1YvE="
+            },
+            "schemaVersion": 1,
+            "localRevision": 2,
+            "baseRevision": 0,
+            "tombstone": false,
+            "dirty": true
+          },
+          {
+            "type": 1,
+            "id": "22222222-2222-4222-8222-222222222223",
+            "envelope": null,
+            "schemaVersion": 1,
+            "localRevision": 2,
+            "baseRevision": 0,
+            "tombstone": true,
+            "dirty": true
+          }
+        ]
+      },
+      "meta": {
+        "keyPath": "key",
+        "autoIncrement": false,
+        "rows": [
+          {
+            "key": "cursor",
+            "value": "7"
+          }
+        ]
+      },
+      "parked": {
+        "keyPath": ["type", "id"],
+        "autoIncrement": false,
+        "rows": [
+          {
+            "type": 1,
+            "id": "22222222-2222-4222-8222-222222222221",
+            "envelope": {
+              "base64": "AalwIqZBmROwgng4LJv+I4AhO8G9mg0/SrloiyEZP3IqxMnQLnbLm9aH74s6Z85zLDGY5PQkzH6Y258MIUKiX6vGTEsm29ZyOQPm5Uf0cIgqnXEIq68ZkMLXa52v0ZHGwge1uP17iWR1ILiMd9QBgojy/+SgkEm1SQcoOX/5Kr/OEMdvthARnERwspwc0vt92i5EjwWFRkhCS9O2dbLRCtLxqThXd4JEpiUkqCDotRlxWt3erOH5B717Z1tSx1DgfXjHCB24poMTPJ07mQftaHBok2FcwFcfTVGcKqu7JvGpUtyrST176dF2IdTGY7tAY1E9SVPK07cvxhEF1GgcGCnUJjvpiF7MHlvem2ItsPTLDgEbSLVFccsElJxg9PuNgr1Ya2eHBJvNduGmcpYspIkMJM8s6weS4Jfvt5ZaAjVELfiilCWg0I+befw6a04f2obg4n3WgRhBG2RtwBqXc+gcMPshrjPWeLaoqOThQ2vwlBXnrEn21JZHme0iKeV3fN0e3RvYW0ZpHeKrm3jUAxSjFGfc/U8h9AueOGmmgkZirT65uBQSj7QoEm1Sq1mRESnta0rVbh7CGMMYAk5LsPY7yxfGU1T9p7FbbyJYPfs="
+            },
+            "schemaVersion": 1,
+            "revision": 3,
+            "tombstone": false
+          }
+        ]
+      }
+    }
+  },
+  "expected": {
+    "journal-entry": [
+      {
+        "id": "22222222-2222-4222-8222-222222222221",
+        "createdAt": "2026-11-03T09:00:00.000Z",
+        "entryDate": {
+          "date": "2026-11-03",
+          "timeZone": "Europe/London"
+        },
+        "updatedAt": "2026-11-03T09:00:00.000Z",
+        "status": "complete",
+        "responses": {
+          "good": "Synthetic: we cooked dinner together.",
+          "improve": "Synthetic: plan weekends earlier.",
+          "loved": "Synthetic: a note on the fridge."
+        },
+        "contentHash": "15a6faa7d29e59ce208cb3c036fff952b0f90692629427ba3ffa825b968468a0"
+      },
+      {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "createdAt": "2026-11-10T09:00:00.000Z",
+        "entryDate": {
+          "date": "2026-11-10",
+          "timeZone": "Europe/London"
+        },
+        "updatedAt": "2026-11-10T09:00:00.000Z",
+        "status": "draft",
+        "responses": {
+          "good": "Synthetic: a long walk.",
+          "improve": "Synthetic: plan weekends earlier.",
+          "loved": "Synthetic: a note on the fridge."
+        },
+        "contentHash": "86853bd1e4c682027a6c642bc8b4fcc8ef693cfc217bf005c806fc1fc0fb894b",
+        "feelings": ["calm"]
+      }
+    ],
+    "deleted": ["22222222-2222-4222-8222-222222222223"]
+  }
+}

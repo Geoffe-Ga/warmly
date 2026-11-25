@@ -51,6 +51,7 @@ function control(start: SyncState): SyncControl & {
         };
       });
     },
+    start: () => undefined,
     reset: () => {
       made.resets += 1;
     },
@@ -72,6 +73,10 @@ describe("the sync status in words (SYNC-010)", () => {
     [{ status: "attention", waiting: 2 }, "Needs your attention"],
     [{ status: "offline", waiting: 3 }, "3 changes waiting to sync"],
     [{ status: "offline", waiting: 0 }, ""],
+    [
+      { status: "failed", waiting: 2 },
+      "Couldn't sync. Your writing is saved on this device.",
+    ],
   ] as const)("%j is %j", (state, text) => {
     expect(describeSync(state)).toBe(text);
   });
@@ -114,25 +119,17 @@ describe("the sync status indicator (SYNC-010, AC-23)", () => {
     });
   });
 
-  it("runs a sync when the network comes back, and stops listening when removed", async () => {
+  it("stops following the state when it is removed", async () => {
     const sync = control({ status: "offline", waiting: 1 });
     render(<SyncStatus sync={sync} />);
-
-    window.dispatchEvent(new Event("online"));
-    expect(sync.runs).toBe(1);
+    const status = screen.getByRole("status");
 
     cleanup();
-    // The framework runs an effect's clean-up a moment after the component
-    // is removed, so wait for the listener to be gone.
-    await vi.waitFor(() => {
-      const before = sync.runs;
-      window.dispatchEvent(new Event("online"));
-      expect(sync.runs).toBe(before);
-    });
-  });
-});
+    sync.set({ status: "synced", waiting: 0 });
 
-describe("sync in the app shell", () => {
+    expect(status.textContent).toBe("1 change waiting to sync");
+  });
+
   it("shows the status only while unlocked", async () => {
     await renderApp("/", testServices("unlocked"));
     expect(screen.getByRole("button", { name: "Sync now" })).toBeTruthy();

@@ -49,6 +49,7 @@ import {
 } from "../storage/persistence";
 import type { RecordStore } from "../storage/record-store";
 import { SyncEngine, type SyncControl } from "../sync/engine";
+import { SyncScheduler, tabExclusive } from "../sync/scheduler";
 import { MemoryServer } from "../sync/testing/memory-server";
 import {
   ApiSyncTransport,
@@ -319,11 +320,11 @@ export function createServices(): Services {
   const persistence = browserPersistence(
     (navigator as Partial<Navigator>).storage,
   );
-  const records = new EncryptedRecordStore((owner) =>
+  const databaseName = (owner: string): string =>
     import.meta.env.MODE !== "production"
       ? recordsDatabaseName(owner, tabRecordsPrefix())
-      : recordsDatabaseName(owner),
-  );
+      : recordsDatabaseName(owner);
+  const records = new EncryptedRecordStore(databaseName);
   const auth = createAuthClient(
     import.meta.env,
     import.meta.env.MODE !== "production"
@@ -361,10 +362,22 @@ export function createServices(): Services {
       // Once there is something worth keeping, ask the browser to keep
       // it. The answer is shown in Settings; it never rejects.
       void persistence.request();
-      void sync.sync();
+      syncLock = `warmly-sync:${databaseName(owner)}`;
+      sync.start();
     },
   );
-  const sync = new SyncEngine(records, syncTransport);
+  // One tab at a time syncs a local database (ADR-0006). Each account has
+  // its own database, so each has its own lock.
+  let syncLock = "warmly-sync";
+  const sync = new SyncScheduler(
+    new SyncEngine(
+      records,
+      syncTransport,
+      () => navigator.onLine,
+      // `navigator.locks` is missing on an insecure page and in old browsers.
+      tabExclusive((navigator as Partial<Navigator>).locks, () => syncLock),
+    ),
+  );
   return {
     auth,
     ...keys,

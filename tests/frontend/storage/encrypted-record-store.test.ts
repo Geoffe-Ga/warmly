@@ -6,7 +6,9 @@ import { newEntry, type JournalEntry } from "../../../src/domain/journal/types";
 import { StorageUnavailableError } from "../../../src/storage/errors";
 import {
   NewerDatabaseError,
+  META,
   OUTBOX,
+  PARKED,
   RECORDS,
   type StoredRecord,
 } from "../../../src/storage/db";
@@ -130,7 +132,7 @@ describe("the encrypted record store", () => {
     const database = await openRaw(name);
     const storeNames = [...database.objectStoreNames];
     database.close();
-    expect(storeNames.sort()).toEqual([OUTBOX, RECORDS].sort());
+    expect(storeNames.sort()).toEqual([META, OUTBOX, PARKED, RECORDS].sort());
     for (const storeName of storeNames) {
       const stored = everythingIn(await readRows(name, storeName));
       expect(stored).not.toContain("CANARY");

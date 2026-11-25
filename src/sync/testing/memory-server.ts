@@ -14,7 +14,7 @@ import {
   type RemoteChange,
   type SyncOperation,
 } from "../protocol";
-import type { SyncTransport } from "../transport";
+import { SyncCursorError, type SyncTransport } from "../transport";
 
 /** One record as the server holds it. */
 interface ServerRecord {
@@ -114,6 +114,10 @@ export class MemoryServer {
     const after = Number(cursor);
     if (!/^[0-9]+$/.test(cursor) || !Number.isSafeInteger(after)) {
       throw new ApiError("unexpected");
+    }
+    if (after > this.#owner(owner).sequence) {
+      // A cursor this account was never given, as the real server answers.
+      throw new SyncCursorError();
     }
     const changes: RemoteChange[] = [...this.#owner(owner).records.entries()]
       .filter(([, record]) => record.sequence > after)
