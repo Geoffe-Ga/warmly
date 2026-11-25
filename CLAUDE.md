@@ -20,9 +20,9 @@ searched, edited in place and deleted for good, with drafts saved as they
 are typed, stored encrypted in IndexedDB. The AI seam exists (gateway,
 consent dialog, checked answers, a stand-in provider outside production) but no screen calls
 it and no real provider is connected. A sync engine sends the outbox
-and fetches changes on its own, with backoff, one tab at a time (ADR-0006). The Prepare screens (collections, a card, presentation, print) read
-cards from an in-memory store that is empty in production and holds
-invented cards in other builds; nothing about cards is saved yet. Other routes render accessible placeholders.
+and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Collections and manual conversation cards can be made, edited, reordered,
+printed, presented and deleted; they are encrypted records that sync like
+journal entries. Other routes render accessible placeholders.
 
 ---
 
@@ -311,14 +311,32 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   never as HTML, and never becomes a link or an image. Never edit
   `tests/frontend/ai/fixtures/adversarial-v1.json`: add a new file.
 - Screens read collections and cards only through `CardsStore`
-  (`src/domain/cards/store.ts`), reached as `services.cards`. A card never
-  holds text copied from a journal entry, only references (PRD DEP-004).
-  A collection's name and a card's text never go in a URL or the tab title.
-  Presentation always opens at the first card and its position lives in
-  component state only: never store it, put it in the address or report it,
-  and never record which cards were shown or for how long (PRD CC-012). The
-  print view shows card text only, and printing happens only when the
-  person presses Print.
+  (`src/domain/cards/store.ts`), reached as `services.cards`, and change
+  them only through `src/domain/cards/collections.ts` and `cards.ts`. A
+  collection and each card are separate records (kinds `card-collection`
+  and `conversation-card`, envelope types 2 and 3: never reuse a type
+  number). A card never holds text copied from a journal entry, only
+  references (PRD DEP-004). A collection's name and a card's text never go
+  in a URL, the tab title or drag data.
+- A collection's cards are shown by `orderCards`: the cards its list names,
+  then any other card that belongs to it. Never drop a card because the
+  list does not name it: that is what keeps cards written on two devices
+  when one version of the list is kept. Deleting a collection deletes
+  every card that belongs to it, and both deletions ask first.
+- A manual card is `user_owned` with no AI fields; making, changing,
+  moving or deleting one never calls AI or the network (PRD CC-010). Never
+  correct, score or block what the person writes on a card. Reordering
+  must always work from the keyboard (Move up, Move down) and say where
+  the card went; dragging is an extra.
+- A collection or card changed in two places is settled by the person on
+  the "Changed in two places" screen through `src/sync/card-conflicts.ts`,
+  under the same rules as an entry: never merge or choose for them, and
+  never bring back one that was deleted (`keepAsNew` writes a new record).
+- Presentation always opens at the first card and its position lives in
+  component state only: never store it, put it in the address or report
+  it, and never record which cards were shown or for how long (PRD
+  CC-012). The print view shows card text only, and printing happens only
+  when the person presses Print.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

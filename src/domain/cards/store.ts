@@ -1,16 +1,25 @@
 /**
- * Where screens get collections and cards from (PRD CC-001).
+ * Where screens get collections and cards from (PRD CC-001, SYNC-001).
  *
- * For now this is held in memory only: nothing is saved, and a reload
- * starts again. Saving, through the encrypted record store, arrives with
- * the next step; the screens will not change, because they only know this
- * interface.
+ * Collections and cards are private records like journal entries: each is
+ * sealed on this device, kept in the encrypted record store and synced to
+ * the person's other devices. A collection and each of its cards are
+ * separate records, so changing one card on one device and another card on
+ * another device does not conflict.
+ *
+ * Screens read through this interface. Changes go through the functions in
+ * `collections.ts` and `cards.ts`.
  */
-import type { CardCollection, ConversationCard } from "./types";
+import type { RecordStore } from "../../storage/record-store";
+import {
+  orderCards,
+  type CardCollection,
+  type ConversationCard,
+} from "./types";
 
 /** Read access to the person's collections and cards. */
 export interface CardsStore {
-  /** @returns Every collection, in the order they were made. */
+  /** @returns Every collection, oldest first. */
   collections(): Promise<readonly CardCollection[]>;
   /**
    * @param id - A collection's ID.
@@ -19,8 +28,7 @@ export interface CardsStore {
   collection(id: string): Promise<CardCollection | undefined>;
   /**
    * @param collectionId - A collection's ID.
-   * @returns Its cards in the collection's order. A card the collection
-   *   lists but that does not exist is left out.
+   * @returns Its cards, in order (see `orderCards`).
    */
   cards(collectionId: string): Promise<readonly ConversationCard[]>;
   /**
@@ -32,46 +40,56 @@ export interface CardsStore {
     collectionId: string,
     cardId: string,
   ): Promise<ConversationCard | undefined>;
+  /**
+   * Be told when collections or cards may have changed, here or through
+   * sync.
+   *
+   * @returns A function that stops the listener being called.
+   */
+  subscribe(listener: () => void): () => void;
 }
 
-/** A store that lives in memory. Empty unless it is given something. */
-export class MemoryCardsStore implements CardsStore {
-  readonly #collections: readonly CardCollection[];
-  readonly #cards: ReadonlyMap<string, ConversationCard>;
+/** The cards store the app uses: a view of the private record store. */
+export class RecordCardsStore implements CardsStore {
+  readonly #records: RecordStore;
 
-  /**
-   * @param collections - The collections to hold.
-   * @param cards - Their cards.
-   */
-  constructor(
-    collections: readonly CardCollection[] = [],
-    cards: readonly ConversationCard[] = [],
-  ) {
-    this.#collections = collections;
-    this.#cards = new Map(cards.map((card) => [card.id, card]));
+  /** @param records - The private record store. */
+  constructor(records: RecordStore) {
+    this.#records = records;
   }
 
-  collections(): Promise<readonly CardCollection[]> {
-    return Promise.resolve(this.#collections);
+  async collections(): Promise<readonly CardCollection[]> {
+    const all = await this.#records.list("card-collection");
+    return all.sort(
+      (a, b) =>
+        a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+    );
   }
 
   collection(id: string): Promise<CardCollection | undefined> {
-    return Promise.resolve(this.#collections.find((each) => each.id === id));
+    return this.#records.get("card-collection", id);
   }
 
   async cards(collectionId: string): Promise<readonly ConversationCard[]> {
     const collection = await this.collection(collectionId);
-    return (collection?.cardIds ?? [])
-      .map((cardId) => this.#cards.get(cardId))
-      .filter((card) => card?.collectionId === collectionId)
-      .filter((card) => card !== undefined);
+    return collection === undefined
+      ? []
+      : orderCards(collection, await this.#records.list("conversation-card"));
   }
 
   async card(
     collectionId: string,
     cardId: string,
   ): Promise<ConversationCard | undefined> {
-    const cards = await this.cards(collectionId);
-    return cards.find((card) => card.id === cardId);
+    const card = await this.#records.get("conversation-card", cardId);
+    const collection =
+      card?.collectionId === collectionId
+        ? await this.collection(collectionId)
+        : undefined;
+    return collection === undefined ? undefined : card;
+  }
+
+  subscribe(listener: () => void): () => void {
+    return this.#records.subscribe(listener);
   }
 }

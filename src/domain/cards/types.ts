@@ -7,9 +7,12 @@
  * content. A card never holds text copied from a journal entry: where it
  * rests on the journal it holds references only (DEP-004).
  */
-import type {
-  CardSegment as GeneratedSegment,
-  CardType,
+import {
+  CARD_TYPES,
+  EVIDENCE_KINDS,
+  SEGMENT_CATEGORIES,
+  type CardSegment as GeneratedSegment,
+  type CardType,
 } from "../../ai/contracts";
 
 export type {
@@ -86,4 +89,127 @@ export function readingText(card: ConversationCard): string {
     .map((segment) => segment.text.trim())
     .filter((text) => text !== "")
     .join(" ");
+}
+
+function isText(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isOneOf(value: unknown, options: readonly string[]): boolean {
+  return isText(value) && options.includes(value);
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isListOf<T>(
+  value: unknown,
+  item: (each: unknown) => each is T,
+): value is T[] {
+  return Array.isArray(value) && value.every(item);
+}
+
+function isWhole(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isSourceRef(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isText(value["entryId"]) &&
+    isOneOf(value["responseKey"], ["good", "improve", "loved"]) &&
+    isWhole(value["start"]) &&
+    isWhole(value["end"]) &&
+    isText(value["sourceHash"])
+  );
+}
+
+function isSegment(value: unknown): value is CardSegment {
+  return (
+    isObject(value) &&
+    isText(value["id"]) &&
+    isOneOf(value["category"], SEGMENT_CATEGORIES) &&
+    isText(value["text"]) &&
+    (value["evidence"] === undefined ||
+      (Array.isArray(value["evidence"]) &&
+        value["evidence"].every(isSourceRef))) &&
+    (value["evidenceKind"] === undefined ||
+      isOneOf(value["evidenceKind"], EVIDENCE_KINDS)) &&
+    (value["teachingExplanation"] === undefined ||
+      isText(value["teachingExplanation"]))
+  );
+}
+
+/**
+ * Check that a value read back from storage has the shape of a card.
+ *
+ * @param value - What was decrypted.
+ * @returns Whether it is a conversation card.
+ */
+export function isConversationCard(value: unknown): value is ConversationCard {
+  return (
+    isObject(value) &&
+    isText(value["id"]) &&
+    isText(value["collectionId"]) &&
+    isOneOf(value["type"], CARD_TYPES) &&
+    isOneOf(value["authorship"], ["ai_generated", "user_owned"]) &&
+    isListOf(value["segments"], isSegment) &&
+    isListOf(value["sourceEntryIds"], isText) &&
+    isText(value["createdAt"]) &&
+    isText(value["updatedAt"])
+  );
+}
+
+/**
+ * Check that a value read back from storage has the shape of a collection.
+ *
+ * @param value - What was decrypted.
+ * @returns Whether it is a card collection.
+ */
+export function isCardCollection(value: unknown): value is CardCollection {
+  return (
+    isObject(value) &&
+    isText(value["id"]) &&
+    isText(value["name"]) &&
+    isListOf(value["cardIds"], isText) &&
+    isText(value["createdAt"]) &&
+    isText(value["updatedAt"])
+  );
+}
+
+/**
+ * Put a collection's cards in order.
+ *
+ * The cards the collection lists come first, in its order. A card that
+ * belongs to the collection but is not in its list comes after them, oldest
+ * first. That happens when two devices each add a card and one device's
+ * version of the list is kept: neither card is lost, whichever list wins.
+ * A listed card that does not exist, or belongs elsewhere, is left out.
+ *
+ * @param collection - The collection.
+ * @param cards - Any cards; only this collection's are used.
+ * @returns The collection's cards, in order.
+ */
+export function orderCards(
+  collection: CardCollection,
+  cards: readonly ConversationCard[],
+): ConversationCard[] {
+  const own = new Map(
+    cards
+      .filter((card) => card.collectionId === collection.id)
+      .map((card) => [card.id, card]),
+  );
+  // A set, so a card named twice in the list is shown once.
+  const listed = [...new Set(collection.cardIds)]
+    .map((cardId) => own.get(cardId))
+    .filter((card) => card !== undefined);
+  const seen = new Set(listed.map((card) => card.id));
+  const unlisted = [...own.values()]
+    .filter((card) => !seen.has(card.id))
+    .sort(
+      (a, b) =>
+        a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id),
+    );
+  return [...listed, ...unlisted];
 }

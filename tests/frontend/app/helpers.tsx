@@ -9,6 +9,7 @@ import { createSession, type SessionState } from "../../../src/app/session";
 import { createRevocationSignal } from "../../../src/devices/revocation";
 import { createEventBus } from "../../../src/domain/events";
 import { browserPersistence } from "../../../src/storage/persistence";
+import type { JournalEntry } from "../../../src/domain/journal/types";
 import { MemoryRecordStore } from "../../../src/storage/record-store";
 import { createGateway } from "../../../src/ai/gateway";
 import { createUpdates } from "../../../src/app/updates";
@@ -16,7 +17,7 @@ import { SyncEngine } from "../../../src/sync/engine";
 import { SyncScheduler } from "../../../src/sync/scheduler";
 import type { SyncSource } from "../../../src/sync/source";
 import { UNAVAILABLE_TRANSPORT } from "../../../src/sync/transport";
-import { seededCards } from "../../../src/testing/seed-cards";
+import { RecordCardsStore } from "../../../src/domain/cards/store";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import { FakeDeviceDirectory } from "../../../src/testing/fake-device-directory";
 import { FakeDevicePairing } from "../../../src/testing/fake-device-pairing";
@@ -66,6 +67,7 @@ export const ACCOUNT = {
  */
 export function testServices(state: SessionState = "signed_out"): TestServices {
   const vault = new FakeKeyVault();
+  const records = new MemoryRecordStore();
   const revocation = createRevocationSignal();
   const devices = new FakeDeviceDirectory();
   devices.password = ACCOUNT.password;
@@ -75,7 +77,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     vault,
     devices,
     revocation,
-    records: new MemoryRecordStore(),
+    records,
     forgetThisDevice: () => {
       vault.forgetThisDevice();
       return Promise.resolve();
@@ -88,7 +90,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     persistence: browserPersistence(undefined),
     updates: createUpdates(),
     ai: createGateway(),
-    cards: seededCards(),
+    cards: new RecordCardsStore(records),
     sync: new SyncScheduler(
       new SyncEngine(NOTHING_TO_SYNC, UNAVAILABLE_TRANSPORT),
     ),
@@ -134,4 +136,36 @@ export async function renderApp(
 /** The screen's single page heading. */
 export function heading(): HTMLElement {
   return screen.getByRole("heading", { level: 1 });
+}
+
+/**
+ * Watch, or stand in for, the store's writes of journal entries. Writes of
+ * any other kind of record go to the real store untouched.
+ *
+ * @param records - The store double.
+ * @param write - Given each entry and the real `put` for it.
+ */
+export function onEntryPut(
+  records: MemoryRecordStore,
+  write: (entry: JournalEntry, put: () => Promise<void>) => Promise<void>,
+): void {
+  const put = records.put.bind(records);
+  records.put = (kind, record) =>
+    kind === "journal-entry"
+      ? write(record as JournalEntry, () => put(kind, record))
+      : put(kind, record);
+}
+
+/**
+ * Make the store's `reload` answer with a journal entry of the test's
+ * choosing.
+ *
+ * @param records - The store double.
+ * @param load - Returns what `reload` should find.
+ */
+export function onEntryReload(
+  records: MemoryRecordStore,
+  load: () => Promise<JournalEntry | undefined>,
+): void {
+  records.reload = (() => load()) as MemoryRecordStore["reload"];
 }

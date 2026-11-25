@@ -1,0 +1,203 @@
+/**
+ * Collections and cards that were changed in two places (PRD SYNC-005,
+ * invariant 5; ADR-0006).
+ *
+ * The rules are the journal's: both versions are kept until the person
+ * chooses, nothing is merged or chosen for them, and a deleted record never
+ * comes back under its ID. The choices are simpler than for an entry,
+ * because a card is short: keep one version or the other.
+ *
+ * Whichever version of a collection is kept, no card is lost: a card that
+ * belongs to a collection is shown even when the collection's list does
+ * not name it (see `orderCards`).
+ */
+import type { CardCollection, ConversationCard } from "../domain/cards/types";
+import type {
+  Keep,
+  RecordConflict,
+  RecordStore,
+} from "../storage/record-store";
+import { ConflictGoneError, type ConflictKind } from "./conflicts";
+
+/** The name of the collection that holds cards kept after their own was deleted. */
+export const KEPT_CARDS_NAME = "Kept cards";
+
+interface Base {
+  /** The record's ID. */
+  readonly id: string;
+  /** The server's revision of the other version, as it was when listed. */
+  readonly revision: number;
+  readonly kind: ConflictKind;
+}
+
+/** A collection with two versions. */
+export interface CollectionConflict extends Base {
+  readonly record: "card-collection";
+  readonly mine?: CardCollection;
+  readonly theirs?: CardCollection;
+}
+
+/** A card with two versions. */
+export interface CardConflict extends Base {
+  readonly record: "conversation-card";
+  readonly mine?: ConversationCard;
+  readonly theirs?: ConversationCard;
+}
+
+/** A collection or a card waiting for the person to choose a version. */
+export type CardsConflict = CollectionConflict | CardConflict;
+
+function kindOf(found: RecordConflict<unknown>): ConflictKind {
+  if (found.mine !== undefined && found.theirs !== undefined) {
+    return "edited";
+  }
+  if (found.theirsDeleted) {
+    return "deleted-elsewhere";
+  }
+  return found.theirs === undefined ? "unreadable" : "deleted-here";
+}
+
+function describe<R extends CardsConflict["record"], T>(
+  record: R,
+  found: RecordConflict<T>,
+): Base & { record: R; mine?: T; theirs?: T } {
+  return {
+    record,
+    id: found.id,
+    revision: found.revision,
+    kind: kindOf(found),
+    ...(found.mine === undefined ? {} : { mine: found.mine }),
+    ...(found.theirs === undefined ? {} : { theirs: found.theirs }),
+  };
+}
+
+/**
+ * The collections and cards waiting for the person to choose a version.
+ *
+ * @param records - The record store.
+ * @returns Collections first, then cards.
+ */
+export async function listCardConflicts(
+  records: RecordStore,
+): Promise<CardsConflict[]> {
+  const [collections, cards] = await Promise.all([
+    records.conflicts("card-collection"),
+    records.conflicts("conversation-card"),
+  ]);
+  return [
+    ...collections.map((found) => describe("card-collection", found)),
+    ...cards.map((found) => describe("conversation-card", found)),
+  ];
+}
+
+/**
+ * Keep one version of a collection or card.
+ *
+ * - Both versions exist: `mine` sends this device's version on top of the
+ *   other; `theirs` replaces this device's with the other.
+ * - Deleted on the other device: only `theirs` (delete it here too) is
+ *   possible. To keep what this device has, use {@link keepAsNew}.
+ * - Deleted here: `mine` deletes it everywhere; `theirs` takes the deletion
+ *   back and keeps the other device's version.
+ *
+ * @param records - The record store.
+ * @param conflict - The conflict as the person was shown it.
+ * @param keep - Which version to keep.
+ * @throws ConflictGoneError if it is not waiting for a choice any more.
+ * @throws ConflictChangedError if the other version has changed since.
+ * @throws RecordDeletedError if keeping this device's version would bring
+ *   back a record deleted elsewhere.
+ */
+export async function chooseVersion(
+  records: RecordStore,
+  conflict: CardsConflict,
+  keep: Keep,
+): Promise<void> {
+  const settled = await records.resolve(
+    conflict.record,
+    conflict.id,
+    keep,
+    conflict.revision,
+  );
+  if (!settled) {
+    throw new ConflictGoneError();
+  }
+}
+
+async function homeFor(
+  records: RecordStore,
+  card: ConversationCard,
+  now: string,
+): Promise<CardCollection> {
+  const all = await records.list("card-collection");
+  const home =
+    all.find((each) => each.id === card.collectionId) ??
+    all.find((each) => each.name === KEPT_CARDS_NAME);
+  if (home !== undefined) {
+    return home;
+  }
+  // Its collection is gone, so the card needs somewhere to be seen.
+  const made: CardCollection = {
+    id: crypto.randomUUID(),
+    name: KEPT_CARDS_NAME,
+    cardIds: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  await records.put("card-collection", made);
+  return made;
+}
+
+/**
+ * A collection or card was deleted on another device after it was changed
+ * here. Keep what this device has, as a new one, and let the old one stay
+ * deleted.
+ *
+ * A kept card goes back into its collection if that is still here, and
+ * otherwise into a collection called "Kept cards". A kept collection keeps
+ * its name and starts with no cards: its cards were deleted with it on the
+ * other device, and any that were changed here are settled one by one.
+ *
+ * The copy is stored first, so if anything fails the words exist twice,
+ * never not at all.
+ *
+ * @param records - The record store.
+ * @param conflict - The conflict as the person was shown it.
+ * @param now - The current time.
+ * @throws ConflictGoneError if it is not waiting for this choice.
+ * @throws ConflictChangedError if the other version has changed since.
+ */
+export async function keepAsNew(
+  records: RecordStore,
+  conflict: CardsConflict,
+  now: Date = new Date(),
+): Promise<void> {
+  if (conflict.kind !== "deleted-elsewhere" || conflict.mine === undefined) {
+    throw new ConflictGoneError();
+  }
+  const at = now.toISOString();
+  const id = crypto.randomUUID();
+  if (conflict.record === "card-collection") {
+    await records.put("card-collection", {
+      ...conflict.mine,
+      id,
+      cardIds: [],
+      updatedAt: at,
+    });
+  } else {
+    const home = await homeFor(records, conflict.mine, at);
+    await records.put("conversation-card", {
+      ...conflict.mine,
+      id,
+      collectionId: home.id,
+      updatedAt: at,
+    });
+  }
+  try {
+    await chooseVersion(records, conflict, "theirs");
+  } catch (error) {
+    // The old one was not settled, so the copy would be a second one.
+    await records.delete(conflict.record, id);
+    throw error;
+  }
+}

@@ -13,7 +13,13 @@ import {
   inTimelineOrder,
 } from "../../../src/ui/screens/journal/shared";
 
-import { heading, renderApp, testServices, type TestServices } from "./helpers";
+import {
+  heading,
+  onEntryReload,
+  renderApp,
+  testServices,
+  type TestServices,
+} from "./helpers";
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -243,10 +249,10 @@ describe("an entry changed in another tab (invariant 5)", () => {
     });
     const put = services.records.put.bind(services.records);
     services.records.put = () => Promise.reject(new StaleRecordError());
-    services.records.reload = async () => {
+    onEntryReload(services.records, async () => {
       await put("journal-entry", newer);
       return newer;
-    };
+    });
 
     await userEvent.type(box(0), " mine");
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));

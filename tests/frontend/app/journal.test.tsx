@@ -24,7 +24,14 @@ import {
   inTimelineOrder,
 } from "../../../src/ui/screens/journal/shared";
 
-import { heading, renderApp, testServices, type TestServices } from "./helpers";
+import {
+  heading,
+  onEntryPut,
+  onEntryReload,
+  renderApp,
+  testServices,
+  type TestServices,
+} from "./helpers";
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -657,11 +664,10 @@ describe("drafts (JR-004)", () => {
   it("flushes the draft before the session drops its keys (AC-21, DEV-005)", async () => {
     const services = await openCompose();
     const order: string[] = [];
-    const put = services.records.put.bind(services.records);
-    services.records.put = (kind, record) => {
-      order.push(`put ${record.status}: ${record.responses.good}`);
-      return put(kind, record);
-    };
+    onEntryPut(services.records, (entry, put) => {
+      order.push(`put ${entry.status}: ${entry.responses.good}`);
+      return put();
+    });
     const lock = services.vault.lock.bind(services.vault);
     services.vault.lock = () => {
       order.push("keys dropped");
@@ -879,10 +885,10 @@ describe("drafts (JR-004)", () => {
     };
     const put = services.records.put.bind(services.records);
     services.records.put = () => Promise.reject(new StaleRecordError());
-    services.records.reload = async () => {
+    onEntryReload(services.records, async () => {
       await put("journal-entry", newer);
       return newer;
-    };
+    });
 
     await userEvent.type(first(), " mine");
     hidePage();
@@ -923,8 +929,9 @@ describe("drafts (JR-004)", () => {
     });
     const services = await openCompose(unlockedWith(mine));
     services.records.put = () => Promise.reject(new StaleRecordError());
-    services.records.reload = () =>
-      Promise.resolve({ ...mine, status: "complete" as const });
+    onEntryReload(services.records, () =>
+      Promise.resolve({ ...mine, status: "complete" as const }),
+    );
 
     await userEvent.type(first(), " mine");
     hidePage();
@@ -978,11 +985,10 @@ describe("drafts (JR-004)", () => {
       expect(await drafts(services)).toHaveLength(1);
     });
     const puts: string[] = [];
-    const put = services.records.put.bind(services.records);
-    services.records.put = (kind, record) => {
-      puts.push(record.status);
-      return put(kind, record);
-    };
+    onEntryPut(services.records, (entry, put) => {
+      puts.push(entry.status);
+      return put();
+    });
     // Hold the hashing of the finished entry until the app has locked.
     let release: () => void = () => undefined;
     const digest = crypto.subtle.digest.bind(crypto.subtle);
@@ -1057,11 +1063,11 @@ describe("drafts (JR-004)", () => {
     for (const prompt of PROMPTS) {
       await userEvent.type(screen.getByLabelText(prompt.label), "Answer");
     }
-    const put = services.records.put.bind(services.records);
-    services.records.put = (kind, record) =>
-      record.status === "complete"
+    onEntryPut(services.records, (entry, put) =>
+      entry.status === "complete"
         ? Promise.reject(new Error("synthetic"))
-        : put(kind, record);
+        : put(),
+    );
 
     await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
     expect((await screen.findByRole("alert")).textContent).toContain(
@@ -1081,11 +1087,10 @@ describe("drafts (JR-004)", () => {
   it("flushes the draft before a removed device drops its keys, and stores nothing after (DEV-003)", async () => {
     const services = await openCompose();
     const order: string[] = [];
-    const put = services.records.put.bind(services.records);
-    services.records.put = (kind, record) => {
-      order.push(`put ${record.status}: ${record.responses.good}`);
-      return put(kind, record);
-    };
+    onEntryPut(services.records, (entry, put) => {
+      order.push(`put ${entry.status}: ${entry.responses.good}`);
+      return put();
+    });
     const lock = services.vault.lock.bind(services.vault);
     services.vault.lock = () => {
       order.push("keys dropped");
