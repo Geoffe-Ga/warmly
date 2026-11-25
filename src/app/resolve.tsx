@@ -24,6 +24,7 @@ import { ApproveDevice } from "../ui/screens/devices/ApproveDevice";
 import { DeviceRevoked } from "../ui/screens/devices/DeviceRevoked";
 import { ManageDevices } from "../ui/screens/devices/ManageDevices";
 import { Compose } from "../ui/screens/journal/Compose";
+import { EditEntry } from "../ui/screens/journal/EditEntry";
 import { Entry } from "../ui/screens/journal/Entry";
 import { Timeline } from "../ui/screens/journal/Timeline";
 import { redirectFor } from "./access";
@@ -54,6 +55,7 @@ const SCREENS: Readonly<
   journal: Timeline,
   "journal-new": Compose,
   "journal-entry": Entry,
+  "journal-edit": EditEntry,
   settings: Settings,
   devices: ManageDevices,
   "approve-device": ApproveDevice,

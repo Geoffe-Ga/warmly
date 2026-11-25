@@ -23,7 +23,14 @@ import {
   type StoredRecord,
 } from "./db";
 import { queueOperation } from "./outbox";
-import type { RecordKind, RecordKinds, RecordStore } from "./record-store";
+import {
+  StaleRecordError,
+  type RecordKind,
+  type RecordKinds,
+  type RecordStore,
+} from "./record-store";
+
+export { StaleRecordError } from "./record-store";
 
 /** How one kind of record is stored. */
 interface KindFormat<K extends RecordKind> {
@@ -61,19 +68,6 @@ export class RecordDeletedError extends Error {
   constructor() {
     super("A deleted record cannot be written again");
     this.name = "RecordDeletedError";
-  }
-}
-
-/**
- * This device's copy of a record was out of date: the stored record has
- * changed since it was read, for example in another tab, or cannot be read
- * by this version of the app. Nothing was written, so the newer or
- * unreadable record is never silently replaced (no last-write-wins).
- */
-export class StaleRecordError extends Error {
-  constructor() {
-    super("The record has changed since it was read");
-    this.name = "StaleRecordError";
   }
 }
 
@@ -367,6 +361,48 @@ export class EncryptedRecordStore implements RecordStore {
     return [...held].map((each) => each.record);
   }
 
+  async reload<K extends RecordKind>(
+    kind: K,
+    id: string,
+  ): Promise<RecordKinds[K] | undefined> {
+    const session = this.#session;
+    const opened = await this.#read();
+    if (session === undefined || opened === undefined) {
+      return undefined;
+    }
+    const row = await transact<StoredRecord | undefined>(
+      opened.database,
+      [RECORDS],
+      "readonly",
+      (transaction, result) => {
+        const reading = transaction
+          .objectStore(RECORDS)
+          .get([FORMATS[kind].type, id]);
+        reading.onsuccess = () => {
+          result(reading.result as StoredRecord | undefined);
+        };
+      },
+    );
+    const record =
+      row === undefined || row.tombstone
+        ? undefined
+        : await decrypt(kind, row, session.root, session.owner);
+    if (this.#session !== session) {
+      return undefined;
+    }
+    opened.records[kind].delete(id);
+    opened.unreadable[kind].delete(id);
+    if (row !== undefined && !row.tombstone) {
+      if (record === undefined) {
+        opened.unreadable[kind].add(id);
+      } else {
+        opened.records[kind].set(id, { record, revision: row.localRevision });
+      }
+    }
+    this.#changed();
+    return record;
+  }
+
   async unreadable(kind: RecordKind): Promise<number> {
     return (await this.#read())?.unreadable[kind].size ?? 0;
   }
@@ -422,6 +458,8 @@ export class EncryptedRecordStore implements RecordStore {
         ),
       }),
       (opened, revision) => {
+        // A row that could not be read is never written over, so there is
+        // nothing to remove from `unreadable` here.
         opened.records[kind].set(record.id, { record, revision });
       },
     );

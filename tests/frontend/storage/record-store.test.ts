@@ -71,6 +71,15 @@ describe("the in-memory record store (SYNC-001)", () => {
     expect(await store.list("journal-entry")).toEqual([]);
   });
 
+  it("reads a record again as it is in memory", async () => {
+    const store: RecordStore = new MemoryRecordStore();
+    const entry = await newEntry(ANSWERS);
+    await store.put("journal-entry", entry);
+
+    expect(await store.reload("journal-entry", entry.id)).toEqual(entry);
+    expect(await store.reload("journal-entry", "never-there")).toBeUndefined();
+  });
+
   it("has no record it cannot read", async () => {
     const store: RecordStore = new MemoryRecordStore();
 

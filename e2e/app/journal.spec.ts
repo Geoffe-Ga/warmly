@@ -226,6 +226,76 @@ test.describe("the journal", () => {
     await expectNoViolations(page);
   });
 
+  test("offline: an entry is edited in place, the edit survives a reload, and its date does not change (AC-06, JR-006)", async ({
+    page,
+    context,
+  }) => {
+    await onboard(page);
+    await page.evaluate(async () => {
+      await navigator.serviceWorker.ready;
+    });
+    await page.getByRole("link", { name: "Journal", exact: true }).click();
+    await page.getByRole("link", { name: "Write a new entry" }).click();
+    for (const prompt of PROMPTS) {
+      await page.getByLabel(prompt).fill("Synthetic first wording");
+    }
+    await page.getByRole("button", { name: "Save entry" }).click();
+    await expect(page).toHaveURL(/\/journal\/entries\/[0-9a-f-]{36}$/);
+    // Wait for the entry itself: until it has loaded the heading is the
+    // screen's name, not the entry's date.
+    await expect(page.getByText("A journal entry.")).toBeVisible();
+    const created = await page.getByRole("heading", { level: 1 }).innerText();
+    expect(created).toMatch(/\d{4}/);
+    const entryUrl = page.url();
+
+    await context.setOffline(true);
+    await page.getByRole("link", { name: "Edit this entry" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Edit journal entry",
+    );
+    await expect(page.getByText(`Your entry from ${created}.`)).toBeVisible();
+    await expect(page.getByLabel(PROMPTS[0] ?? "")).toHaveValue(
+      "Synthetic first wording",
+    );
+    await expectNoViolations(page);
+
+    // The same rule as for a new entry: an empty answer is not saved.
+    await page.getByLabel(PROMPTS[1] ?? "").fill("  ");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByLabel(PROMPTS[1] ?? "")).toHaveAttribute(
+      "aria-invalid",
+      "true",
+    );
+    await expect(page).toHaveURL(/\/edit$/);
+    await expectNoViolations(page);
+
+    await page.getByLabel(PROMPTS[0] ?? "").fill("Synthetic rewritten wording");
+    await page.getByLabel(PROMPTS[1] ?? "").fill("Synthetic second answer");
+    await page.getByRole("checkbox", { name: "grateful" }).check();
+    await page.getByRole("button", { name: "Save changes" }).click();
+
+    await expect(page).toHaveURL(entryUrl);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(created);
+    await expect(page.getByText("Synthetic rewritten wording")).toBeVisible();
+    // Only the third answer still has the first wording.
+    await expect(page.getByText("Synthetic first wording")).toHaveCount(1);
+
+    // Still offline: reload, unlock, and the edit is there under one entry.
+    await page.reload();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Warmly is locked",
+    );
+    await unlockThisDevice(page);
+    await page.getByRole("link", { name: "Journal", exact: true }).click();
+    await expect(entries(page)).toHaveCount(1);
+    await expect(entries(page).first()).toHaveText(created);
+    await entries(page).first().click();
+    await expect(page.getByText("Synthetic rewritten wording")).toBeVisible();
+    await expect(page.getByText("Synthetic second answer")).toBeVisible();
+    await expect(page.getByText("grateful")).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(created);
+  });
+
   test("an entry that is not on this device says so", async ({ page }) => {
     await onboard(page);
     await page.evaluate(() => {

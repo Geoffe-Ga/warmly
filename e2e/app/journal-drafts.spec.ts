@@ -122,6 +122,9 @@ test.describe("journal drafts", () => {
     await expect(page.getByRole("status")).toHaveText("Saved on this device");
     await page.getByRole("button", { name: "Save entry" }).click();
     await expect(page).toHaveURL(/\/journal\/entries\/[0-9a-f-]{36}$/);
+    // Wait for the entry to load: its links move when it does, and a click
+    // made too early can land on the wrong one.
+    await expect(page.getByText("A journal entry.")).toBeVisible();
     await page.getByRole("link", { name: "Back to your journal" }).click();
 
     await expect(

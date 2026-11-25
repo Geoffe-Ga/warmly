@@ -114,9 +114,10 @@ and the outbox is intact. A test fails if a version has no dump.
   the account sizes in PRD §10 are claimed.
 - **Two tabs of the same account do not see each other's changes live.**
   Each has its own in-memory copy until it is unlocked again. Nothing is
-  lost: a write from the out-of-date tab is refused, and the compose screen
-  tells the person to carry on in the other tab. Telling tabs about each
-  other's changes as they happen is left for later.
+  lost: a write from the out-of-date tab is refused, and the screen offers
+  to load the latest version (`RecordStore.reload` re-reads one record),
+  which replaces what was typed there. Telling tabs about each other's
+  changes as they happen is left for later.
 - The database name contains the account ID. Anyone who can read the
   browser profile can see which accounts have been used in it. It is not
   content, and the same ID is already in the stored auth session.
