@@ -13,6 +13,7 @@ else was considered, and why. Write one before the code that depends on it.
 | [0004](0004-trusted-device-unlock.md) | Trusted-device unlock and the inactivity lock | Accepted |
 | [0005](0005-device-identity-and-pairing.md) | Device identity, request signing and pairing | Accepted (pairing pending #22) |
 | [0013](0013-api-contract-from-code.md) | API contract generated from code, with an isolated type generator | Accepted |
+| [0014](0014-local-encrypted-store.md) | The local encrypted record store: a row per record, an outbox in the same transaction, forward-only migrations | Accepted |
 
 ## How to add one
 

@@ -62,7 +62,7 @@ export class AccountVault implements KeyVault, RootKeyAccess {
   readonly #auth: AuthClient;
   readonly #envelopes: RecoveryEnvelopeStore;
   readonly #device: DeviceKeyStore | undefined;
-  readonly #afterUnlock: ((root: RootKey) => void) | undefined;
+  readonly #afterUnlock: ((root: RootKey, userId: string) => void) | undefined;
   #root: RootKey | undefined;
   #pending: Pending | undefined;
   /**
@@ -85,7 +85,7 @@ export class AccountVault implements KeyVault, RootKeyAccess {
     auth: AuthClient,
     envelopes: RecoveryEnvelopeStore,
     device?: DeviceKeyStore,
-    afterUnlock?: (root: RootKey) => void,
+    afterUnlock?: (root: RootKey, userId: string) => void,
   ) {
     this.#auth = auth;
     this.#envelopes = envelopes;
@@ -137,7 +137,7 @@ export class AccountVault implements KeyVault, RootKeyAccess {
     if (offerTrust && this.#device !== undefined) {
       this.#toTrust = { userId, rootKeyBytes: rootKeyBytes.slice() };
     }
-    this.#afterUnlock?.(root);
+    this.#afterUnlock?.(root, userId);
   }
 
   /** Open the stored envelope with a typed recovery key. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  isJournalEntry,
   PROMPTS,
   contentHash,
   entryDateFor,
@@ -116,5 +117,67 @@ describe("the content hash", () => {
     expect(await contentHash({ good: "a", improve: "", loved: "" })).not.toBe(
       await contentHash({ good: "", improve: "a", loved: "" }),
     );
+  });
+});
+
+describe("checking the shape of a stored entry", () => {
+  const valid = {
+    id: "11111111-1111-4111-8111-111111111111",
+    createdAt: "2026-11-03T09:00:00.000Z",
+    updatedAt: "2026-11-03T09:00:00.000Z",
+    entryDate: { date: "2026-11-03", timeZone: "UTC" },
+    status: "complete",
+    responses: { good: "a", improve: "", loved: "c" },
+    contentHash: "0".repeat(64),
+  };
+
+  it("accepts an entry, with or without feelings, complete or draft", () => {
+    expect(isJournalEntry(valid)).toBe(true);
+    expect(isJournalEntry({ ...valid, feelings: [] })).toBe(true);
+    expect(isJournalEntry({ ...valid, feelings: ["calm"] })).toBe(true);
+    expect(isJournalEntry({ ...valid, status: "draft" })).toBe(true);
+  });
+
+  it("accepts what newEntry makes", async () => {
+    expect(
+      isJournalEntry(await newEntry({ good: "a", improve: "b", loved: "c" })),
+    ).toBe(true);
+  });
+
+  it.each([
+    ["nothing", null],
+    ["text", "entry"],
+    ["a list", []],
+    ["a number for the ID", { ...valid, id: 7 }],
+    ["no creation time", { ...valid, createdAt: undefined }],
+    ["no update time", { ...valid, updatedAt: null }],
+    ["no content hash", { ...valid, contentHash: 1 }],
+    ["an unknown status", { ...valid, status: "archived" }],
+    ["no entry date", { ...valid, entryDate: null }],
+    ["text for the entry date", { ...valid, entryDate: "2026-11-03" }],
+    ["a date with no day", { ...valid, entryDate: { timeZone: "UTC" } }],
+    [
+      "a date that is not a calendar day",
+      { ...valid, entryDate: { date: "3 Nov", timeZone: "UTC" } },
+    ],
+    [
+      "a date that only starts like a day",
+      { ...valid, entryDate: { date: "2026-11-03T00:00", timeZone: "UTC" } },
+    ],
+    ["no time zone", { ...valid, entryDate: { date: "2026-11-03" } }],
+    [
+      "a number for the time zone",
+      { ...valid, entryDate: { date: "2026-11-03", timeZone: 0 } },
+    ],
+    ["no answers", { ...valid, responses: null }],
+    ["a missing answer", { ...valid, responses: { good: "a", improve: "" } }],
+    [
+      "an answer that is not text",
+      { ...valid, responses: { good: "a", improve: 2, loved: "c" } },
+    ],
+    ["feelings that are not a list", { ...valid, feelings: "calm" }],
+    ["a feeling that is not text", { ...valid, feelings: ["calm", 3] }],
+  ])("refuses %s", (_name, value) => {
+    expect(isJournalEntry(value)).toBe(false);
   });
 });

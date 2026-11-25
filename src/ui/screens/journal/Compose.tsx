@@ -12,9 +12,8 @@ import {
 import { Button } from "../../components/Button";
 import { TextArea } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
-import { StatusBanner } from "../../components/StatusBanner";
 import { AccountForm, useAction } from "../account/shared";
-import { NOT_SAVED_YET, saveNewEntry } from "./shared";
+import { saveNewEntry } from "./shared";
 
 const EMPTY: Responses = { good: "", improve: "", loved: "" };
 
@@ -40,9 +39,6 @@ export function Compose(): JSX.Element {
       title="New journal entry"
       lead="Three questions. Answer in your own words; there are no wrong answers."
     >
-      <StatusBanner tone="warning" label="Not saved yet">
-        {NOT_SAVED_YET}
-      </StatusBanner>
       <AccountForm
         action={action}
         validate={() => true}

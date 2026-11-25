@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { newEntry } from "../../../src/domain/journal/types";
-import { MemoryRecordStore } from "../../../src/storage/record-store";
-import { seedJournal } from "../../../src/testing/seed-journal";
-
-const SEED_JOURNAL = seedJournal();
+import {
+  MemoryRecordStore,
+  type RecordStore,
+} from "../../../src/storage/record-store";
 
 const ANSWERS = { good: "a", improve: "b", loved: "c" };
 
@@ -71,30 +71,9 @@ describe("the in-memory record store (SYNC-001)", () => {
     expect(await store.list("journal-entry")).toEqual([]);
   });
 
-  it("returns to its synthetic examples, and only those, when it locks", async () => {
-    const store = new MemoryRecordStore(SEED_JOURNAL);
-    const written = await newEntry(ANSWERS);
-    await store.put("journal-entry", written);
-    await store.delete("journal-entry", SEED_JOURNAL[0]?.id ?? "");
+  it("has no record it cannot read", async () => {
+    const store: RecordStore = new MemoryRecordStore();
 
-    store.lock();
-
-    expect(await store.list("journal-entry")).toEqual([...SEED_JOURNAL]);
-    expect(await store.get("journal-entry", written.id)).toBeUndefined();
-  });
-});
-
-describe("the example entries", () => {
-  it("say in every answer that they are examples", () => {
-    expect(SEED_JOURNAL.length).toBeGreaterThan(0);
-    for (const entry of SEED_JOURNAL) {
-      for (const answer of Object.values(entry.responses)) {
-        expect(answer).toMatch(/^Example entry: /);
-      }
-      expect(entry.status).toBe("complete");
-    }
-    expect(new Set(SEED_JOURNAL.map((entry) => entry.id)).size).toBe(
-      SEED_JOURNAL.length,
-    );
+    expect(await store.unreadable("journal-entry")).toBe(0);
   });
 });

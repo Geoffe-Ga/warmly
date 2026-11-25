@@ -7,7 +7,7 @@ import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { NOT_SAVED_YET, formatEntryDate, useJournalEntries } from "./shared";
+import { CANNOT_OPEN, formatEntryDate, useJournalEntries } from "./shared";
 
 /**
  * Whether an entry mentions the text, ignoring case. A plain stand-in until
@@ -43,18 +43,17 @@ function EntryLink(props: { readonly entry: JournalEntry }): JSX.Element {
  * @returns The journal timeline screen.
  */
 export function Timeline(): JSX.Element {
-  const entries = useJournalEntries();
+  const journal = useJournalEntries();
   const [query, setQuery] = useState("");
+  const entries = journal.state === "ready" ? journal.entries : undefined;
   const shown = entries?.filter((entry) => mentions(entry, query));
+  const unreadable = journal.state === "ready" ? journal.unreadable : 0;
 
   return (
     <PageLayout title="Journal" lead="Your entries, newest first.">
       <p>
         <Link href={pathFor("journal-new")}>Write a new entry</Link>
       </p>
-      <StatusBanner tone="warning" label="Not saved yet">
-        {NOT_SAVED_YET}
-      </StatusBanner>
       <TextField
         label="Search your journal"
         name="journal-search"
@@ -63,9 +62,21 @@ export function Timeline(): JSX.Element {
         value={query}
         onInput={setQuery}
       />
-      {shown === undefined && (
+      {journal.state === "loading" && (
         <StatusBanner tone="info" label="Loading">
           Getting your entries.
+        </StatusBanner>
+      )}
+      {journal.state === "failed" && (
+        <StatusBanner tone="error" label="Couldn't open your journal">
+          {CANNOT_OPEN}
+        </StatusBanner>
+      )}
+      {unreadable > 0 && (
+        <StatusBanner tone="warning" label="Some entries can't be shown">
+          {unreadable === 1
+            ? "1 entry saved on this device can't be read by this version of Warmly. It has been left as it is."
+            : `${String(unreadable)} entries saved on this device can't be read by this version of Warmly. They have been left as they are.`}
         </StatusBanner>
       )}
       {shown !== undefined && shown.length === 0 && (

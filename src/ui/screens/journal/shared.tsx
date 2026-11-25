@@ -12,19 +12,19 @@ import {
   type Responses,
 } from "../../../domain/journal/types";
 
-/** Shown on every journal screen until entries are stored for good. */
-export const NOT_SAVED_YET =
-  "Entries are kept only until Warmly locks or this page reloads. Saving them for good is not built yet.";
+/** Said when this device's saved records cannot be opened at all. */
+export const CANNOT_OPEN =
+  "Warmly couldn't open what is saved on this device. Nothing has been changed or deleted. Close other Warmly tabs and reload this page; if a newer version of Warmly has been used here, update to it.";
 
 /**
  * Store a new entry built from what was typed, unless the app has locked in
  * the meantime.
  *
  * Building an entry takes a moment, because its content is hashed. If the
- * app locks during that moment the store has already been emptied, and
- * writing the entry afterwards would leave private text in memory without
- * the keys. So the session is checked again just before the write, and the
- * entry is dropped if it is no longer unlocked.
+ * app locks during that moment the keys have already gone, so the
+ * session is checked again just before the write and the entry is dropped
+ * if it is no longer unlocked. The store itself also refuses to write
+ * while locked.
  *
  * @param services - The app's services.
  * @param responses - The three answers, as typed.
@@ -74,25 +74,49 @@ export function inTimelineOrder(
   );
 }
 
+/** What the journal screens know about the stored entries. */
+export type Journal =
+  | { readonly state: "loading" }
+  | { readonly state: "failed" }
+  | {
+      readonly state: "ready";
+      /** The entries, in timeline order. */
+      readonly entries: readonly JournalEntry[];
+      /** How many stored entries this version of the app cannot read. */
+      readonly unreadable: number;
+    };
+
 /**
  * Read every journal entry, and read them again whenever the store changes.
  *
- * @returns The entries in timeline order, or `undefined` while loading.
+ * @returns The entries, or that they are loading or could not be opened.
  */
-export function useJournalEntries(): readonly JournalEntry[] | undefined {
+export function useJournalEntries(): Journal {
   const { records } = useServices();
-  const [entries, setEntries] = useState<readonly JournalEntry[] | undefined>(
-    undefined,
-  );
+  const [journal, setJournal] = useState<Journal>({ state: "loading" });
 
   useEffect(() => {
     let current = true;
     const load = (): void => {
-      void records.list("journal-entry").then((found) => {
-        if (current) {
-          setEntries(inTimelineOrder(found));
-        }
-      });
+      void Promise.all([
+        records.list("journal-entry"),
+        records.unreadable("journal-entry"),
+      ]).then(
+        ([found, unreadable]) => {
+          if (current) {
+            setJournal({
+              state: "ready",
+              entries: inTimelineOrder(found),
+              unreadable,
+            });
+          }
+        },
+        () => {
+          if (current) {
+            setJournal({ state: "failed" });
+          }
+        },
+      );
     };
     load();
     const unsubscribe = records.subscribe(load);
@@ -102,5 +126,5 @@ export function useJournalEntries(): readonly JournalEntry[] | undefined {
     };
   }, [records]);
 
-  return entries;
+  return journal;
 }

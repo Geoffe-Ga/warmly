@@ -57,6 +57,60 @@ export interface JournalEntry {
   readonly contentHash: string;
 }
 
+function isText(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isResponses(value: unknown): value is Responses {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    PROMPTS.every(
+      (prompt) =>
+        prompt.key in value &&
+        isText((value as Record<string, unknown>)[prompt.key]),
+    )
+  );
+}
+
+function isEntryDate(value: unknown): value is EntryDate {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "date" in value &&
+    isText(value.date) &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value.date) &&
+    "timeZone" in value &&
+    isText(value.timeZone)
+  );
+}
+
+/**
+ * Check that a value read back from storage has the shape of an entry.
+ * Decrypting proves a record is ours and unaltered, not that the code that
+ * wrote it agreed with this code about its shape.
+ *
+ * @param value - What was decrypted.
+ * @returns Whether it is a journal entry.
+ */
+export function isJournalEntry(value: unknown): value is JournalEntry {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const entry = value as Record<string, unknown>;
+  return (
+    isText(entry["id"]) &&
+    isText(entry["createdAt"]) &&
+    isText(entry["updatedAt"]) &&
+    isText(entry["contentHash"]) &&
+    (entry["status"] === "draft" || entry["status"] === "complete") &&
+    isEntryDate(entry["entryDate"]) &&
+    isResponses(entry["responses"]) &&
+    (entry["feelings"] === undefined ||
+      (Array.isArray(entry["feelings"]) && entry["feelings"].every(isText)))
+  );
+}
+
 /**
  * Hash what an entry says, so that later a quotation can be checked against
  * the exact text it came from.

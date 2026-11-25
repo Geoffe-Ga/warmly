@@ -8,13 +8,29 @@ import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
 import { Card } from "../../components/Card";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { formatEntryDate } from "./shared";
+import { CANNOT_OPEN, formatEntryDate } from "./shared";
 
 /** What the screen has found out about the entry. */
 type Found =
   | { readonly kind: "loading" }
   | { readonly kind: "missing" }
+  | { readonly kind: "failed" }
   | { readonly kind: "entry"; readonly entry: JournalEntry };
+
+/** What is said when there is no entry to show. */
+const NOTICES = {
+  loading: { tone: "info", label: "Loading", text: "Getting your entry." },
+  missing: {
+    tone: "info",
+    label: "Not here",
+    text: "This entry isn't on this device. It may have been deleted, or this version of Warmly may not be able to read it.",
+  },
+  failed: {
+    tone: "error",
+    label: "Couldn't open your journal",
+    text: CANNOT_OPEN,
+  },
+} as const;
 
 function Answer(props: { readonly text: string }): JSX.Element {
   if (props.text.trim() === "") {
@@ -50,15 +66,22 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
         id === undefined
           ? Promise.resolve(undefined)
           : records.get("journal-entry", id)
-      ).then((entry) => {
-        if (current) {
-          setFound(
-            entry === undefined
-              ? { kind: "missing" }
-              : { kind: "entry", entry },
-          );
-        }
-      });
+      ).then(
+        (entry) => {
+          if (current) {
+            setFound(
+              entry === undefined
+                ? { kind: "missing" }
+                : { kind: "entry", entry },
+            );
+          }
+        },
+        () => {
+          if (current) {
+            setFound({ kind: "failed" });
+          }
+        },
+      );
     };
     load();
     const unsubscribe = records.subscribe(load);
@@ -75,15 +98,11 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
   );
 
   if (found.kind !== "entry") {
+    const notice = NOTICES[found.kind];
     return (
       <PageLayout title="Journal entry">
-        <StatusBanner
-          tone="info"
-          label={found.kind === "loading" ? "Loading" : "Not here"}
-        >
-          {found.kind === "loading"
-            ? "Getting your entry."
-            : "This entry isn't on this device. It may have been deleted, or Warmly was locked since it was written."}
+        <StatusBanner tone={notice.tone} label={notice.label}>
+          {notice.text}
         </StatusBanner>
         {back}
       </PageLayout>

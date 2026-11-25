@@ -1,10 +1,9 @@
 /**
  * Where the app keeps its private records (PRD SYNC-001, §7).
  *
- * Screens depend on the {@link RecordStore} interface only. For now the one
- * implementation keeps records in memory, so nothing survives a reload or a
- * lock. The encrypted store that replaces it writes ciphertext to IndexedDB
- * behind the same interface.
+ * Screens depend on the {@link RecordStore} interface only. The app uses
+ * the encrypted store (`encrypted-record-store.ts`), which writes ciphertext
+ * to IndexedDB. The in-memory store here is for tests of screens.
  */
 import type { JournalEntry } from "../domain/journal/types";
 
@@ -30,6 +29,11 @@ export interface RecordStore {
   /** Remove a record. Removing one that is not there does nothing. */
   delete(kind: RecordKind, id: string): Promise<void>;
   /**
+   * @returns How many records of the kind are stored on this device but
+   *   cannot be read by this version of the app. They are left untouched.
+   */
+  unreadable(kind: RecordKind): Promise<number>;
+  /**
    * Be told after any record changes.
    *
    * @param listener - Called after each change.
@@ -45,26 +49,11 @@ export interface RecordStore {
 
 /** A {@link RecordStore} that keeps records in memory only. */
 export class MemoryRecordStore implements RecordStore {
-  readonly #seed: readonly JournalEntry[];
   // One map per kind, each typed to that kind's records.
-  #records: { [K in RecordKind]: Map<string, RecordKinds[K]> };
+  #records: { [K in RecordKind]: Map<string, RecordKinds[K]> } = {
+    "journal-entry": new Map(),
+  };
   readonly #listeners = new Set<() => void>();
-
-  /**
-   * @param seed - Entries the store starts with, and returns to when it is
-   *   locked. Only ever synthetic examples: nothing a person wrote.
-   */
-  constructor(seed: readonly JournalEntry[] = []) {
-    this.#seed = seed;
-    this.#records = this.#fresh();
-  }
-
-  /** The store's starting contents: the seed and nothing else. */
-  #fresh(): { [K in RecordKind]: Map<string, RecordKinds[K]> } {
-    return {
-      "journal-entry": new Map(this.#seed.map((entry) => [entry.id, entry])),
-    };
-  }
 
   #kind<K extends RecordKind>(kind: K): Map<string, RecordKinds[K]> {
     return this.#records[kind];
@@ -100,6 +89,10 @@ export class MemoryRecordStore implements RecordStore {
     return Promise.resolve();
   }
 
+  unreadable(): Promise<number> {
+    return Promise.resolve(0);
+  }
+
   subscribe(listener: () => void): () => void {
     this.#listeners.add(listener);
     return () => {
@@ -108,9 +101,7 @@ export class MemoryRecordStore implements RecordStore {
   }
 
   lock(): void {
-    // Everything written since the start is dropped. Only the synthetic
-    // examples, which were never private, come back.
-    this.#records = this.#fresh();
+    this.#records = { "journal-entry": new Map() };
     this.#changed();
   }
 }
