@@ -121,30 +121,67 @@ included.
 One cycle is a push and then a pull:
 
 1. **Push.** Read the outbox. For each record with unsent changes send one
-   operation with the record's current envelope (or a tombstone) and the
-   `op_id` of its newest queued change. Older queued changes to the same
+   operation with the record's current envelope (or a tombstone) under the
+   `op_id` of its **oldest** queued change. Newer queued changes to the same
    record are covered by that one.
-2. **Handle results.** `applied` or `duplicate`: record the new revision as
-   the record's base and clear what was sent from the outbox; if the record
-   changed again meanwhile it stays queued on the new base. `deleted` for a
-   tombstone the device sent: the same. Anything else: the record needs the
-   person's attention, and nothing local is changed.
-3. **Pull.** Ask for changes after the cursor until `has_more` is false.
-   A change to a record with no unsent local changes replaces the local
-   record. A change to a record that has unsent local changes is not
-   applied: both versions are kept for the person to resolve (#36).
+2. **Handle results.**
+   - `applied`: the server holds the record as sent. Record the new
+     revision as the record's base and clear its queue; if the record
+     changed again meanwhile it stays queued on the new base.
+   - `duplicate`: an earlier attempt under that ID got through and its
+     answer was lost. The server holds the record as it was then. Record
+     the revision as the base and clear only that oldest change. If newer
+     changes are queued, send again in the same cycle, now on top of it.
+     Without this, an edit made after a lost answer would clash with the
+     device's own earlier change.
+   - `deleted` for a tombstone the device sent: the same as `applied`.
+   - Anything else: the record needs the person's attention, and nothing
+     local is changed.
+3. **Pull.** Ask for changes after the saved cursor until `has_more` is
+   false. Each page is stored in **one** local transaction together with
+   the new cursor, so a crash leaves the device with the whole page and
+   the new cursor, or neither. A change to a record with no unsent local
+   changes replaces the local record. A change to a record that has unsent
+   local changes is not applied: the server's version is kept beside it,
+   still encrypted, in the `parked` store until the person chooses (#36).
+   The cursor still moves on, so other records keep syncing.
+4. **An unknown cursor.** On `sync.cursor_unknown` the device forgets its
+   cursor and reads the feed again from 0, once per cycle.
 
-A cycle runs when the app is unlocked, when the network returns, and when
-the person asks. Repeating a cycle is always safe.
+#### When a cycle runs
+
+`SyncScheduler` (`src/sync/scheduler.ts`) runs a cycle when the app
+unlocks, when the network returns, when the page is shown again, about two
+seconds after a local change, every two minutes while the page is visible,
+and when the person asks. Repeating a cycle is always safe.
+
+- **Backoff.** After a cycle that could not reach the server, or found it
+  failing (a 5xx or 429), the next try waits about 2 s, then 4 s, 8 s and
+  so on up to 5 minutes, each wait chosen at random from the upper half of
+  that. A retry sends the same operations under the same IDs.
+- **Not retried on a timer:** a request the server refused (other 4xx), an
+  ended session, a revoked device or a wrong clock. Those need something to
+  change first; the next unlock, local change or tap tries again.
+- **One tab at a time.** Tabs share one local database. A cycle runs under
+  a Web Lock named for that database and taken without waiting; a tab that
+  does not get it tries again shortly. Where the browser has no Web Locks
+  the cycle runs anyway: sending an operation twice is safe.
+- **No clocks.** Nothing in the engine reads the time to order changes.
+  Timers decide only when to try.
 
 The status shown is one of: "All changes saved", "N changes waiting to
-sync", "Offline: your writing is saved on this device." and "Needs your
-attention". It is a count and a state, never anything private (SYNC-010).
+sync", "Couldn't sync. Your writing is saved on this device.", and "Needs
+your attention"; while offline the app's offline notice says so. It is a
+count and a state, never anything private (SYNC-010). "Needs your
+attention" is worked out from the `parked` store, so it is still shown
+after a restart.
 
 ### What is deliberately left to later issues
 
-- A persisted cursor, retry with backoff, and partial-failure handling (#35).
-- Keeping and resolving both versions of a conflict (#36).
+- Showing and resolving the two versions of a conflict (#36). Both are
+  already kept.
+- Browser tests of two devices against the real API and database: they
+  need a deployed auth provider (#63).
 - Tombstone retention, compaction and a deletion ledger (#37, #65).
 - Rate limits and cross-account tests (#38); schema negotiation (#39).
 

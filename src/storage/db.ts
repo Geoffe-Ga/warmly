@@ -3,7 +3,8 @@
  * migrations between versions (PRD SYNC-001, §7, §13.6; ADR-0014).
  *
  * Only ciphertext and the few plain facts needed to sync it are stored here:
- * a record's ID, type, revisions and flags. No record's content, and nothing
+ * a record's ID, type, revisions and flags, and this device's place in the
+ * change feed. No record's content, and nothing
  * derived from it such as a search index, is ever written to this database.
  */
 
@@ -17,11 +18,40 @@ import {
 export { NewerDatabaseError } from "./errors";
 
 /** The schema version this code reads and writes. */
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 /** Object store of records, keyed by `[type, id]`. */
 export const RECORDS = "records";
 /** Object store of queued operations, in the order they were made. */
 export const OUTBOX = "outbox";
+/** Object store of small facts about sync, keyed by name. */
+export const META = "meta";
+/**
+ * Object store of server versions that could not replace a local record,
+ * keyed by `[type, id]`. Each is kept, still encrypted, beside the local
+ * version until the person decides between them.
+ */
+export const PARKED = "parked";
+
+/** The `meta` row that holds this device's place in the change feed. */
+export const CURSOR_KEY = "cursor";
+
+/** One row of the `meta` store. */
+export interface MetaRow {
+  readonly key: string;
+  readonly value: string;
+}
+
+/** The server's version of a record, kept beside a local one it clashes with. */
+export interface ParkedRecord {
+  readonly type: number;
+  readonly id: string;
+  /** The server's encrypted record, or `null` if it is deleted there. */
+  readonly envelope: Uint8Array<ArrayBuffer> | null;
+  readonly schemaVersion: number;
+  /** The record's revision on the server. */
+  readonly revision: number;
+  readonly tombstone: boolean;
+}
 
 /** One record as stored. Everything but `envelope` is plain metadata. */
 export interface StoredRecord {
@@ -54,6 +84,12 @@ const MIGRATIONS: readonly ((database: IDBDatabase) => void)[] = [
   (database) => {
     database.createObjectStore(RECORDS, { keyPath: ["type", "id"] });
     database.createObjectStore(OUTBOX, { keyPath: "seq", autoIncrement: true });
+  },
+  // 1 -> 2: where this device is in the change feed, and server versions
+  // waiting for the person to choose (ADR-0006).
+  (database) => {
+    database.createObjectStore(META, { keyPath: "key" });
+    database.createObjectStore(PARKED, { keyPath: ["type", "id"] });
   },
 ];
 

@@ -17,13 +17,23 @@ import {
 import type { RootKey } from "../crypto/root-key";
 import { NewerDatabaseError } from "./errors";
 import {
+  CURSOR_KEY,
+  META,
   OUTBOX,
+  PARKED,
   RECORDS,
   openRecordsDatabase,
   transact,
+  type MetaRow,
+  type ParkedRecord,
   type StoredRecord,
 } from "./db";
-import type { PendingChange, RemoteOutcome, SyncSource } from "../sync/source";
+import type {
+  Acknowledged,
+  PendingChange,
+  RemoteOutcome,
+  SyncSource,
+} from "../sync/source";
 import type { RemoteChange } from "../sync/protocol";
 import { queueOperation, type OutboxOperation } from "./outbox";
 import {
@@ -314,6 +324,13 @@ function readAll(
   );
 }
 
+/** What applying one change from the server did. */
+interface Applied {
+  readonly outcome: RemoteOutcome;
+  /** The row that was stored, when the change was applied. */
+  readonly row?: StoredRecord;
+}
+
 const keyOf = (row: Pick<StoredRecord, "type" | "id">): string =>
   `${String(row.type)}:${row.id}`;
 
@@ -547,22 +564,29 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     }
     const { rows, operations } = await readAll(opened.database);
     const byKey = new Map(rows.map((row) => [keyOf(row), row]));
-    // The newest queued change to each record stands for the older ones:
-    // only the record as it is now is worth sending.
+    // Only the record as it is now is worth sending, however many times it
+    // changed. It is sent under the ID of its oldest queued change: if an
+    // earlier attempt reached the server and the answer was lost, the
+    // server recognises the ID instead of seeing a second, clashing change.
+    const oldest = new Map<string, OutboxOperation>();
     const newest = new Map<string, OutboxOperation>();
     for (const operation of operations) {
-      newest.set(keyOf(operation), operation);
+      const key = keyOf(operation);
+      if (!oldest.has(key)) {
+        oldest.set(key, operation);
+      }
+      newest.set(key, operation);
     }
-    return [...newest.values()]
-      .sort((left, right) => left.seq - right.seq)
-      .flatMap((queued) => {
-        const row = byKey.get(keyOf(queued));
+    return [...oldest.entries()]
+      .sort(([, left], [, right]) => left.seq - right.seq)
+      .flatMap(([key, first]) => {
+        const row = byKey.get(key);
         return row === undefined
           ? []
           : [
               {
                 operation: {
-                  opId: queued.opId,
+                  opId: first.opId,
                   recordId: row.id,
                   type: row.type,
                   baseRevision: row.baseRevision,
@@ -570,7 +594,8 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
                   tombstone: row.tombstone,
                   payload: row.envelope,
                 },
-                upTo: queued.seq,
+                first: first.seq,
+                upTo: newest.get(key)?.seq ?? first.seq,
                 localRevision: row.localRevision,
               },
             ];
@@ -580,19 +605,25 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
   async acknowledge(
     change: PendingChange,
     serverRevision: number,
+    acknowledged: Acknowledged,
   ): Promise<void> {
     const opened = await this.#read();
     if (opened === undefined) {
       throw new StoreLockedError();
     }
     const { type, recordId } = change.operation;
+    // "earlier" means the server had already applied the oldest queued
+    // change, with whatever the record held when that was first sent. Only
+    // that change is settled; anything made since still has to be sent.
+    const through = acknowledged === "current" ? change.upTo : change.first;
     await transact<undefined>(
       opened.database,
-      [RECORDS, OUTBOX],
+      [RECORDS, OUTBOX, PARKED],
       "readwrite",
       (transaction, result) => {
         const records = transaction.objectStore(RECORDS);
         const outbox = transaction.objectStore(OUTBOX);
+        const parked = transaction.objectStore(PARKED);
         const reading = records.get([type, recordId]);
         reading.onsuccess = () => {
           const row = reading.result as StoredRecord | undefined;
@@ -600,10 +631,21 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
             records.put({
               ...row,
               baseRevision: serverRevision,
-              // Changed again since it was sent: still waiting, on the
-              // new base.
-              dirty: row.localRevision !== change.localRevision,
+              // Changed again since it was sent, or only an earlier change
+              // was settled: still waiting, on the new base.
+              dirty:
+                row.localRevision !== change.localRevision ||
+                through < change.upTo,
             } satisfies StoredRecord);
+          }
+        };
+        // The server now holds this device's version on top of the one
+        // that was kept aside, so there is nothing left to choose between.
+        const kept = parked.get([type, recordId]);
+        kept.onsuccess = () => {
+          const aside = kept.result as ParkedRecord | undefined;
+          if (aside !== undefined && aside.revision <= serverRevision) {
+            parked.delete([type, recordId]);
           }
         };
         const queued = outbox.getAll();
@@ -612,7 +654,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
             if (
               operation.type === type &&
               operation.id === recordId &&
-              operation.seq <= change.upTo
+              operation.seq <= through
             ) {
               outbox.delete(operation.seq);
             }
@@ -624,7 +666,10 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     this.#changed();
   }
 
-  async applyRemote(change: RemoteChange): Promise<RemoteOutcome> {
+  async applyPage(
+    changes: readonly RemoteChange[],
+    nextCursor: string,
+  ): Promise<RemoteOutcome[]> {
     const session = this.#session;
     const opened = await this.#read();
     if (session === undefined || opened === undefined) {
@@ -633,40 +678,127 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     if (opened.superseded) {
       throw new NewerDatabaseError();
     }
-    const written = await transact<{
-      outcome: RemoteOutcome;
-      row?: StoredRecord;
-    }>(opened.database, [RECORDS], "readwrite", (transaction, result) => {
-      const records = transaction.objectStore(RECORDS);
-      const reading = records.get([change.type, change.recordId]);
-      reading.onsuccess = () => {
-        const existing = reading.result as StoredRecord | undefined;
-        const outcome = meet(existing, change);
-        if (outcome !== "applied") {
-          result({ outcome });
-          return;
+    const written = await transact<Applied[]>(
+      opened.database,
+      [RECORDS, PARKED, META],
+      "readwrite",
+      (transaction, result) => {
+        const records = transaction.objectStore(RECORDS);
+        const parked = transaction.objectStore(PARKED);
+        const applied: Applied[] = [];
+        for (const [index, change] of changes.entries()) {
+          const key = [change.type, change.recordId];
+          const reading = records.get(key);
+          reading.onsuccess = () => {
+            const existing = reading.result as StoredRecord | undefined;
+            const outcome = meet(existing, change);
+            applied[index] = { outcome };
+            if (outcome === "conflict" && existing?.dirty === true) {
+              // Not applied over the local change. Kept, still encrypted,
+              // for the person to choose.
+              parked.put({
+                type: change.type,
+                id: change.recordId,
+                envelope: change.payload,
+                schemaVersion: change.schemaVersion,
+                revision: change.revision,
+                tombstone: change.tombstone,
+              } satisfies ParkedRecord);
+            }
+            if (outcome !== "applied") {
+              return;
+            }
+            const row: StoredRecord = {
+              type: change.type,
+              id: change.recordId,
+              envelope: change.payload,
+              schemaVersion: change.schemaVersion,
+              // A change from elsewhere is a change to this device's copy
+              // too, so another tab's out-of-date copy is noticed.
+              localRevision: (existing?.localRevision ?? 0) + 1,
+              baseRevision: change.revision,
+              tombstone: change.tombstone,
+              dirty: false,
+            };
+            records.put(row);
+            parked.delete(key);
+            applied[index] = { outcome, row };
+          };
         }
-        const row: StoredRecord = {
-          type: change.type,
-          id: change.recordId,
-          envelope: change.payload,
-          schemaVersion: change.schemaVersion,
-          // A change from elsewhere is a change to this device's copy too,
-          // so another tab's out-of-date copy is noticed.
-          localRevision: (existing?.localRevision ?? 0) + 1,
-          baseRevision: change.revision,
-          tombstone: change.tombstone,
-          dirty: false,
+        // The cursor moves in the same transaction as the records it
+        // covers: after a crash the device has both or neither.
+        const moving = transaction
+          .objectStore(META)
+          .put({ key: CURSOR_KEY, value: nextCursor } satisfies MetaRow);
+        moving.onsuccess = () => {
+          result(applied);
         };
-        records.put(row);
-        result({ outcome, row });
-      };
-    });
-    if (written.row !== undefined && this.#session === session) {
-      await this.#remember(opened, session, written.row);
-      this.#changed();
+      },
+    );
+    if (this.#session === session) {
+      for (const { row } of written) {
+        if (row !== undefined) {
+          await this.#remember(opened, session, row);
+        }
+      }
+      if (written.some(({ row }) => row !== undefined)) {
+        this.#changed();
+      }
     }
-    return written.outcome;
+    return written.map(({ outcome }) => outcome);
+  }
+
+  async cursor(): Promise<string> {
+    const opened = await this.#read();
+    if (opened === undefined || opened.superseded) {
+      return "0";
+    }
+    return transact<string>(
+      opened.database,
+      [META],
+      "readonly",
+      (transaction, result) => {
+        const reading = transaction.objectStore(META).get(CURSOR_KEY);
+        reading.onsuccess = () => {
+          result((reading.result as MetaRow | undefined)?.value ?? "0");
+        };
+      },
+    );
+  }
+
+  async forgetCursor(): Promise<void> {
+    const opened = await this.#read();
+    if (opened === undefined) {
+      throw new StoreLockedError();
+    }
+    await transact<undefined>(
+      opened.database,
+      [META],
+      "readwrite",
+      (transaction, result) => {
+        transaction.objectStore(META).delete(CURSOR_KEY).onsuccess = () => {
+          result(undefined);
+        };
+      },
+    );
+  }
+
+  async parkedCount(): Promise<number> {
+    const opened = await this.#read();
+    if (opened === undefined || opened.superseded) {
+      return 0;
+    }
+    return transact<number>(
+      opened.database,
+      [PARKED],
+      "readonly",
+      (transaction, result) => {
+        const counting = transaction.objectStore(PARKED).count();
+        counting.onsuccess = () => {
+          result(counting.result);
+        };
+      },
+    );
   }
 
   /** Put a row that was just stored into memory, decrypted. */
