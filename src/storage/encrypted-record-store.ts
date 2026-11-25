@@ -641,6 +641,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
         };
         // The server now holds this device's version on top of the one
         // that was kept aside, so there is nothing left to choose between.
+        // A kept version at a higher revision is a newer clash, and stays.
         const kept = parked.get([type, recordId]);
         kept.onsuccess = () => {
           const aside = kept.result as ParkedRecord | undefined;

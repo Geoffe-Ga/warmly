@@ -401,6 +401,59 @@ describe("when sync runs on its own (SYNC-008, SYNC-010)", () => {
     expect(browser.planned()).toEqual([]);
   });
 
+  it("counts one failed cycle once, however many asked for it", async () => {
+    let finish: (() => void) | undefined;
+    const sync = engine("offline", "offline");
+    const slow = sync.sync;
+    sync.sync = () =>
+      new Promise((resolve) => {
+        finish = () => {
+          void slow().then(resolve);
+        };
+      });
+    const browser = environment();
+    const scheduler = new SyncScheduler(sync, browser, TIMINGS);
+
+    scheduler.start();
+    const asked = scheduler.sync();
+    await browser.shown();
+    finish?.();
+    await asked;
+
+    expect(sync.runs).toBe(1);
+    // The first wait, not the second or third.
+    expect(browser.planned()).toEqual([1_000]);
+  });
+
+  it("ignores a cycle from before a lock, even if the app has unlocked again", async () => {
+    const finishes: (() => void)[] = [];
+    const sync = engine("offline", "done");
+    const real = sync.sync;
+    sync.sync = () =>
+      new Promise((resolve) => {
+        finishes.push(() => {
+          void real().then(resolve);
+        });
+      });
+    const browser = environment();
+    const scheduler = new SyncScheduler(sync, browser, TIMINGS);
+
+    scheduler.start();
+    scheduler.reset();
+    scheduler.start();
+    // The cycle from before the lock ends first, having found no network.
+    finishes[0]?.();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(browser.planned()).toEqual([]);
+
+    finishes[1]?.();
+    await vi.waitFor(() => {
+      expect(browser.planned()).toEqual([TIMINGS.idle]);
+    });
+  });
+
   it("can be started again after a lock", async () => {
     const { sync, browser, scheduler } = await started("done", "done");
     scheduler.reset();

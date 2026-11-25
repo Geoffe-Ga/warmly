@@ -149,6 +149,10 @@ export class SyncScheduler implements SyncControl {
   #failures = 0;
   /** The count of waiting records last seen, to notice a new local change. */
   #waiting = 0;
+  /** The cycle in flight, so that two requests for one are counted once. */
+  #cycle: Promise<SyncState> | undefined;
+  /** Changes at every lock, so a cycle from before it plans nothing. */
+  #generation = 0;
 
   /**
    * @param engine - The sync engine.
@@ -201,6 +205,8 @@ export class SyncScheduler implements SyncControl {
 
   reset(): void {
     this.#started = false;
+    this.#generation += 1;
+    this.#cycle = undefined;
     this.#cancel();
     for (const stop of this.#stops) {
       stop();
@@ -241,10 +247,20 @@ export class SyncScheduler implements SyncControl {
     }
   }
 
-  async #run(): Promise<SyncState> {
+  #run(): Promise<SyncState> {
     this.#cancel();
+    // A request made while a cycle runs joins it. The cycle's outcome is
+    // then acted on once, however many asked for it.
+    this.#cycle ??= this.#once(this.#generation);
+    return this.#cycle;
+  }
+
+  async #once(generation: number): Promise<SyncState> {
     const state = await this.#engine.sync();
-    if (this.#started) {
+    // The app may have locked, and unlocked again, while this ran. What a
+    // cycle from before the lock found says nothing about now.
+    if (generation === this.#generation) {
+      this.#cycle = undefined;
       this.#next(this.#engine.outcome());
     }
     return state;

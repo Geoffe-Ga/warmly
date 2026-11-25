@@ -83,7 +83,10 @@ export type Exclusive = <T>(work: () => Promise<T>) => Promise<T | undefined>;
 
 const SYNCED: SyncState = { status: "synced", waiting: 0 };
 
-/** How often one push sends again after settling an earlier attempt. */
+/**
+ * How often one push sends again after settling an earlier attempt. Anything
+ * still waiting after that stays queued, and the next cycle sends it.
+ */
 const MAX_PUSH_PASSES = 5;
 
 /** What the server's answer settles, if it accepted the change. */
