@@ -24,6 +24,7 @@ describe("route table", () => {
       "print",
       "settings",
       "devices",
+      "approve-device",
       "rotate-recovery-key",
       "onboarding",
       "verify-email",
@@ -32,6 +33,7 @@ describe("route table", () => {
       "reset-password",
       "new-password",
       "recover",
+      "add-device",
       "trust-device",
       "locked",
     ]);

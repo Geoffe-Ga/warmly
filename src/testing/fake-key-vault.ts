@@ -138,6 +138,12 @@ export class FakeKeyVault implements KeyVault {
     return Promise.resolve();
   }
 
+  /** Unlock as if another device had just handed its key over. */
+  acceptKeyFromAnotherDevice(): void {
+    this.#trustPending = true;
+    this.#unlocked = true;
+  }
+
   fingerprint(): Promise<string | undefined> {
     return Promise.resolve(this.#unlocked ? "fa4efa4efa4efa4e" : undefined);
   }

@@ -22,6 +22,7 @@ export type VaultErrorCode =
   | "recovery_key_changed_elsewhere"
   | "nothing_to_confirm"
   | "signed_out"
+  | "locked"
   | "offline"
   | "unavailable";
 

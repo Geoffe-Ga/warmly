@@ -14,6 +14,7 @@ import {
   type KeyVault,
   type VaultErrorCode,
 } from "../../../crypto/key-vault";
+import { PairingError, type PairingErrorCode } from "../../../devices/pairing";
 import {
   DeviceError,
   MAX_DEVICE_NAME_LENGTH,
@@ -24,7 +25,11 @@ import { StatusBanner } from "../../components/StatusBanner";
 // Keyed by every error code, so adding a code without wording is a type error.
 const MESSAGES: Readonly<
   Record<
-    AuthErrorCode | VaultErrorCode | ApiErrorCode | DeviceErrorCode,
+    | AuthErrorCode
+    | VaultErrorCode
+    | ApiErrorCode
+    | DeviceErrorCode
+    | PairingErrorCode,
     string
   >
 > = {
@@ -76,6 +81,15 @@ const MESSAGES: Readonly<
   not_found:
     "That device is no longer on your account. Reload the list to see your current devices.",
   invalid_name: `Give the device a name of 1 to ${String(MAX_DEVICE_NAME_LENGTH)} characters.`,
+  pairing_expired:
+    "That request ran out of time, or a newer one replaced it. Nothing was shared. Start again on the new device.",
+  pairing_rejected:
+    "The other device didn't approve this request. Nothing was shared. If that was you, start again and type the code carefully.",
+  pairing_tampered:
+    "Something changed the messages between your two devices, so we stopped. Nothing was shared. Try again on a network you trust, or use your recovery key instead.",
+  pairing_code_mismatch:
+    "That isn't the code on the new device, so the request was cancelled. Nothing was shared. Start again on the new device, and type the code it shows.",
+  pairing_cancelled: "That request was cancelled. Nothing was shared.",
   unavailable:
     "Accounts aren't available in this version of Warmly yet. Nothing was sent or saved.",
 };
@@ -95,6 +109,7 @@ export function describeError(error: unknown): string {
     error instanceof AuthError ||
     error instanceof VaultError ||
     error instanceof ApiError ||
+    error instanceof PairingError ||
     error instanceof DeviceError
   ) {
     return MESSAGES[error.code];

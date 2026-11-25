@@ -12,8 +12,8 @@ Human-facing overview: [README.md](README.md).
 **Status:** walking skeleton in progress. `warmly/` (Python) verifies access
 tokens and device signatures on every `/v1` route but health, stores recovery
 envelopes and device identities, and serves the remaining routes as typed
-stubs. `src/` is a Preact shell with real account, recovery-key and
-Manage Devices flows (real cryptography; in-memory doubles stand in for the
+stubs. `src/` is a Preact shell with real account, recovery-key,
+Manage Devices and device-pairing flows (real cryptography; in-memory doubles stand in for the
 servers outside production); other routes render accessible placeholders.
 
 ---
@@ -157,9 +157,13 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   (`signed_out`, `signed_in_locked`, `unlocked`). Every route declares its `access`
   in `src/app/routes.ts`; anything that can show private content is `private`. A
   screen never checks the session itself.
-- All encryption goes through `src/crypto/envelope.ts` (ADR-0003). Use WebCrypto
-  only; add no crypto dependency. Never edit a directory under
+- All record encryption goes through `src/crypto/envelope.ts` (ADR-0003). Use
+  WebCrypto only; add no crypto dependency. Never edit a directory under
   `tests/fixtures/crypto/`: a format change adds a new version beside it.
+- The root key leaves a device only through pairing (`src/devices/pairing.ts`,
+  ADR-0005): encrypted to the new device with `src/crypto/hpke.ts`, after
+  the person has typed the pairing code. Never add another way to export it,
+  and never let the approving device show or skip the code.
 - The browser talks to Supabase Auth only, through `@supabase/auth-js`. Never
   add the full Supabase client or call the Data API from the browser.
 - New keys and a replacement recovery key are saved only after the user has
