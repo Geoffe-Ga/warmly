@@ -49,6 +49,7 @@ import {
 } from "../storage/persistence";
 import type { RecordStore } from "../storage/record-store";
 import { SyncEngine, type SyncControl } from "../sync/engine";
+import { appUpdates, type AppUpdates } from "./updates";
 import { SyncScheduler, tabExclusive } from "../sync/scheduler";
 import { MemoryServer } from "../sync/testing/memory-server";
 import {
@@ -88,6 +89,8 @@ export interface Services {
   /** Sends local changes to the server and fetches remote ones. */
   readonly sync: SyncControl;
   /** Asks the browser to keep this device's data, and reports the answer. */
+  /** A new version of the app waiting to be used. */
+  readonly updates: AppUpdates;
   readonly persistence: StoragePersistence;
   /** Announces changes to private records; see {@link EventBus}. */
   readonly events: EventBus;
@@ -384,6 +387,7 @@ export function createServices(): Services {
     revocation,
     records,
     sync,
+    updates: appUpdates,
     persistence,
     session: createSession(),
     onboarding: createOnboarding(),

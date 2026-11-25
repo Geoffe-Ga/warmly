@@ -74,6 +74,10 @@ describe("the sync status in words (SYNC-010)", () => {
     [{ status: "offline", waiting: 3 }, "3 changes waiting to sync"],
     [{ status: "offline", waiting: 0 }, ""],
     [
+      { status: "outdated", waiting: 2 },
+      "Update Warmly to keep syncing. Your writing is saved on this device.",
+    ],
+    [
       { status: "failed", waiting: 2 },
       "Couldn't sync. Your writing is saved on this device.",
     ],

@@ -22,6 +22,8 @@ from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 DEVICE_ID = "d0000000-0000-4000-8000-00000000000a"
 OTHER_DEVICE_ID = "d0000000-0000-4000-8000-00000000000b"
 NAME_CIPHERTEXT = "bmFtZQ=="
+# The sync protocol version a current client speaks.
+SYNC_VERSION = "1"
 # 32 synthetic bytes standing in for the value derived from a root key.
 ENROLLMENT_VERIFIER = base64.b64encode(bytes(range(32))).decode()
 
@@ -74,7 +76,7 @@ class TestDevice:
         nonce: str | None = None,
         device_id: str | None = None,
     ) -> dict[str, str]:
-        """Sign a request and return the four signature headers."""
+        """Sign a request and return its signature headers and sync version."""
         stamp = str(int(time.time()) if timestamp is None else timestamp)
         used_nonce = secrets.token_urlsafe(18) if nonce is None else nonce
         named = self.device_id if device_id is None else device_id
@@ -98,6 +100,9 @@ class TestDevice:
             "Warmly-Timestamp": stamp,
             "Warmly-Nonce": used_nonce,
             "Warmly-Signature": base64.b64encode(signature).decode(),
+            # Not part of the signature. The app says which sync version it
+            # speaks; only the sync routes read it.
+            "Warmly-Sync-Version": SYNC_VERSION,
         }
 
 

@@ -12,6 +12,7 @@ import {
   useState,
 } from "preact/hooks";
 
+import { Button } from "../ui/components/Button";
 import { PAGE_HEADING_ATTRIBUTE } from "../ui/components/PageHeading";
 import { PageLayout } from "../ui/components/PageLayout";
 import { SyncStatus } from "../ui/components/SyncStatus";
@@ -98,6 +99,68 @@ function OfflineNotice(props: { readonly state: SessionState }): JSX.Element {
     <p role="status" class="offline-notice">
       {text}
     </p>
+  );
+}
+
+/** Said when unsaved writing could not be saved before an update. */
+export const UPDATE_NOT_APPLIED =
+  "Couldn't save what you're writing, so Warmly was not updated. Nothing was lost. Try again in a moment.";
+
+/**
+ * Says when a new version of the app is ready and lets the person switch to
+ * it (PRD §8, REL-004; AC-28).
+ *
+ * A new version is never switched to on its own: the page reloads, and
+ * that must not happen under something half written. When the person asks,
+ * unsaved writing is saved first; if that fails, the update is not applied
+ * and they are told. The text is fixed and says nothing private.
+ */
+function UpdateNotice(): JSX.Element {
+  const { updates, lockHooks } = useServices();
+  const [ready, setReady] = useState(() => updates.available());
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState(false);
+
+  useEffect(() => {
+    const update = (): void => {
+      setReady(updates.available());
+    };
+    update();
+    return updates.subscribe(update);
+  }, [updates]);
+
+  const apply = (): void => {
+    setBusy(true);
+    setProblem(false);
+    void lockHooks
+      .flush()
+      .then(async (unsaved) => {
+        if (unsaved > 0) {
+          setProblem(true);
+          return;
+        }
+        await updates.apply();
+      })
+      .catch(() => {
+        setProblem(true);
+      })
+      .finally(() => {
+        setBusy(false);
+      });
+  };
+
+  return (
+    <div class="update-notice">
+      <p role="status">
+        {ready && !problem ? "A new version of Warmly is ready." : ""}
+        {ready && problem ? UPDATE_NOT_APPLIED : ""}
+      </p>
+      {ready && (
+        <Button disabled={busy} onClick={apply}>
+          Update now
+        </Button>
+      )}
+    </div>
   );
 }
 
@@ -199,6 +262,7 @@ export function App(props: AppProps): JSX.Element {
             navigate={navigate}
           />
           <OfflineNotice state={state} />
+          <UpdateNotice />
           <main>
             {view === undefined ? (
               <PageLayout title="Opening Warmly" />

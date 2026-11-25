@@ -44,6 +44,11 @@ export interface ApiRequest {
    * a device makes before it is registered.
    */
   readonly signedBy: DeviceIdentity | undefined;
+  /**
+   * Extra request headers with fixed values, such as a protocol version.
+   * Never anything private: headers are not encrypted by the app.
+   */
+  readonly headers?: Readonly<Record<string, string>>;
 }
 
 const DEVICE_ERRORS: Readonly<Record<string, ApiErrorCode>> = {
@@ -149,6 +154,7 @@ export class ApiClient {
           Accept: "application/json",
           Authorization: `Bearer ${session.accessToken}`,
           ...(hasBody ? { "Content-Type": "application/json" } : {}),
+          ...request.headers,
           ...signature,
         },
         ...(hasBody ? { body } : {}),

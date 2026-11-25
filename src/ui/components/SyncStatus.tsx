@@ -30,6 +30,8 @@ export function describeSync(state: SyncState): string {
       return state.waiting > 0 ? waiting : "";
     case "failed":
       return "Couldn't sync. Your writing is saved on this device.";
+    case "outdated":
+      return "Update Warmly to keep syncing. Your writing is saved on this device.";
   }
 }
 

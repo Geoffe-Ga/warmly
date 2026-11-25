@@ -304,6 +304,7 @@ export class SyncScheduler implements SyncControl {
         this.#plan(this.#timings.busy);
         return;
       case "stopped":
+      case "outdated":
       case "unavailable":
         // Nothing to wait for: the next unlock, change or tap tries again.
         this.#failures = 0;

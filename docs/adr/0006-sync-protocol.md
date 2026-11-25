@@ -272,7 +272,6 @@ record the server holds as deleted is readable anywhere.
 - Browser tests of two devices against the real API and database: they
   need a deployed auth provider (#63).
 - What a backup restore does with the deletion ledger (#65).
-- Rate limits and cross-account tests (#38); schema negotiation (#39).
 
 ## Consequences
 
@@ -336,3 +335,37 @@ cursor, in sequence order.
 - **Last sync.** When a device is given the final page (`has_more` false),
   the server records the time as that device's `last_sync_at`, which
   Manage Devices shows (PRD DEV-002). It is a time and nothing else.
+
+### Old and new versions together (PRD §8, REL-004; decision D-20)
+
+People update when they choose to, and a device can be offline for months,
+so old and new builds are always in use at once.
+
+- **Every sync request states its version** in `Warmly-Sync-Version`. The
+  server speaks a range, `SYNC_VERSION_MIN` to `SYNC_VERSION_MAX`. A request
+  outside it, or with no version, gets `426 sync.upgrade_required` before
+  anything is read or written, with `Warmly-Sync-Min` and `Warmly-Sync-Max`
+  saying what is spoken. The check comes after the session and device
+  checks, so only a caller allowed to sync is told. Routes other than sync
+  do not ask: managing devices and keys keeps working on an old build.
+- **A build that is too old** stops syncing and shows "Update Warmly to
+  keep syncing. Your writing is saved on this device." It keeps every
+  record and every queued change, and writing, editing, deleting and search
+  all carry on. Nothing is retried on a timer: only updating helps. After
+  the update, everything queued is sent.
+- **A build that is newer than the server** (a rollout in progress) treats
+  the refusal as a passing failure and retries with backoff.
+- **If the server does not say what it speaks**, the build assumes it is the
+  one that is too old. Stopping and keeping everything is the safe reading.
+- **Updating never happens by itself.** The service worker downloads a new
+  version and waits (`registerType: "prompt"`). The app shows "A new
+  version of Warmly is ready." with an "Update now" button. Pressing it
+  saves unsaved writing first (the same hooks that run before a lock); if
+  that fails, the update is not applied and the person is told.
+- **Stored data from every earlier build still opens.** Tests load every
+  committed local-database dump and encrypted fixture with the current
+  code, sync it, and check nothing is lost. A database or record written by
+  a newer build is refused or left alone, never guessed at.
+
+How to add a version or drop one safely is in
+[`docs/runbooks/sync-versions.md`](../runbooks/sync-versions.md).
