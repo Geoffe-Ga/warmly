@@ -101,6 +101,8 @@ export const LIMITS = {
   text: 600,
   /** Characters in a card's theme. */
   theme: 120,
+  /** Characters in a source's name, such as `E12`. Longer is not a name. */
+  alias: 8,
 } as const;
 
 // ---------------------------------------------------------------- wire types
@@ -253,7 +255,7 @@ function list<T>(
 function evidence(value: unknown, path: string): WireEvidence {
   const raw = fields(value, path, ["alias", "key", "quote"]);
   return {
-    alias: text(raw["alias"], `${path}.alias`, 8),
+    alias: text(raw["alias"], `${path}.alias`, LIMITS.alias),
     key: oneOf(raw["key"], `${path}.key`, RESPONSE_KEYS),
     quote: text(raw["quote"], `${path}.quote`, LIMITS.quote),
   };
