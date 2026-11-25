@@ -76,6 +76,27 @@ test.describe("every private screen while unlocked (UX-001, AC-23)", () => {
   });
 });
 
+test.describe("large text (UI-003)", () => {
+  test("no private screen scrolls sideways at double text size", async ({
+    page,
+  }) => {
+    await onboard(page);
+
+    for (const route of PRIVATE_ROUTES) {
+      await openInApp(page, pathFor(route.id, SAMPLE_PARAMS));
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      const overflow = await page.evaluate(() => {
+        document.documentElement.style.fontSize = "200%";
+        const root = document.documentElement;
+        const extra = root.scrollWidth - root.clientWidth;
+        root.style.fontSize = "";
+        return extra;
+      });
+      expect(overflow, route.id).toBeLessThanOrEqual(1);
+    }
+  });
+});
+
 test.describe("signed-out access (DEV-005)", () => {
   for (const route of PRIVATE_ROUTES) {
     test(`${route.id} redirects to sign in and shows nothing private`, async ({

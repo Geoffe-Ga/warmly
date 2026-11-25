@@ -214,6 +214,34 @@ describe("nothing about the viewing is kept (CC-012, AC-14)", () => {
     );
   });
 
+  it("shows the first card when cards arrive after arrow keys were pressed on an empty collection", async () => {
+    const services = testServices("unlocked");
+    await seedCards(services.records);
+    await renderApp(pathFor("present", { id: SEED.empty }), services);
+    await screen.findByText("This collection has no cards to present yet.");
+
+    await userEvent.setup().keyboard("{ArrowLeft}{ArrowRight}{ArrowRight}");
+    // As sync would: a card is added on another device.
+    const collection = await services.cards.collection(SEED.empty);
+    await services.records.put("conversation-card", {
+      id: "arrived",
+      collectionId: SEED.empty,
+      type: "other",
+      authorship: "user_owned",
+      segments: [{ id: "s", category: "other", text: "Arrived later." }],
+      sourceEntryIds: [],
+      createdAt: "2026-11-20T09:00:00.000Z",
+      updatedAt: "2026-11-20T09:00:00.000Z",
+    });
+    await services.records.put("card-collection", {
+      ...(collection as NonNullable<typeof collection>),
+      cardIds: ["arrived"],
+    });
+
+    expect(await screen.findByText("Card 1 of 1")).toBeTruthy();
+    expect(screen.getByText("Arrived later.")).toBeTruthy();
+  });
+
   it("stays on a card that still exists when the collection shrinks under it", async () => {
     const services = await presenting();
     await userEvent.setup().keyboard("{ArrowRight}{ArrowRight}");

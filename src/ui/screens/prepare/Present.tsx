@@ -16,6 +16,14 @@ const KEY_STEPS: Readonly<Record<string, number>> = {
   ArrowRight: 1,
 };
 
+/**
+ * Where a step from one card lands: never before the first card or after
+ * the last, and at the first when there are no cards at all.
+ */
+function clamp(at: number, by: number, count: number): number {
+  return Math.max(0, Math.min(at + by, count - 1));
+}
+
 function Deck(props: OpenCollection): JSX.Element {
   const { cards } = props;
   // Where the person is in the deck lives here and nowhere else. It is not
@@ -23,9 +31,9 @@ function Deck(props: OpenCollection): JSX.Element {
   // reported: opening this screen again starts at the first card, and
   // nothing knows which cards were shown or for how long (PRD CC-012).
   const [index, setIndex] = useState(0);
-  const last = cards.length - 1;
+  const count = cards.length;
   const step = (by: number): void => {
-    setIndex((at) => Math.min(Math.max(at + by, 0), last));
+    setIndex((at) => clamp(at, by, count));
   };
 
   // Attached as soon as the card is on screen, so the first key press
@@ -44,20 +52,25 @@ function Deck(props: OpenCollection): JSX.Element {
       ) {
         return;
       }
+      // Nothing else on this screen uses the arrow keys. If a text field
+      // or a scrolling area is ever added here, it must be left alone.
       event.preventDefault();
-      setIndex((at) => Math.min(Math.max(at + by, 0), last));
+      setIndex((at) => clamp(at, by, count));
     };
     window.addEventListener("keydown", onKey);
     return () => {
       window.removeEventListener("keydown", onKey);
     };
-  }, [last]);
+  }, [count]);
 
-  const card = cards[Math.min(index, Math.max(last, 0))];
+  // The card to show, worked out once: the collection can shrink or grow
+  // under the view when another device changes it.
+  const at = clamp(index, 0, count);
+  const card = cards[at];
   if (card === undefined) {
     return <p>This collection has no cards to present yet.</p>;
   }
-  const at = Math.min(index, last);
+  const last = count - 1;
   return (
     <>
       <p class="present-card" aria-live="polite">
