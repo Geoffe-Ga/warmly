@@ -8,6 +8,7 @@
  */
 import type {
   RecoveryEnvelopeStore,
+  RecoveryEnvelopeWrite,
   StoredRecoveryEnvelope,
 } from "../api/recovery-envelope-store";
 import type { AuthSession } from "../auth/auth-client";
@@ -45,23 +46,18 @@ export class FakeRecoveryEnvelopeStore implements RecoveryEnvelopeStore {
     );
   }
 
-  write(
-    session: AuthSession,
-    expectedVersion: number,
-    envelope: Uint8Array<ArrayBuffer>,
-    formatVersion: number,
-  ): Promise<boolean> {
+  write(session: AuthSession, change: RecoveryEnvelopeWrite): Promise<boolean> {
     const all = this.#all();
     const current = all.find(([userId]) => userId === session.userId);
-    if ((current?.[1] ?? 0) !== expectedVersion) {
+    if ((current?.[1] ?? 0) !== change.expectedVersion) {
       return Promise.resolve(false);
     }
     const others = all.filter(([userId]) => userId !== session.userId);
     others.push([
       session.userId,
-      expectedVersion + 1,
-      toBase64(envelope),
-      formatVersion,
+      change.expectedVersion + 1,
+      toBase64(change.envelope),
+      change.formatVersion,
     ]);
     this.#storage.setItem(FAKE_RECOVERY_STORAGE_KEY, JSON.stringify(others));
     return Promise.resolve(true);

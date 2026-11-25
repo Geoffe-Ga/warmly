@@ -451,6 +451,21 @@
         "additionalProperties": false,
         "description": "Create or rotate the recovery envelope with compare-and-swap.",
         "properties": {
+          "device_enrollment_verifier": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Required when creating the envelope (expected_version 0) and refused otherwise. A value derived one-way from the root key, which a new device must prove it knows before it can register.",
+            "title": "Device Enrollment Verifier"
+          },
           "expected_version": {
             "description": "Version being replaced; 0 when none exists yet.",
             "minimum": 0.0,
@@ -543,6 +558,14 @@
             "title": "Device Id",
             "type": "string"
           },
+          "enrollment_proof": {
+            "description": "Proof that the registering device knows the account root key: an HMAC over the device ID and public key.",
+            "maxLength": 4096,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "title": "Enrollment Proof",
+            "type": "string"
+          },
           "name_ciphertext": {
             "maxLength": 4096,
             "minLength": 1,
@@ -561,7 +584,8 @@
         "required": [
           "device_id",
           "public_key",
-          "name_ciphertext"
+          "name_ciphertext",
+          "enrollment_proof"
         ],
         "title": "RegisterDeviceRequest",
         "type": "object"
@@ -693,7 +717,7 @@
   "paths": {
     "/v1/devices": {
       "get": {
-        "description": "List the signed-in user's devices.\n\nStub: always an empty list.\n\nReturns:\n    An empty device list.",
+        "description": "List the signed-in user's own devices.\n\nArgs:\n    caller: The verified account and device.\n    devices: Where devices are kept.\n\nReturns:\n    The account's devices, oldest first, with the calling one marked.",
         "operationId": "list_devices_v1_devices_get",
         "responses": {
           "200": {
@@ -714,7 +738,7 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
           "422": {
             "content": {
@@ -748,7 +772,7 @@
         ]
       },
       "post": {
-        "description": "Register the calling device's identity.\n\nStub: echoes the submitted identity without storing it.\n\nArgs:\n    request: The device's ID, public key and encrypted name.\n\nReturns:\n    The device as it would have been registered.",
+        "description": "Register the calling device's identity.\n\nA device cannot sign with a registered key before it has one, so this\nroute checks two other things instead:\n\n- the request is signed with the very key being registered, which proves\n  the caller holds the private key;\n- the enrollment proof, which proves the caller knows the account root\n  key. A stolen session token cannot produce it.\n\nArgs:\n    request: The device's ID, public key, encrypted name and proof.\n    http_request: The request, for its signature.\n    owner: The verified account.\n    devices: Where devices are kept.\n    recovery: Where the account's enrollment verifier is kept.\n\nReturns:\n    The registered device.\n\nRaises:\n    DeviceAuthorizationError: If the signature or the proof is not valid.\n    ProblemError: 409 if the account has no keys yet, or the device ID is\n        already registered.",
         "operationId": "register_device_v1_devices_post",
         "requestBody": {
           "content": {
@@ -779,7 +803,17 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The device ID is already registered, or the account has not created its keys yet"
           },
           "422": {
             "content": {
@@ -815,7 +849,7 @@
     },
     "/v1/devices/{device_id}": {
       "patch": {
-        "description": "Replace a device's encrypted display name.\n\nStub: echoes the new name without storing it.\n\nArgs:\n    device_id: The device to rename.\n    request: The new encrypted name.\n\nReturns:\n    The device as it would look after the rename.",
+        "description": "Replace a device's encrypted display name.\n\nArgs:\n    device_id: The device to rename.\n    request: The new encrypted name.\n    caller: The verified account and device.\n    devices: Where devices are kept.\n\nReturns:\n    The device after the rename.\n\nRaises:\n    ProblemError: 404 if the device is not one of the caller's, whether\n        or not it exists on another account.",
         "operationId": "rename_device_v1_devices__device_id__patch",
         "parameters": [
           {
@@ -858,7 +892,17 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such device on this account"
           },
           "422": {
             "content": {
@@ -927,7 +971,7 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
           "422": {
             "content": {
@@ -994,7 +1038,7 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
           "422": {
             "content": {
@@ -1063,7 +1107,7 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
           "422": {
             "content": {
@@ -1142,7 +1186,7 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
           "422": {
             "content": {
@@ -1253,7 +1297,7 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
           "404": {
             "content": {
@@ -1297,7 +1341,7 @@
         ]
       },
       "put": {
-        "description": "Create or rotate the wrapped root key with compare-and-swap.\n\n``expected_version`` 0 creates the envelope and fails if one exists. Any\nother value replaces exactly that version. A failed attempt changes\nnothing, so an interrupted rotation leaves the old recovery key valid.\n\nArgs:\n    request: The new envelope and the version it replaces.\n    owner: The verified caller.\n    store: Where envelopes are kept.\n\nReturns:\n    The envelope as stored, with its new version.\n\nRaises:\n    ProblemError: 409 if the stored version is not the expected one.",
+        "description": "Create or rotate the wrapped root key with compare-and-swap.\n\n``expected_version`` 0 creates the envelope and fails if one exists. Any\nother value replaces exactly that version. A failed attempt changes\nnothing, so an interrupted rotation leaves the old recovery key valid.\n\nCreating the envelope happens before the account has any device, so it\nneeds only the session. Replacing it must be signed by one of the\naccount's devices: a stolen session token alone cannot swap the envelope\nand lock the user out of recovery.\n\nArgs:\n    request: The new envelope and the version it replaces.\n    http_request: The request, for its device signature.\n    owner: The verified caller.\n    store: Where envelopes are kept.\n\nReturns:\n    The envelope as stored, with its new version.\n\nRaises:\n    ProblemError: 409 if the stored version is not the expected one.",
         "operationId": "put_recovery_envelope_v1_recovery_envelope_put",
         "requestBody": {
           "content": {
@@ -1328,7 +1372,7 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
           "409": {
             "content": {
@@ -1411,7 +1455,7 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
           "422": {
             "content": {
@@ -1478,7 +1522,7 @@
                 }
               }
             },
-            "description": "Missing or unacceptable access token"
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
           "422": {
             "content": {

@@ -10,11 +10,11 @@ Read the relevant PRD section (IDs such as `JR-`, `RF-`, `CC-`, `SEC-`, `SYNC-`,
 Human-facing overview: [README.md](README.md).
 
 **Status:** walking skeleton in progress. `warmly/` (Python) verifies access
-tokens on every `/v1` route but health, stores recovery envelopes, and serves
-the remaining routes as typed stubs. `src/` is a Preact shell with real
-account and recovery-key flows (real cryptography; in-memory doubles stand in
-for the servers outside production); other routes render accessible
-placeholders.
+tokens and device signatures on every `/v1` route but health, stores recovery
+envelopes and device identities, and serves the remaining routes as typed
+stubs. `src/` is a Preact shell with real account, recovery-key and
+Manage Devices flows (real cryptography; in-memory doubles stand in for the
+servers outside production); other routes render accessible placeholders.
 
 ---
 
@@ -137,6 +137,10 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   ([docs/security/authentication.md](docs/security/authentication.md)). Never
   read an owner or account ID from a path, query, header or body. Tests sign
   tokens with `tests/auth/tokens.py`; no test contacts a real auth provider.
+- Every authenticated route also requires a device signature
+  (`warmly.auth.device.require_device` or `CurrentCaller`; ADR-0005). The
+  only exceptions are listed in the ADR, and a test fails if a new route is
+  neither signed nor listed. Never accept an unsigned request "for now".
 - Database tests need `WARMLY_TEST_DATABASE_URL` (see README). They fail when it is
   missing; never mark them to skip.
 
@@ -169,7 +173,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - Nothing that can decrypt goes in `localStorage` or `sessionStorage`. A
   trusted device keeps its wrapped key in IndexedDB through
   `src/crypto/device-key-store.ts` only.
-- External services (auth, key vault) are interfaces reached through
+- Every request to the Warmly API goes through `src/api/client.ts`, which
+  signs it with this device's key (ADR-0005). Never call `fetch` for the API
+  anywhere else. Never edit `tests/fixtures/signing/v1.json`: a change to the
+  signed message adds a new version beside it.
+- External services (auth, key vault, device directory) are interfaces reached through
   `useServices()`. In-memory doubles live in `src/testing/` and are selected behind
   `import.meta.env.MODE !== "production"`, so they are absent from the real bundle.
 - Two builds are tested in the browser: `e2e/production/` runs against the real

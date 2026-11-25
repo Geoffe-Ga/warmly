@@ -20,11 +20,18 @@ _READ = """
      WHERE owner_id = %s
 """
 
+_READ_VERIFIER = """
+    SELECT device_enrollment_verifier
+      FROM warmly_private.recovery_envelopes
+     WHERE owner_id = %s
+"""
+
 # Creation succeeds only when the account has no envelope yet.
 _CREATE = """
     INSERT INTO warmly_private.recovery_envelopes
-                (owner_id, version, format_version, wrapped_key)
-         VALUES (%s, 1, %s, %s)
+                (owner_id, version, format_version, wrapped_key,
+                 device_enrollment_verifier)
+         VALUES (%s, 1, %s, %s, %s)
     ON CONFLICT (owner_id) DO NOTHING
       RETURNING version, format_version, wrapped_key
 """
@@ -109,7 +116,13 @@ class PostgresRecoveryStore:
         async with self._database.as_owner(owner_id) as tx:
             if request.expected_version == 0:
                 cursor = await tx.execute(
-                    _CREATE, (owner_id, request.format_version, request.wrapped_key)
+                    _CREATE,
+                    (
+                        owner_id,
+                        request.format_version,
+                        request.wrapped_key,
+                        request.device_enrollment_verifier,
+                    ),
                 )
             else:
                 cursor = await tx.execute(
@@ -122,3 +135,18 @@ class PostgresRecoveryStore:
                     ),
                 )
             return _envelope(await cursor.fetchone())
+
+    async def enrollment_verifier(self, owner_id: UUID) -> str | None:
+        """Return what a new device must prove it knows.
+
+        Args:
+            owner_id: The verified owner.
+
+        Returns:
+            The verifier stored with the envelope, or ``None`` if the account
+            has no envelope or the envelope predates device registration.
+        """
+        async with self._database.as_owner(owner_id) as tx:
+            cursor = await tx.execute(_READ_VERIFIER, (owner_id,))
+            row = await cursor.fetchone()
+        return None if row is None or row[0] is None else str(row[0])

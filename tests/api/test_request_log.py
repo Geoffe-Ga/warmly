@@ -68,7 +68,7 @@ def test_each_request_logs_one_line_with_only_the_allowed_fields(
     """The log schema is closed: nothing beyond REQUEST_LOG_FIELDS."""
     caplog.set_level(logging.INFO, logger=LOGGER_NAME)
 
-    response = client.request(case.method, case.path, json=case.body)
+    response = case.send(client)
 
     (fields,) = _fields(caplog)
     assert set(fields) == REQUEST_LOG_FIELDS

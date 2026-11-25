@@ -13,12 +13,14 @@ export interface paths {
     };
     /**
      * List the caller's devices
-     * @description List the signed-in user's devices.
+     * @description List the signed-in user's own devices.
      *
-     *     Stub: always an empty list.
+     *     Args:
+     *         caller: The verified account and device.
+     *         devices: Where devices are kept.
      *
      *     Returns:
-     *         An empty device list.
+     *         The account's devices, oldest first, with the calling one marked.
      */
     get: operations["list_devices_v1_devices_get"];
     put?: never;
@@ -26,13 +28,28 @@ export interface paths {
      * Register the calling device
      * @description Register the calling device's identity.
      *
-     *     Stub: echoes the submitted identity without storing it.
+     *     A device cannot sign with a registered key before it has one, so this
+     *     route checks two other things instead:
+     *
+     *     - the request is signed with the very key being registered, which proves
+     *       the caller holds the private key;
+     *     - the enrollment proof, which proves the caller knows the account root
+     *       key. A stolen session token cannot produce it.
      *
      *     Args:
-     *         request: The device's ID, public key and encrypted name.
+     *         request: The device's ID, public key, encrypted name and proof.
+     *         http_request: The request, for its signature.
+     *         owner: The verified account.
+     *         devices: Where devices are kept.
+     *         recovery: Where the account's enrollment verifier is kept.
      *
      *     Returns:
-     *         The device as it would have been registered.
+     *         The registered device.
+     *
+     *     Raises:
+     *         DeviceAuthorizationError: If the signature or the proof is not valid.
+     *         ProblemError: 409 if the account has no keys yet, or the device ID is
+     *             already registered.
      */
     post: operations["register_device_v1_devices_post"];
     delete?: never;
@@ -58,14 +75,18 @@ export interface paths {
      * Rename a device
      * @description Replace a device's encrypted display name.
      *
-     *     Stub: echoes the new name without storing it.
-     *
      *     Args:
      *         device_id: The device to rename.
      *         request: The new encrypted name.
+     *         caller: The verified account and device.
+     *         devices: Where devices are kept.
      *
      *     Returns:
-     *         The device as it would look after the rename.
+     *         The device after the rename.
+     *
+     *     Raises:
+     *         ProblemError: 404 if the device is not one of the caller's, whether
+     *             or not it exists on another account.
      */
     patch: operations["rename_device_v1_devices__device_id__patch"];
     trace?: never;
@@ -261,8 +282,14 @@ export interface paths {
      *     other value replaces exactly that version. A failed attempt changes
      *     nothing, so an interrupted rotation leaves the old recovery key valid.
      *
+     *     Creating the envelope happens before the account has any device, so it
+     *     needs only the session. Replacing it must be signed by one of the
+     *     account's devices: a stolen session token alone cannot swap the envelope
+     *     and lock the user out of recovery.
+     *
      *     Args:
      *         request: The new envelope and the version it replaces.
+     *         http_request: The request, for its device signature.
      *         owner: The verified caller.
      *         store: Where envelopes are kept.
      *
@@ -588,6 +615,11 @@ export interface components {
      */
     PutRecoveryEnvelopeRequest: {
       /**
+       * Device Enrollment Verifier
+       * @description Required when creating the envelope (expected_version 0) and refused otherwise. A value derived one-way from the root key, which a new device must prove it knows before it can register.
+       */
+      device_enrollment_verifier?: string | null;
+      /**
        * Expected Version
        * @description Version being replaced; 0 when none exists yet.
        */
@@ -647,6 +679,11 @@ export interface components {
        * Format: uuid
        */
       device_id: string;
+      /**
+       * Enrollment Proof
+       * @description Proof that the registering device knows the account root key: an HMAC over the device ID and public key.
+       */
+      enrollment_proof: string;
       /** Name Ciphertext */
       name_ciphertext: string;
       /** Public Key */
@@ -740,7 +777,7 @@ export interface operations {
           "application/json": components["schemas"]["DeviceList"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
         headers: {
           [name: string]: unknown;
@@ -791,8 +828,17 @@ export interface operations {
           "application/json": components["schemas"]["Device"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description The device ID is already registered, or the account has not created its keys yet */
+      409: {
         headers: {
           [name: string]: unknown;
         };
@@ -844,8 +890,17 @@ export interface operations {
           "application/json": components["schemas"]["Device"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Problem"];
+        };
+      };
+      /** @description No such device on this account */
+      404: {
         headers: {
           [name: string]: unknown;
         };
@@ -893,7 +948,7 @@ export interface operations {
           "application/json": components["schemas"]["Device"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
         headers: {
           [name: string]: unknown;
@@ -944,7 +999,7 @@ export interface operations {
           "application/json": components["schemas"]["Enrollment"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
         headers: {
           [name: string]: unknown;
@@ -993,7 +1048,7 @@ export interface operations {
           "application/json": components["schemas"]["Enrollment"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
         headers: {
           [name: string]: unknown;
@@ -1046,7 +1101,7 @@ export interface operations {
           "application/json": components["schemas"]["Enrollment"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
         headers: {
           [name: string]: unknown;
@@ -1142,7 +1197,7 @@ export interface operations {
           "application/json": components["schemas"]["RecoveryEnvelope"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
         headers: {
           [name: string]: unknown;
@@ -1202,7 +1257,7 @@ export interface operations {
           "application/json": components["schemas"]["RecoveryEnvelope"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
         headers: {
           [name: string]: unknown;
@@ -1261,7 +1316,7 @@ export interface operations {
           "application/json": components["schemas"]["ChangesResponse"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
         headers: {
           [name: string]: unknown;
@@ -1312,7 +1367,7 @@ export interface operations {
           "application/json": components["schemas"]["OperationsResponse"];
         };
       };
-      /** @description Missing or unacceptable access token */
+      /** @description Missing or unacceptable access token, or a request not signed by one of the account's devices */
       401: {
         headers: {
           [name: string]: unknown;

@@ -12,7 +12,7 @@ def test_success_responses_carry_every_security_header(
     client: TestClient, case: Case
 ) -> None:
     """Each route sends the full header set."""
-    response = client.request(case.method, case.path, json=case.body)
+    response = case.send(client)
 
     for name, value in SECURITY_HEADERS.items():
         assert response.headers[name] == value

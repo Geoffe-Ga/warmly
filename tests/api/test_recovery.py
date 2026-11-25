@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tests.api.conftest import InMemoryRecoveryStore
+from tests.auth.devices import ENROLLMENT_VERIFIER
 from tests.auth.tokens import OTHER_OWNER_ID, OWNER_ID, Signer
 from warmly.api.errors import PROBLEM_MEDIA_TYPE
 from warmly.api.stub import STUB_HEADER
@@ -23,14 +24,14 @@ WRAPPED_B = "QkJCQg=="
 
 def _put(client: TestClient, expected: int, wrapped: str = WRAPPED_A) -> dict[str, Any]:
     """Send a PUT and return the response as a dictionary with its status."""
-    response = client.put(
-        URL,
-        json={
-            "expected_version": expected,
-            "format_version": 1,
-            "wrapped_key": wrapped,
-        },
-    )
+    body: dict[str, Any] = {
+        "expected_version": expected,
+        "format_version": 1,
+        "wrapped_key": wrapped,
+    }
+    if expected == 0:
+        body["device_enrollment_verifier"] = ENROLLMENT_VERIFIER
+    response = client.put(URL, json=body)
     return {"status": response.status_code, **response.json()}
 
 
@@ -136,7 +137,8 @@ def test_each_account_has_its_own_envelope(
     _put(first, 0, WRAPPED_A)
 
     assert second.get(URL).status_code == 404
-    assert _put(second, 1, WRAPPED_B)["status"] == 409
+    # Replacing an envelope must be signed by a device; this account has none.
+    assert _put(second, 1, WRAPPED_B)["status"] == 401
     assert _put(second, 0, WRAPPED_B)["status"] == 200
     assert first.get(URL).json()["wrapped_key"] == WRAPPED_A
     assert second.get(URL).json()["wrapped_key"] == WRAPPED_B
@@ -187,3 +189,45 @@ def test_the_routes_are_no_longer_stubs(client: TestClient) -> None:
     """Real storage must not carry the stub marker."""
     assert STUB_HEADER not in client.get(URL).headers
     assert STUB_HEADER not in client.put(URL, json={}).headers
+
+
+def test_creating_needs_the_enrollment_verifier_and_rotating_must_not_send_one(
+    client: TestClient, empty: InMemoryRecoveryStore
+) -> None:
+    """The verifier is set once, with the first envelope, and never replaced."""
+    without = client.put(
+        URL,
+        json={"expected_version": 0, "format_version": 1, "wrapped_key": WRAPPED_A},
+    )
+    assert without.status_code == 422
+    assert not empty.envelopes
+
+    _put(client, 0, WRAPPED_A)
+    assert empty.verifiers[UUID(OWNER_ID)] == ENROLLMENT_VERIFIER
+
+    with_one = client.put(
+        URL,
+        json={
+            "expected_version": 1,
+            "format_version": 1,
+            "wrapped_key": WRAPPED_B,
+            "device_enrollment_verifier": WRAPPED_B,
+        },
+    )
+    assert with_one.status_code == 422
+    assert empty.verifiers[UUID(OWNER_ID)] == ENROLLMENT_VERIFIER
+
+
+def test_creating_needs_only_the_session_but_rotating_needs_a_device(
+    session_only: TestClient, client: TestClient, empty: InMemoryRecoveryStore
+) -> None:
+    """A stolen token cannot replace the envelope and lock the user out (SEC-006)."""
+    assert _put(session_only, 0, WRAPPED_A)["status"] == 200
+    assert session_only.get(URL).status_code == 200
+
+    stolen = _put(session_only, 1, WRAPPED_B)
+
+    assert stolen["status"] == 401
+    assert stolen["code"] == "device.missing_signature"
+    assert empty.envelopes[UUID(OWNER_ID)].wrapped_key == WRAPPED_A
+    assert _put(client, 1, WRAPPED_B)["status"] == 200

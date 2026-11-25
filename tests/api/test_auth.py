@@ -10,7 +10,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from tests.api.cases import CASES, Case
+from tests.api.cases import CASES, ENROLLMENT_ID, Case
 from tests.api.conftest import FakeDatabase
 from tests.auth.tokens import AUDIENCE, ISSUER, OTHER_OWNER_ID, OWNER_ID, Signer
 from warmly.api.errors import PROBLEM_MEDIA_TYPE
@@ -216,7 +216,9 @@ def test_a_given_verifier_is_used_with_a_database_built_from_settings(
     app = create_app(load_settings({}), token_verifier=verifier)
 
     # No lifespan is started, so the database is never contacted.
-    response = TestClient(app).get("/v1/devices", headers=_bearer(signer.token()))
+    response = TestClient(app).get(
+        f"/v1/enrollments/{ENROLLMENT_ID}", headers=_bearer(signer.token())
+    )
 
     assert response.status_code == 200
 

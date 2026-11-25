@@ -4,6 +4,7 @@
 import { createContext } from "preact";
 import { useContext } from "preact/hooks";
 
+import { ApiClient } from "../api/client";
 import {
   ApiRecoveryEnvelopeStore,
   type RecoveryEnvelopeStore,
@@ -19,7 +20,18 @@ import {
   type DeviceKeyStore,
 } from "../crypto/device-key-store";
 import { UnavailableKeyVault, type KeyVault } from "../crypto/key-vault";
+import {
+  IndexedDbDeviceIdentityStore,
+  type DeviceIdentityStore,
+} from "../devices/identity";
+import { ApiDeviceRegistry, type DeviceRegistry } from "../devices/registry";
+import {
+  AccountDevices,
+  UnavailableDeviceDirectory,
+  type DeviceDirectory,
+} from "../devices/this-device";
 import { FakeAuthClient } from "../testing/fake-auth-client";
+import { FakeDeviceRegistry } from "../testing/fake-device-registry";
 import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
@@ -29,6 +41,8 @@ import { createSession, type Session } from "./session";
 export interface Services {
   readonly auth: AuthClient;
   readonly vault: KeyVault;
+  /** The account's own devices, for Manage Devices. */
+  readonly devices: DeviceDirectory;
   readonly session: Session;
   /** In-memory state of an account being set up; see {@link Onboarding}. */
   readonly onboarding: Onboarding;
@@ -64,30 +78,41 @@ export function createAuthClient(
   return makeDouble === undefined ? new UnavailableAuthClient() : makeDouble();
 }
 
+/** The in-memory stand-ins for the Warmly API and this device's storage. */
+export interface KeyServiceDoubles {
+  readonly envelopes: RecoveryEnvelopeStore;
+  readonly device: DeviceKeyStore;
+  readonly identities: DeviceIdentityStore;
+  readonly registry: DeviceRegistry;
+}
+
+/** The services that need the account's keys. */
+export interface KeyServices {
+  readonly vault: KeyVault;
+  readonly devices: DeviceDirectory;
+}
+
 /**
- * Choose the key vault for a build.
+ * Choose the key vault and the device directory for a build.
  *
  * With doubles available (every build but production), the real vault runs
  * on an in-memory "server", so the real cryptography and the real device
- * store are exercised in development and in the browser tests. A production
+ * stores are exercised in development and in the browser tests. A production
  * build configured with a Supabase project gets the real vault on the Warmly
- * API. An unconfigured production build gets the "unavailable" stand-in.
+ * API. An unconfigured production build gets the "unavailable" stand-ins.
  *
  * @param env - The build-time variables.
- * @param auth - The auth client the vault asks who is signed in.
+ * @param auth - The auth client that says who is signed in.
  * @param doubles - The in-memory stores. Production builds pass nothing.
- * @returns The key vault.
+ * @returns The key vault and the device directory.
  */
-export function createKeyVault(
+export function createKeyServices(
   env: Readonly<Record<string, unknown>>,
   auth: AuthClient,
-  doubles?: {
-    readonly envelopes: RecoveryEnvelopeStore;
-    readonly device: DeviceKeyStore;
-  },
-): KeyVault {
+  doubles?: KeyServiceDoubles,
+): KeyServices {
   if (doubles !== undefined) {
-    return new AccountVault(auth, doubles.envelopes, doubles.device);
+    return assemble(auth, doubles);
   }
   const apiOrigin = env["VITE_API_ORIGIN"];
   // Both must be configured. Without the API's origin the vault would send
@@ -98,15 +123,42 @@ export function createKeyVault(
     typeof apiOrigin !== "string" ||
     apiOrigin === ""
   ) {
-    return new UnavailableKeyVault();
+    return {
+      vault: new UnavailableKeyVault(),
+      devices: new UnavailableDeviceDirectory(),
+    };
   }
-  return new AccountVault(
+  const api = new ApiClient(apiOrigin, (input, init) => fetch(input, init));
+  const identities = new IndexedDbDeviceIdentityStore();
+  return assemble(auth, {
+    envelopes: new ApiRecoveryEnvelopeStore(api, identities),
+    device: new IndexedDbDeviceKeyStore(),
+    identities,
+    registry: new ApiDeviceRegistry(api),
+  });
+}
+
+/**
+ * Join the vault and the device directory: each unlock registers the device
+ * if it is not registered yet, and the directory reads the root key from the
+ * vault.
+ */
+function assemble(auth: AuthClient, parts: KeyServiceDoubles): KeyServices {
+  const vault: AccountVault = new AccountVault(
     auth,
-    new ApiRecoveryEnvelopeStore(apiOrigin, (input, init) =>
-      fetch(input, init),
-    ),
-    new IndexedDbDeviceKeyStore(),
+    parts.envelopes,
+    parts.device,
+    (root) => {
+      devices.registerInBackground(root);
+    },
   );
+  const devices = new AccountDevices(
+    auth,
+    parts.identities,
+    parts.registry,
+    () => vault.rootKey(),
+  );
+  return { vault, devices };
 }
 
 const TAB_ID_KEY = "warmly.fake.tab";
@@ -124,12 +176,25 @@ const TAB_ID_KEY = "warmly.fake.tab";
  * @returns The database name.
  */
 export function tabDeviceDatabase(): string {
+  return `warmly-device-${tabId()}`;
+}
+
+/**
+ * The device-identity database for this tab; see {@link tabDeviceDatabase}.
+ *
+ * @returns The database name.
+ */
+export function tabIdentityDatabase(): string {
+  return `warmly-identity-${tabId()}`;
+}
+
+function tabId(): string {
   let tab = sessionStorage.getItem(TAB_ID_KEY);
   if (tab === null) {
     tab = crypto.randomUUID();
     sessionStorage.setItem(TAB_ID_KEY, tab);
   }
-  return `warmly-device-${tab}`;
+  return tab;
 }
 
 /**
@@ -150,13 +215,15 @@ export function createServices(): Services {
   );
   return {
     auth,
-    vault: createKeyVault(
+    ...createKeyServices(
       import.meta.env,
       auth,
       import.meta.env.MODE !== "production"
         ? {
             envelopes: new FakeRecoveryEnvelopeStore(),
             device: new IndexedDbDeviceKeyStore(tabDeviceDatabase()),
+            identities: new IndexedDbDeviceIdentityStore(tabIdentityDatabase()),
+            registry: new FakeDeviceRegistry(),
           }
         : undefined,
     ),

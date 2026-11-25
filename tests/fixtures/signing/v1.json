@@ -1,0 +1,51 @@
+{
+  "signatureVersion": "warmly-request-v1",
+  "deviceId": "d0000000-0000-4000-8000-0000000000f1",
+  "publicKey": "BCEDzifPBli2enWntQConlPztTI8Nmd9OuyhN6fleY7/KilF2Ug8hCJ03gXgzpJcKQg4LER4jszak2fgnWPAmLU=",
+  "requests": [
+    {
+      "name": "a GET with no body",
+      "method": "GET",
+      "target": "/v1/devices",
+      "body": "",
+      "timestamp": 1795651200,
+      "nonce": "fixture-nonce-0000",
+      "message": "warmly-request-v1\nGET\n/v1/devices\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1795651200\nfixture-nonce-0000\nd0000000-0000-4000-8000-0000000000f1",
+      "signature": "UX8jRsQy24QGV5LKvicEzGTW+yTd017f9MAgA3EhRoB6Zej3Mc7rF+7Tk+DGcxtnBq46uVt7kDuRrDCurQE6Ww=="
+    },
+    {
+      "name": "a POST with a JSON body",
+      "method": "POST",
+      "target": "/v1/sync/operations",
+      "body": "eyJvcGVyYXRpb25zIjpbXX0=",
+      "timestamp": 1795651201,
+      "nonce": "fixture-nonce-0001",
+      "message": "warmly-request-v1\nPOST\n/v1/sync/operations\nba008b3ff2e64fd0f721e62a4159d1068da4c3f8ca432bf40a0414c167013059\n1795651201\nfixture-nonce-0001\nd0000000-0000-4000-8000-0000000000f1",
+      "signature": "R1MGrzmENQmIvDAF/aALRGfZWGRMZGfoP+D/dOP6O5ACYJdrrFUrjz6/97JfZHV7L+0X1T2r62EzBvOrxE1l9w=="
+    },
+    {
+      "name": "a GET with a query string",
+      "method": "GET",
+      "target": "/v1/sync/changes?since=41&limit=100",
+      "body": "",
+      "timestamp": 1795651202,
+      "nonce": "fixture-nonce-0002",
+      "message": "warmly-request-v1\nGET\n/v1/sync/changes?since=41&limit=100\ne3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\n1795651202\nfixture-nonce-0002\nd0000000-0000-4000-8000-0000000000f1",
+      "signature": "m77/2LMwiqoD5b3u+N5SEw1IPMicazjYOZ2c7DelovPSSdduRTJJoD5IgmCD8iPe9+xezRsTh0we3vVlTThemQ=="
+    },
+    {
+      "name": "a PATCH with non-ASCII bytes in the body",
+      "method": "PATCH",
+      "target": "/v1/devices/d0000000-0000-4000-8000-0000000000f1",
+      "body": "eyJuYW1lX2NpcGhlcnRleHQiOiI0cHlUIn3inJM=",
+      "timestamp": 1795651203,
+      "nonce": "fixture-nonce-0003",
+      "message": "warmly-request-v1\nPATCH\n/v1/devices/d0000000-0000-4000-8000-0000000000f1\nc483be9a1163b5f370c355f5c2e176942797a06214fe6ac3a1f3d04ce8d5cb12\n1795651203\nfixture-nonce-0003\nd0000000-0000-4000-8000-0000000000f1",
+      "signature": "JL5lt9cTxLTsSTEj57FP58yusPWU5bd0JYij049hryhYjN985Ep2EJub1wxJfse0mTLkwXEt5rbEVVARCTLRTA=="
+    }
+  ],
+  "enrollment": {
+    "verifier": "7WOGBwG3is+zZHoUcLWl/zlt5Lfcl16Ma8vdNxZejwY=",
+    "proof": "CDnSGD4FGN5vbrqVeOVHEmvtv0UHDj2FzA+ql4kaVUg="
+  }
+}

@@ -7,6 +7,7 @@ import { createOnboarding } from "../../../src/app/onboarding";
 import type { Services } from "../../../src/app/services";
 import { createSession, type SessionState } from "../../../src/app/session";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
+import { FakeDeviceDirectory } from "../../../src/testing/fake-device-directory";
 import {
   FAKE_DEVICE_PASSPHRASE,
   FakeKeyVault,
@@ -16,6 +17,7 @@ import {
 export interface TestServices extends Services {
   readonly auth: FakeAuthClient;
   readonly vault: FakeKeyVault;
+  readonly devices: FakeDeviceDirectory;
 }
 
 /** Sample values for the `:id` segments of parameterised routes. */
@@ -40,6 +42,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
   return {
     auth: new FakeAuthClient(),
     vault: new FakeKeyVault(),
+    devices: new FakeDeviceDirectory(),
     session: createSession(state),
     onboarding: createOnboarding(),
     lockHooks: createLockHooks(),

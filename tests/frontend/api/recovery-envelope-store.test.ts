@@ -1,9 +1,22 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { ApiRecoveryEnvelopeStore } from "../../../src/api/recovery-envelope-store";
+import { ApiClient } from "../../../src/api/client";
+import {
+  ApiRecoveryEnvelopeStore,
+  type RecoveryEnvelopeWrite,
+} from "../../../src/api/recovery-envelope-store";
 import type { AuthSession } from "../../../src/auth/auth-client";
-import { toBase64 } from "../../../src/crypto/encoding";
+import { toBase64, utf8 } from "../../../src/crypto/encoding";
+import { VaultError } from "../../../src/crypto/key-vault";
+import type { DeviceIdentityStore } from "../../../src/devices/identity";
+import { signingMessage } from "../../../src/devices/signing";
 import { FakeRecoveryEnvelopeStore } from "../../../src/testing/fake-recovery-envelope-store";
+import {
+  MemoryIdentityStore,
+  json,
+  server,
+  type TestIdentity,
+} from "../devices/helpers";
 
 const SESSION: AuthSession = {
   userId: "0a1b2c3d-0000-4000-8000-00000000000a",
@@ -15,30 +28,30 @@ const OTHER: AuthSession = {
 };
 const ENVELOPE = new Uint8Array([1, 2, 3, 4]);
 
-interface Call {
-  readonly url: string;
-  readonly init: RequestInit;
-}
+const VERIFIER = new Uint8Array(32).fill(5);
 
-function server(respond: () => Response | Promise<Response>): {
-  calls: Call[];
-  fetch: typeof fetch;
-} {
-  const calls: Call[] = [];
+function change(
+  expectedVersion: number,
+  envelope: Uint8Array<ArrayBuffer> = ENVELOPE,
+  formatVersion = 1,
+): RecoveryEnvelopeWrite {
   return {
-    calls,
-    fetch: (input, init = {}) => {
-      calls.push({ url: String(input), init });
-      return Promise.resolve().then(respond);
-    },
+    expectedVersion,
+    envelope,
+    formatVersion,
+    enrollmentVerifier: VERIFIER,
   };
 }
 
-function json(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+function apiStore(
+  baseUrl: string,
+  fetchFn: typeof fetch,
+  identities: DeviceIdentityStore = new MemoryIdentityStore(),
+): ApiRecoveryEnvelopeStore {
+  return new ApiRecoveryEnvelopeStore(
+    new ApiClient(baseUrl, fetchFn, () => 1_795_651_200_000),
+    identities,
+  );
 }
 
 describe("the recovery envelope on the Warmly API (SEC-003)", () => {
@@ -46,10 +59,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
     const api = server(() =>
       json(200, { version: 3, format_version: 1, wrapped_key: "AQIDBA==" }),
     );
-    const store = new ApiRecoveryEnvelopeStore(
-      "https://api.example/",
-      api.fetch,
-    );
+    const store = apiStore("https://api.example/", api.fetch);
 
     const stored = await store.read(SESSION);
 
@@ -68,7 +78,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
   it("uses the app's own origin when no API origin is configured", async () => {
     const api = server(() => json(404, {}));
 
-    await new ApiRecoveryEnvelopeStore("", api.fetch).read(SESSION);
+    await apiStore("", api.fetch).read(SESSION);
 
     expect(api.calls[0]?.url).toBe("/v1/recovery-envelope");
   });
@@ -76,24 +86,23 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
   it("reports an account with no envelope as undefined", async () => {
     const api = server(() => json(404, { code: "recovery.not_found" }));
 
-    expect(
-      await new ApiRecoveryEnvelopeStore("", api.fetch).read(SESSION),
-    ).toBeUndefined();
+    expect(await apiStore("", api.fetch).read(SESSION)).toBeUndefined();
   });
 
-  it("sends only the wrapped key, the format and the expected version", async () => {
+  it("creates with the wrapped key, the format, the expected version and the enrollment verifier", async () => {
     const api = server(() =>
       json(200, { version: 1, format_version: 1, wrapped_key: "AQIDBA==" }),
     );
-    const store = new ApiRecoveryEnvelopeStore("", api.fetch);
+    const store = apiStore("", api.fetch);
 
-    expect(await store.write(SESSION, 0, ENVELOPE, 1)).toBe(true);
+    expect(await store.write(SESSION, change(0))).toBe(true);
 
     expect(api.calls[0]?.init.method).toBe("PUT");
-    expect(JSON.parse(String(api.calls[0]?.init.body))).toEqual({
+    expect(JSON.parse(api.calls[0]?.body ?? "")).toEqual({
       expected_version: 0,
       format_version: 1,
       wrapped_key: "AQIDBA==",
+      device_enrollment_verifier: toBase64(VERIFIER),
     });
     expect(api.calls[0]?.init.headers).toMatchObject({
       "Content-Type": "application/json",
@@ -105,41 +114,89 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
       json(200, { version: 1, format_version: 2, wrapped_key: "AQIDBA==" }),
     );
 
-    await new ApiRecoveryEnvelopeStore("", api.fetch).write(
-      SESSION,
-      0,
-      ENVELOPE,
-      2,
-    );
+    await apiStore("", api.fetch).write(SESSION, change(0, ENVELOPE, 2));
 
-    expect(JSON.parse(String(api.calls[0]?.init.body))).toMatchObject({
+    expect(JSON.parse(api.calls[0]?.body ?? "")).toMatchObject({
       format_version: 2,
     });
+  });
+
+  it("creates without a device signature, because no device can register before the envelope exists", async () => {
+    const identities = new MemoryIdentityStore();
+    await identities.getOrCreate(SESSION.userId);
+    const api = server(() => json(200, {}));
+
+    await apiStore("", api.fetch, identities).write(SESSION, change(0));
+
+    expect(api.calls[0]?.headers["Warmly-Signature"]).toBeUndefined();
+    expect(api.calls[0]?.headers["Warmly-Device"]).toBeUndefined();
+  });
+
+  it("replaces with a request signed by this device, and without the verifier (SEC-006)", async () => {
+    const identities = new MemoryIdentityStore();
+    const identity = await identities.getOrCreate(SESSION.userId);
+    const api = server(() => json(200, {}));
+
+    expect(
+      await apiStore("", api.fetch, identities).write(SESSION, change(3)),
+    ).toBe(true);
+
+    const call = api.calls[0];
+    expect(JSON.parse(call?.body ?? "")).toEqual({
+      expected_version: 3,
+      format_version: 1,
+      wrapped_key: "AQIDBA==",
+    });
+    expect(call?.headers["Warmly-Device"]).toBe(identity.deviceId);
+    const message = await signingMessage({
+      method: "PUT",
+      target: "/v1/recovery-envelope",
+      body: utf8(call?.body ?? ""),
+      deviceId: identity.deviceId,
+      timestamp: 1_795_651_200,
+      nonce: call?.headers["Warmly-Nonce"] ?? "",
+    });
+    expect(
+      await (identity as TestIdentity).verify(
+        message,
+        call?.headers["Warmly-Signature"] ?? "",
+      ),
+    ).toBe(true);
+  });
+
+  it("says the device is not authorised when a replacement is refused for its signature", async () => {
+    const api = server(() => json(401, { code: "device.missing_signature" }));
+
+    await expect(
+      apiStore("", api.fetch).write(SESSION, change(1)),
+    ).rejects.toMatchObject({
+      name: "ApiError",
+      code: "device_not_authorized",
+    });
+    expect(api.calls[0]?.headers["Warmly-Signature"]).toBeUndefined();
   });
 
   it("reports a version conflict as false", async () => {
     const api = server(() => json(409, { code: "recovery.version_conflict" }));
 
-    expect(
-      await new ApiRecoveryEnvelopeStore("", api.fetch).write(
-        SESSION,
-        2,
-        ENVELOPE,
-        1,
-      ),
-    ).toBe(false);
+    expect(await apiStore("", api.fetch).write(SESSION, change(2))).toBe(false);
   });
 
   it.each(["read", "write"] as const)(
     "reports being offline on %s",
     async (operation) => {
-      const store = new ApiRecoveryEnvelopeStore("", () =>
+      const store = apiStore("", () =>
         Promise.reject(new TypeError("Failed to fetch")),
       );
+      await expect(
+        operation === "read"
+          ? store.read(SESSION)
+          : store.write(SESSION, change(0)),
+      ).rejects.toBeInstanceOf(VaultError);
       const attempt =
         operation === "read"
           ? store.read(SESSION)
-          : store.write(SESSION, 0, ENVELOPE, 1);
+          : store.write(SESSION, change(0));
 
       await expect(attempt).rejects.toMatchObject({ code: "offline" });
     },
@@ -149,11 +206,11 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
     "reports a refused token on %s as signed out",
     async (operation) => {
       const api = server(() => json(401, { code: "auth.invalid_token" }));
-      const store = new ApiRecoveryEnvelopeStore("", api.fetch);
+      const store = apiStore("", api.fetch);
       const attempt =
         operation === "read"
           ? store.read(SESSION)
-          : store.write(SESSION, 0, ENVELOPE, 1);
+          : store.write(SESSION, change(0));
 
       await expect(attempt).rejects.toMatchObject({ code: "signed_out" });
     },
@@ -165,7 +222,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
     ["a body with no wrapped key", () => json(200, { version: 1 })],
     ["a null body", () => json(200, null)],
   ])("refuses %s when reading, without detail", async (_name, respond) => {
-    const store = new ApiRecoveryEnvelopeStore("", server(respond).fetch);
+    const store = apiStore("", server(respond).fetch);
 
     await expect(store.read(SESSION)).rejects.toThrow(
       "The recovery envelope could not be read",
@@ -173,12 +230,9 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
   });
 
   it("refuses an unexpected status when writing", async () => {
-    const store = new ApiRecoveryEnvelopeStore(
-      "",
-      server(() => json(503, {})).fetch,
-    );
+    const store = apiStore("", server(() => json(503, {})).fetch);
 
-    await expect(store.write(SESSION, 0, ENVELOPE, 1)).rejects.toThrow(
+    await expect(store.write(SESSION, change(0))).rejects.toThrow(
       "The recovery envelope could not be saved",
     );
   });
@@ -186,7 +240,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
   it("never puts the access token in the URL", async () => {
     const api = server(() => json(404, {}));
 
-    await new ApiRecoveryEnvelopeStore("", api.fetch).read(SESSION);
+    await apiStore("", api.fetch).read(SESSION);
 
     expect(api.calls[0]?.url).not.toContain(SESSION.accessToken);
   });
@@ -202,11 +256,13 @@ describe("the in-memory stand-in follows the same rules", () => {
 
   it("creates once, then replaces only the expected version", async () => {
     expect(await store.read(SESSION)).toBeUndefined();
-    expect(await store.write(SESSION, 1, ENVELOPE, 1)).toBe(false);
-    expect(await store.write(SESSION, 0, ENVELOPE, 1)).toBe(true);
-    expect(await store.write(SESSION, 0, ENVELOPE, 1)).toBe(false);
-    expect(await store.write(SESSION, 1, new Uint8Array([9]), 1)).toBe(true);
-    expect(await store.write(SESSION, 1, ENVELOPE, 1)).toBe(false);
+    expect(await store.write(SESSION, change(1))).toBe(false);
+    expect(await store.write(SESSION, change(0))).toBe(true);
+    expect(await store.write(SESSION, change(0))).toBe(false);
+    expect(await store.write(SESSION, change(1, new Uint8Array([9])))).toBe(
+      true,
+    );
+    expect(await store.write(SESSION, change(1))).toBe(false);
 
     const stored = await store.read(SESSION);
     expect(stored?.version).toBe(2);
@@ -214,8 +270,8 @@ describe("the in-memory stand-in follows the same rules", () => {
   });
 
   it("keeps accounts apart and survives a reload", async () => {
-    await store.write(SESSION, 0, ENVELOPE, 1);
-    await store.write(OTHER, 0, new Uint8Array([7]), 1);
+    await store.write(SESSION, change(0));
+    await store.write(OTHER, change(0, new Uint8Array([7])));
 
     const reloaded = new FakeRecoveryEnvelopeStore();
 

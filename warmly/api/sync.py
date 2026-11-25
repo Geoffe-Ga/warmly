@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from warmly.api.errors import SIGNED_IN_RESPONSES
 from warmly.api.stub import mark_stub
-from warmly.auth.dependency import require_owner
+from warmly.auth.device import require_device
 from warmly.schemas.sync import (
     ChangesResponse,
     OperationResult,
@@ -17,7 +17,7 @@ from warmly.schemas.sync import (
 router = APIRouter(
     prefix="/sync",
     tags=["sync"],
-    dependencies=[Depends(require_owner), Depends(mark_stub)],
+    dependencies=[Depends(require_device), Depends(mark_stub)],
     responses=SIGNED_IN_RESPONSES,
 )
 

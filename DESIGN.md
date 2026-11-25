@@ -367,6 +367,8 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`action-link`** — The large tiles on the home screen. A full-width link on `{colors.blush}` with a `{colors.border-strong}` border, `{typography.label}` text in `{colors.ink}`, and no underline: the whole tile is the target.
 
+**`detail-list`** — Short label and value pairs inside a card, such as a device's "Added" date. A two-column `<dl>`: labels in `{colors.ink-muted}`, values in `{colors.ink}`, with `{spacing.xs}` between rows.
+
 ### Inputs & Forms
 
 **`text-input`** — Full width, at least 44px tall, `{colors.surface}` fill, 2px `{colors.border-strong}` border, `{rounded.md}`. Every field has a visible label in `{typography.label}` above it; placeholders are never used as labels. An optional hint in `{typography.small}` and `{colors.ink-muted}` sits between label and control.

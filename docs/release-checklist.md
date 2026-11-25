@@ -35,3 +35,21 @@ the whole product; items are added here as the work that creates them lands.
       for more than 30 minutes and confirm it is locked on return. The
       automated tests use the WebKit engine, not Safari on iOS. Tracked in
       #66.
+
+## Device identity and request signing (issue #21, `docs/adr/0005-device-identity-and-pairing.md`)
+
+- [ ] **Checked on a real iPhone**, in Safari and as an installed app: create
+      an account, open Manage Devices and confirm the device is listed and
+      marked as this device; reload, unlock and confirm it is still the same
+      single device. Safari can clear IndexedDB for a site that is not used
+      for a while, which would make the device register again as a new one.
+      Tracked in #66.
+- [ ] **Signed requests work against the deployed API**: the path the API
+      sees must be the path the browser signed, so a proxy or CDN in front of
+      it must not rewrite paths or query strings. Tracked in #61.
+- [ ] **The API servers' clocks are synchronised** (NTP). A request is
+      refused when its timestamp is more than 5 minutes from the server's
+      clock. Tracked in #61.
+- [ ] **No recovery envelope in the production database lacks an enrollment
+      verifier** (`device_enrollment_verifier IS NULL` returns no rows). An
+      account without one can never register a device. Tracked in #61.
