@@ -7,6 +7,9 @@ import { expect, type Page } from "../fixtures/test";
 // Assembled from words so no credential-shaped literal sits in the repository.
 const SYNTHETIC_PHRASE = ["correct", "horse", "battery"].join(" ");
 
+/** A synthetic device passphrase. */
+export const DEVICE_PASSPHRASE = ["lamp", "river", "kettle"].join(" ");
+
 /** A synthetic account for the in-memory doubles. Nothing here is real. */
 export const ACCOUNT = {
   email: "sam@example.com",
@@ -33,9 +36,40 @@ export async function onboard(page: Page): Promise<string> {
     .getByLabel("Type the last group of your key")
     .fill(lastGroup(recoveryKey));
   await page.getByRole("button", { name: "I've saved my key" }).click();
+  await trustThisDevice(page);
 
   await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
   return recoveryKey;
+}
+
+/**
+ * On the offer to trust this device, set the device passphrase.
+ *
+ * @param page - The page showing the offer.
+ */
+export async function trustThisDevice(page: Page): Promise<void> {
+  await page.getByLabel("Device passphrase").fill(DEVICE_PASSPHRASE);
+  await page.getByLabel("Type it again").fill(DEVICE_PASSPHRASE);
+  await page.getByRole("button", { name: "Trust this device" }).click();
+}
+
+/**
+ * On the offer to trust this device, decline it.
+ *
+ * @param page - The page showing the offer.
+ */
+export async function declineDeviceTrust(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Not now" }).click();
+}
+
+/**
+ * Unlock a trusted device from the locked screen.
+ *
+ * @param page - The page showing the locked screen.
+ */
+export async function unlockThisDevice(page: Page): Promise<void> {
+  await page.getByLabel("Device passphrase").fill(DEVICE_PASSPHRASE);
+  await page.getByRole("button", { name: "Unlock" }).click();
 }
 
 /**

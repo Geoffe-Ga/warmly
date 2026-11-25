@@ -10,6 +10,7 @@ else was considered, and why. Write one before the code that depends on it.
 | [0001](0001-ui-framework.md) | UI framework: Preact with TSX | Accepted |
 | [0002](0002-backend-data-access.md) | Backend data access: private schema, restricted role, owner per transaction, SQL migrations | Accepted |
 | [0003](0003-key-hierarchy-and-envelope.md) | Key hierarchy and the record envelope: WebCrypto, a key per record, AES-256-GCM | Accepted |
+| [0004](0004-trusted-device-unlock.md) | Trusted-device unlock and the inactivity lock | Accepted |
 | [0013](0013-api-contract-from-code.md) | API contract generated from code, with an isolated type generator | Accepted |
 
 ## How to add one

@@ -32,6 +32,7 @@ describe("route table", () => {
       "reset-password",
       "new-password",
       "recover",
+      "trust-device",
       "locked",
     ]);
   });

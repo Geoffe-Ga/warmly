@@ -32,6 +32,7 @@ export type RouteId =
   | "reset-password"
   | "new-password"
   | "recover"
+  | "trust-device"
   | "locked";
 
 /**
@@ -218,6 +219,14 @@ export const ROUTES: readonly RouteDef[] = [
     title: "Unlock with your recovery key",
     summary: "Use your recovery key to open your journal on this device.",
     access: "locked",
+  },
+  {
+    id: "trust-device",
+    path: "/unlock/trust-device",
+    title: "Unlock this device more easily",
+    summary:
+      "Set a passphrase so this device can unlock without your recovery key.",
+    access: "private",
   },
   {
     id: "locked",

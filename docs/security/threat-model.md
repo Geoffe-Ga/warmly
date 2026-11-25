@@ -33,7 +33,7 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Cross-account access | Owner taken only from a verified token ([authentication](authentication.md)); owner-only database policies (ADR-0002) | **In place**; per-route ownership checks arrive with each route, rate limits: #38 |
 | Stolen session token | The auth library keeps the session in `localStorage`; strict CSP limits what script could read it; the token decrypts nothing by itself. Every request also signed by a device key | CSP **in place**; device binding planned: #21 |
 | Lost devices, or a forgotten password | Personal recovery key wraps the root key; the server holds only the wrapped copy; a password reset changes no keys (ADR-0003) | **In place** |
-| Stolen locked device | Root key wrapped at rest; inactivity lock | Planned: #20 |
+| Stolen locked device | Root key stored wrapped twice, by a non-extractable device key and by a device passphrase (ADR-0004); 30-minute inactivity lock. A weak device passphrase is the weak point: PBKDF2 slows guessing but does not stop it | **In place**; passkey unlock planned: #80 |
 | Offline edit conflicts | Compare-and-swap; both versions kept | Planned: #33, #36 |
 | Revoked device reconnecting | Device check on every request | Planned: #23 |
 | Stale data resurrecting deletions | Permanent tombstones and a deletion ledger | Planned: #37, #65 |
@@ -45,6 +45,12 @@ encrypted on the user's device and the backend stores ciphertext only.
 | Prompt injection in journal text | Evidence framing; citation grounding | Planned: #43, #52 |
 
 ## Known windows
+
+- **Same-origin script and the device passphrase.** Script running in the
+  app's origin can use the non-extractable device key and then guess the
+  device passphrase offline, bypassing the five-attempt limit on the lock
+  screen (ADR-0004). The CSP is the control; a long passphrase is the
+  backstop.
 
 - **The recovery envelope routes check the session, not the device.** Until
   every request is signed by a device key (#21, #23), a stolen access token

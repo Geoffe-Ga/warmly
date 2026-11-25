@@ -1,7 +1,6 @@
 import type { JSX } from "preact";
 import { useContext, useState } from "preact/hooks";
 
-import { HOME_PATH } from "../../../app/access";
 import { NavigationContext } from "../../../app/navigation";
 import { useServices } from "../../../app/services";
 import { Button } from "../../components/Button";
@@ -9,7 +8,12 @@ import { Card } from "../../components/Card";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, sameLastGroup, useAction } from "./shared";
+import {
+  AccountForm,
+  afterRecoveryKey,
+  sameLastGroup,
+  useAction,
+} from "./shared";
 
 /**
  * Show the recovery key once and make the user confirm they stored it (PRD
@@ -73,7 +77,7 @@ export function RecoveryKey(): JSX.Element {
           await vault.confirmRecoveryKey();
           onboarding.clear();
           session.unlock();
-          navigate(HOME_PATH);
+          navigate(afterRecoveryKey(vault));
         }}
       >
         <TextField

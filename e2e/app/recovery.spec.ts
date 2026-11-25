@@ -15,6 +15,7 @@ import { expect, test, type Page } from "../fixtures/test";
 
 import {
   ACCOUNT,
+  declineDeviceTrust,
   keyFingerprint,
   lastGroup,
   onboard,
@@ -54,6 +55,7 @@ test.describe("recovering on a second device", () => {
       .getByLabel("Recovery key")
       .fill(recoveryKey.toLowerCase().replaceAll("-", " "));
     await second.getByRole("button", { name: "Unlock" }).click();
+    await declineDeviceTrust(second);
     await expect(
       second.getByRole("navigation", { name: "Primary" }),
     ).toBeVisible();
@@ -136,10 +138,10 @@ test.describe("a password reset does not open the journal (AC-18)", () => {
     );
     await openInApp(fresh, "/journal");
     await expect(fresh).toHaveURL(/\/locked$/);
-    await fresh.getByRole("button", { name: "Unlock" }).click();
-    await expect(fresh.getByRole("alert")).toContainText(
-      "Use your recovery key instead",
-    );
+    await expect(
+      fresh.getByText("This device needs your recovery key to unlock."),
+    ).toBeVisible();
+    await expect(fresh.getByRole("button", { name: "Unlock" })).toHaveCount(0);
     await expect(
       fresh.getByRole("navigation", { name: "Primary" }),
     ).toHaveCount(0);
@@ -147,10 +149,11 @@ test.describe("a password reset does not open the journal (AC-18)", () => {
     // The recovery key from before the reset still works: nothing about the
     // keys changed.
     await fresh
-      .getByRole("link", { name: "Use your recovery key instead" })
+      .getByRole("link", { name: "Unlock with your recovery key" })
       .click();
     await fresh.getByLabel("Recovery key").fill(recoveryKey);
     await fresh.getByRole("button", { name: "Unlock" }).click();
+    await declineDeviceTrust(fresh);
     await expect(
       fresh.getByRole("navigation", { name: "Primary" }),
     ).toBeVisible();
@@ -186,6 +189,7 @@ test.describe("an account whose onboarding was abandoned", () => {
       .getByLabel("Type the last group of your key")
       .fill(lastGroup(recoveryKey));
     await later.getByRole("button", { name: "I've saved my key" }).click();
+    await declineDeviceTrust(later);
     await expect(
       later.getByRole("navigation", { name: "Primary" }),
     ).toBeVisible();
@@ -233,6 +237,7 @@ test.describe("replacing the recovery key", () => {
     );
     await second.getByLabel("Recovery key").fill(newKey);
     await second.getByRole("button", { name: "Unlock" }).click();
+    await declineDeviceTrust(second);
     await expect(
       second.getByRole("navigation", { name: "Primary" }),
     ).toBeVisible();
@@ -253,6 +258,7 @@ test.describe("replacing the recovery key", () => {
     await signIn(second);
     await second.getByLabel("Recovery key").fill(oldKey);
     await second.getByRole("button", { name: "Unlock" }).click();
+    await declineDeviceTrust(second);
     await expect(
       second.getByRole("navigation", { name: "Primary" }),
     ).toBeVisible();

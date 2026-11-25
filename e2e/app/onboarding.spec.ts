@@ -2,7 +2,14 @@ import AxeBuilder from "@axe-core/playwright";
 
 import { expect, test, type Page } from "../fixtures/test";
 
-import { ACCOUNT, onboard } from "./account";
+import {
+  ACCOUNT,
+  DEVICE_PASSPHRASE,
+  declineDeviceTrust,
+  onboard,
+  trustThisDevice,
+  unlockThisDevice,
+} from "./account";
 
 const WCAG_22_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
@@ -45,6 +52,19 @@ test.describe("onboarding (AC-01, AC-23, DEV-006)", () => {
       .getByLabel("Type the last group of your key")
       .fill(recoveryKey.trim().split("-").at(-1) ?? "");
     await page.getByRole("button", { name: "I've saved my key" }).click();
+
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Unlock this device more easily",
+    );
+    await expect(page.getByText("It is not your account")).toBeVisible();
+    await expectNoViolations(page);
+    await page.getByLabel("Device passphrase").fill("short");
+    await page.getByLabel("Type it again").fill("different");
+    await page.getByRole("button", { name: "Trust this device" }).click();
+    await expect(page.getByText("Use at least 12 characters.")).toBeVisible();
+    await expect(page.getByLabel("Device passphrase")).toBeFocused();
+    await expectNoViolations(page);
+    await trustThisDevice(page);
 
     await expect(page.getByRole("heading", { level: 1 })).toHaveText("Warmly");
     const primary = page.getByRole("navigation", { name: "Primary" });
@@ -113,6 +133,16 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
 
     await page.getByRole("button", { name: "Unlock" }).click();
     await expect(
+      page.getByText("Enter this device's passphrase."),
+    ).toBeVisible();
+    await page.getByLabel("Device passphrase").fill("not the passphrase");
+    await page.getByRole("button", { name: "Unlock" }).click();
+    await expect(page.getByRole("alert")).toContainText(
+      "didn't unlock this device",
+    );
+    await expectNoViolations(page);
+    await unlockThisDevice(page);
+    await expect(
       page.getByRole("navigation", { name: "Primary" }),
     ).toBeVisible();
   });
@@ -158,7 +188,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Warmly is locked",
     );
-    await page.getByRole("button", { name: "Unlock" }).click();
+    await unlockThisDevice(page);
     await expect(
       page.getByRole("navigation", { name: "Primary" }),
     ).toBeVisible();
@@ -250,6 +280,70 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
     ).toBeVisible();
   });
 
+  test("a trusted device unlocks with its passphrase after a reload, and stores no readable key", async ({
+    page,
+  }) => {
+    await onboard(page);
+    await page.reload();
+
+    // Keys live in memory only, so a reload locks. The device is still trusted.
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Warmly is locked",
+    );
+    await expect(page.getByRole("navigation")).toHaveCount(0);
+    await unlockThisDevice(page);
+    await expect(
+      page.getByRole("navigation", { name: "Primary" }),
+    ).toBeVisible();
+
+    // Nothing that can decrypt is in web storage (SYNC-001), and the stored
+    // device key cannot be exported.
+    const stored = await page.evaluate(async () => {
+      const names = (await indexedDB.databases()).map((d) => d.name ?? "");
+      const name = names.find((n) => n.startsWith("warmly-device")) ?? "";
+      const database = await new Promise<IDBDatabase>((resolve, reject) => {
+        const opening = indexedDB.open(name);
+        opening.onsuccess = () => {
+          resolve(opening.result);
+        };
+        opening.onerror = () => {
+          reject(new Error("open failed"));
+        };
+      });
+      const records = await new Promise<{ deviceKey: CryptoKey }[]>(
+        (resolve, reject) => {
+          const request = database
+            .transaction("device-keys")
+            .objectStore("device-keys")
+            .getAll();
+          request.onsuccess = () => {
+            resolve(request.result as { deviceKey: CryptoKey }[]);
+          };
+          request.onerror = () => {
+            reject(new Error("read failed"));
+          };
+        },
+      );
+      const exportable = await crypto.subtle
+        .exportKey("raw", records[0]?.deviceKey as CryptoKey)
+        .then(
+          () => true,
+          () => false,
+        );
+      return {
+        records: records.length,
+        extractable: records[0]?.deviceKey.extractable,
+        exportable,
+        webStorage: JSON.stringify({ ...localStorage, ...sessionStorage }),
+      };
+    });
+    expect(stored.records).toBe(1);
+    expect(stored.extractable).toBe(false);
+    expect(stored.exportable).toBe(false);
+    expect(stored.webStorage).not.toContain("deviceKey");
+    expect(stored.webStorage).not.toContain(DEVICE_PASSPHRASE);
+  });
+
   test("the recovery-key screen unlocks and is accessible", async ({
     page,
   }) => {
@@ -269,6 +363,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
 
     await page.getByLabel("Recovery key").fill(recoveryKey.toLowerCase());
     await page.getByRole("button", { name: "Unlock" }).click();
+    await declineDeviceTrust(page);
     await expect(
       page.getByRole("navigation", { name: "Primary" }),
     ).toBeVisible();
