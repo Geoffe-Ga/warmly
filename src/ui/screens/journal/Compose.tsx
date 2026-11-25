@@ -6,7 +6,6 @@ import { pathFor } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import {
   PROMPTS,
-  newEntry,
   type PromptKey,
   type Responses,
 } from "../../../domain/journal/types";
@@ -15,7 +14,7 @@ import { TextArea } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { AccountForm, useAction } from "../account/shared";
-import { NOT_SAVED_YET } from "./shared";
+import { NOT_SAVED_YET, saveNewEntry } from "./shared";
 
 const EMPTY: Responses = { good: "", improve: "", loved: "" };
 
@@ -27,7 +26,7 @@ const EMPTY: Responses = { good: "", improve: "", loved: "" };
  * @returns The compose screen.
  */
 export function Compose(): JSX.Element {
-  const { records } = useServices();
+  const services = useServices();
   const { navigate } = useContext(NavigationContext);
   const action = useAction();
   const [responses, setResponses] = useState<Responses>(EMPTY);
@@ -48,8 +47,12 @@ export function Compose(): JSX.Element {
         action={action}
         validate={() => true}
         onValid={async () => {
-          const entry = await newEntry(responses);
-          await records.put("journal-entry", entry);
+          const entry = await saveNewEntry(services, responses);
+          if (entry === undefined) {
+            // The app locked while the entry was being prepared. The locked
+            // screen is already showing; there is nothing more to do here.
+            return;
+          }
           setResponses(EMPTY);
           navigate(pathFor("journal-entry", { id: entry.id }));
         }}

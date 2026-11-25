@@ -46,7 +46,8 @@ export interface RecordStore {
 /** A {@link RecordStore} that keeps records in memory only. */
 export class MemoryRecordStore implements RecordStore {
   readonly #seed: readonly JournalEntry[];
-  readonly #records = new Map<RecordKind, Map<string, JournalEntry>>();
+  // One map per kind, each typed to that kind's records.
+  #records: { [K in RecordKind]: Map<string, RecordKinds[K]> };
   readonly #listeners = new Set<() => void>();
 
   /**
@@ -55,24 +56,18 @@ export class MemoryRecordStore implements RecordStore {
    */
   constructor(seed: readonly JournalEntry[] = []) {
     this.#seed = seed;
-    this.#reset();
+    this.#records = this.#fresh();
   }
 
-  #reset(): void {
-    this.#records.clear();
-    this.#records.set(
-      "journal-entry",
-      new Map(this.#seed.map((entry) => [entry.id, entry])),
-    );
+  /** The store's starting contents: the seed and nothing else. */
+  #fresh(): { [K in RecordKind]: Map<string, RecordKinds[K]> } {
+    return {
+      "journal-entry": new Map(this.#seed.map((entry) => [entry.id, entry])),
+    };
   }
 
-  #kind(kind: RecordKind): Map<string, JournalEntry> {
-    let records = this.#records.get(kind);
-    if (records === undefined) {
-      records = new Map();
-      this.#records.set(kind, records);
-    }
-    return records;
+  #kind<K extends RecordKind>(kind: K): Map<string, RecordKinds[K]> {
+    return this.#records[kind];
   }
 
   #changed(): void {
@@ -115,7 +110,7 @@ export class MemoryRecordStore implements RecordStore {
   lock(): void {
     // Everything written since the start is dropped. Only the synthetic
     // examples, which were never private, come back.
-    this.#reset();
+    this.#records = this.#fresh();
     this.#changed();
   }
 }

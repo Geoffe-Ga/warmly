@@ -12,6 +12,7 @@ const SEED_JOURNAL = seedJournal();
 import {
   formatEntryDate,
   inTimelineOrder,
+  saveNewEntry,
 } from "../../../src/ui/screens/journal/shared";
 
 import { heading, renderApp, testServices, type TestServices } from "./helpers";
@@ -308,6 +309,30 @@ describe("journal content and the lock (DEV-005)", () => {
     await lockNow(services, () => undefined);
 
     expect(await services.records.list("journal-entry")).toEqual([]);
+  });
+
+  it("an entry still being prepared when the app locks is never stored", async () => {
+    const services = await unlockedWith();
+    const answers = { good: "Private", improve: "text", loved: "here" };
+
+    // Hashing the entry is asynchronous, so the lock lands in the middle.
+    const saving = saveNewEntry(services, answers);
+    await lockNow(services, () => undefined);
+
+    expect(await saving).toBeUndefined();
+    expect(await services.records.list("journal-entry")).toEqual([]);
+  });
+
+  it("an entry is stored when the app stays unlocked", async () => {
+    const services = await unlockedWith();
+
+    const saved = await saveNewEntry(services, {
+      good: "a",
+      improve: "b",
+      loved: "c",
+    });
+
+    expect(await services.records.list("journal-entry")).toEqual([saved]);
   });
 
   it.each(["signed_out", "signed_in_locked"] as const)(
