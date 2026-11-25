@@ -10,6 +10,9 @@ import { createRevocationSignal } from "../../../src/devices/revocation";
 import { createEventBus } from "../../../src/domain/events";
 import { browserPersistence } from "../../../src/storage/persistence";
 import { MemoryRecordStore } from "../../../src/storage/record-store";
+import { SyncEngine } from "../../../src/sync/engine";
+import type { SyncSource } from "../../../src/sync/source";
+import { UNAVAILABLE_TRANSPORT } from "../../../src/sync/transport";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import { FakeDeviceDirectory } from "../../../src/testing/fake-device-directory";
 import { FakeDevicePairing } from "../../../src/testing/fake-device-pairing";
@@ -26,6 +29,15 @@ export interface TestServices extends Services {
   readonly pairing: FakeDevicePairing;
   readonly records: MemoryRecordStore;
 }
+
+/** A sync source with nothing in it, for tests of screens. */
+const NOTHING_TO_SYNC: SyncSource = {
+  pending: () => Promise.resolve([]),
+  acknowledge: () => Promise.resolve(),
+  applyRemote: () => Promise.resolve("unchanged"),
+  pendingCount: () => Promise.resolve(0),
+  subscribe: () => () => undefined,
+};
 
 /** Sample values for the `:id` segments of parameterised routes. */
 export const SAMPLE_PARAMS = { id: "sample-1", cardId: "sample-2" };
@@ -67,6 +79,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     lockHooks: createLockHooks(),
     events: createEventBus(),
     persistence: browserPersistence(undefined),
+    sync: new SyncEngine(NOTHING_TO_SYNC, UNAVAILABLE_TRANSPORT),
   };
 }
 

@@ -107,8 +107,8 @@ and the outbox is intact. A test fails if a version has no dump.
 
 ## Consequences
 
-- Entries survive lock, reload and offline use. The outbox fills but is not
-  sent anywhere until the sync engine exists (ADR-0006, #32).
+- Entries survive lock, reload and offline use. The sync engine reads the
+  outbox and sends one operation per changed record (ADR-0006).
 - Unlock decrypts every record into memory. That is what local search needs
   anyway, and is fine for thousands of entries; it must be measured before
   the account sizes in PRD §10 are claimed.

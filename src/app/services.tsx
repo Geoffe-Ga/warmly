@@ -48,6 +48,14 @@ import {
   type StoragePersistence,
 } from "../storage/persistence";
 import type { RecordStore } from "../storage/record-store";
+import { SyncEngine, type SyncControl } from "../sync/engine";
+import { MemoryServer } from "../sync/testing/memory-server";
+import {
+  ApiSyncTransport,
+  SyncUnavailableError,
+  UNAVAILABLE_TRANSPORT,
+  type SyncTransport,
+} from "../sync/transport";
 import { FakeAuthClient } from "../testing/fake-auth-client";
 import { FakeDeviceRegistry } from "../testing/fake-device-registry";
 import { FakePairingRelay } from "../testing/fake-pairing-relay";
@@ -76,6 +84,8 @@ export interface Services {
   readonly onboarding: Onboarding;
   /** Work to finish before the app locks; see {@link LockHooks}. */
   readonly lockHooks: LockHooks;
+  /** Sends local changes to the server and fetches remote ones. */
+  readonly sync: SyncControl;
   /** Asks the browser to keep this device's data, and reports the answer. */
   readonly persistence: StoragePersistence;
   /** Announces changes to private records; see {@link EventBus}. */
@@ -117,6 +127,7 @@ export interface KeyServiceDoubles {
   readonly identities: DeviceIdentityStore;
   readonly registry: DeviceRegistry;
   readonly relay: PairingRelay;
+  readonly sync: SyncTransport;
 }
 
 /** The services that need the account's keys. */
@@ -130,6 +141,8 @@ export interface KeyServices {
    * when the device has been revoked.
    */
   readonly forgetThisDevice: () => Promise<void>;
+  /** How the sync engine reaches the server in this build. */
+  readonly syncTransport: SyncTransport;
 }
 
 /**
@@ -174,6 +187,7 @@ export function createKeyServices(
       devices: new UnavailableDeviceDirectory(),
       pairing: new UnavailableDevicePairing(),
       forgetThisDevice: () => Promise.resolve(),
+      syncTransport: UNAVAILABLE_TRANSPORT,
     };
   }
   const api = new ApiClient(
@@ -191,6 +205,7 @@ export function createKeyServices(
       identities,
       registry: new ApiDeviceRegistry(api),
       relay: new ApiPairingRelay(api),
+      sync: new ApiSyncTransport(api, auth, identities),
     },
     onDeviceRevoked,
     onUnlock,
@@ -232,6 +247,7 @@ function assemble(
     vault,
     devices,
     pairing: new AccountPairing(auth, parts.identities, parts.relay, vault),
+    syncTransport: parts.sync,
     forgetThisDevice: async () => {
       const session = await auth.currentSession();
       if (session !== undefined) {
@@ -314,34 +330,47 @@ export function createServices(): Services {
       ? () => new FakeAuthClient()
       : undefined,
   );
+  const { syncTransport, ...keys } = createKeyServices(
+    import.meta.env,
+    auth,
+    import.meta.env.MODE !== "production"
+      ? {
+          envelopes: new FakeRecoveryEnvelopeStore(),
+          device: new IndexedDbDeviceKeyStore(tabDeviceDatabase()),
+          identities: new IndexedDbDeviceIdentityStore(tabIdentityDatabase()),
+          registry: new FakeDeviceRegistry(
+            localStorage,
+            () => new Date(),
+            revocation.report,
+          ),
+          relay: new FakePairingRelay(),
+          // A server that lives only in this page: the real protocol with
+          // nothing leaving the browser.
+          sync: new MemoryServer().transportFor(async () => {
+            const session = await auth.currentSession();
+            if (session === undefined) {
+              throw new SyncUnavailableError();
+            }
+            return session.userId;
+          }),
+        }
+      : undefined,
+    revocation.report,
+    (root, owner) => {
+      records.unlock(root, owner);
+      // Once there is something worth keeping, ask the browser to keep
+      // it. The answer is shown in Settings; it never rejects.
+      void persistence.request();
+      void sync.sync();
+    },
+  );
+  const sync = new SyncEngine(records, syncTransport);
   return {
     auth,
-    ...createKeyServices(
-      import.meta.env,
-      auth,
-      import.meta.env.MODE !== "production"
-        ? {
-            envelopes: new FakeRecoveryEnvelopeStore(),
-            device: new IndexedDbDeviceKeyStore(tabDeviceDatabase()),
-            identities: new IndexedDbDeviceIdentityStore(tabIdentityDatabase()),
-            registry: new FakeDeviceRegistry(
-              localStorage,
-              () => new Date(),
-              revocation.report,
-            ),
-            relay: new FakePairingRelay(),
-          }
-        : undefined,
-      revocation.report,
-      (root, owner) => {
-        records.unlock(root, owner);
-        // Once there is something worth keeping, ask the browser to keep
-        // it. The answer is shown in Settings; it never rejects.
-        void persistence.request();
-      },
-    ),
+    ...keys,
     revocation,
     records,
+    sync,
     persistence,
     session: createSession(),
     onboarding: createOnboarding(),

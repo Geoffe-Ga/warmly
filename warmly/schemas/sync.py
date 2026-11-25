@@ -1,4 +1,9 @@
-"""Sync protocol models (PRD SYNC-002, SYNC-003)."""
+"""Sync protocol models (PRD SYNC-002, SYNC-003; ADR-0006).
+
+The scenario table in ``docs/adr/0006-sync-protocol.md`` says which status
+each operation gets. ``tests/fixtures/sync/scenarios-v1.json`` is that table
+in runnable form; these models must be able to carry every step of it.
+"""
 
 from typing import Annotated, Literal
 from uuid import UUID
