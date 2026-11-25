@@ -438,6 +438,34 @@ describe("sign in, unlock and recover", () => {
     expect(services.vault.isUnlocked).toBe(false);
   });
 
+  it.each([
+    ["device_locked_out", "too many wrong passphrases"],
+    ["device_store_damaged", "has been removed"],
+  ] as const)(
+    "after %s, explains why and offers only the recovery key",
+    async (code, wording) => {
+      const services = testServices("signed_in_locked");
+      await setUpKeys(services.vault);
+      services.vault.lock();
+      services.vault.unlock = () => {
+        services.vault.forgetThisDevice();
+        return Promise.reject(new VaultError(code));
+      };
+      await renderApp("/locked", services);
+
+      await fill("Device passphrase", "one guess too many");
+      await press("Unlock");
+
+      expect((await screen.findByRole("alert")).textContent).toContain(wording);
+      expect(screen.queryByLabelText("Device passphrase")).toBeNull();
+      expect(screen.queryByRole("button", { name: "Unlock" })).toBeNull();
+      expect(
+        screen.getByRole("link", { name: "Unlock with your recovery key" }),
+      ).toBeDefined();
+      expect(services.session.state).toBe("signed_in_locked");
+    },
+  );
+
   it("asks for the device passphrase before trying", async () => {
     const services = testServices("signed_in_locked");
     await setUpKeys(services.vault);
@@ -795,7 +823,7 @@ describe("trusting this device (DEV-005, ADR-0004)", () => {
     await fill("Type it again", "shorter");
     await press("Trust this device");
 
-    expect(screen.getByText("Use at least 8 characters.")).toBeDefined();
+    expect(screen.getByText("Use at least 12 characters.")).toBeDefined();
     expect(screen.getByText(/two passphrases don't match/)).toBeDefined();
     expect(document.activeElement).toBe(
       screen.getByLabelText("Device passphrase"),

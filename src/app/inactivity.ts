@@ -74,8 +74,11 @@ export function watchInactivity(options: InactivityOptions): InactivityWatch {
       return;
     }
     clearTimeout(timer);
-    const remaining = limit - (now() - lastInput);
-    if (remaining <= 0) {
+    const elapsed = now() - lastInput;
+    const remaining = limit - elapsed;
+    // A clock that has gone backwards cannot be trusted to measure the
+    // limit, so it counts as idle. Locking early is the safe mistake.
+    if (remaining <= 0 || elapsed < 0) {
       stop();
       options.onIdle();
       return;

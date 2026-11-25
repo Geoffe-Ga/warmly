@@ -53,8 +53,14 @@ stored = AES-256-GCM( device key , AES-256-GCM( unlock key , root key ) )
   PBKDF2-HMAC-SHA-256, a random 16-byte salt and 600,000 iterations (the OWASP
   Password Storage Cheat Sheet figure when this was written). The iteration
   count is stored with each record, so it can be raised without stranding
-  devices. The passphrase is normalised to NFKC, is at least 8 characters, and
-  is never stored.
+  devices. A stored count below 100,000 or above 10,000,000 marks the record
+  as damaged. The passphrase is normalised to NFKC, is at least 12 characters,
+  and is never stored. Argon2 is not available in WebCrypto, so the iteration
+  count and the passphrase length are the levers.
+- **Guessing on the screen is limited.** Five wrong passphrases in a row
+  remove the device record. The device then needs the recovery key and can be
+  trusted again afterwards. Nothing is lost. The count is kept in the record,
+  so a reload does not reset it.
 - **Associated data** on both layers: `"warmly/device-key/" | version |
   len(owner) | owner`, so a record cannot be moved to another account.
 - **Record, format version 1** (one per account, in IndexedDB): version,
@@ -69,7 +75,13 @@ stored = AES-256-GCM( device key , AES-256-GCM( unlock key , root key ) )
   declines, and are wiped on either, and on lock.
 - **Failure behaviour.** A wrong passphrase leaves the device locked and says
   so. A record that cannot be used (missing part, newer format, altered
-  bytes) is removed and the user is pointed to the recovery key.
+  bytes) is removed and the user is pointed to the recovery key. A damaged
+  inner layer cannot be told from a wrong passphrase; the attempt limit ends
+  that case too.
+- **Signing out keeps the device trusted.** The wrapped record stays in
+  IndexedDB, protected by the passphrase and bound to the account, so signing
+  back in does not need the recovery key. Removing a device's trust
+  explicitly belongs with device management (#23).
 
 ### Passkeys (WebAuthn PRF): deferred
 
@@ -105,8 +117,12 @@ real-device check is on the release checklist.
 - **Flush hooks** exist so that work which needs the keys, such as encrypting
   the draft being edited, is saved before they go. A hook that fails or hangs
   never prevents the lock.
-- **Inactivity** is 30 minutes since the last pointer, key, wheel, touch or
-  input event, measured on the wall clock. It is re-checked when the page
+- **Inactivity** is 30 minutes since the last pointer press, key, wheel, touch
+  or input event, measured on the wall clock. Moving the pointer without
+  pressing does not count, so a device left on a desk with a drifting mouse
+  still locks; scrolling by wheel, touch or keyboard does count. A clock that
+  moves backwards is treated as idle, because elapsed time can no longer be
+  trusted. It is re-checked when the page
   becomes visible, so a tab or phone that slept past the limit locks on
   resume.
 - **Sign out** does not wait for hooks. It must always succeed at once.
@@ -117,6 +133,18 @@ Locking drops every reference this code holds to key material and overwrites
 the byte arrays it controls. That is the extent of what a web page can do. It
 does not guarantee that the browser, the operating system or hardware has
 erased its own copies, and nothing here is a secure enclave.
+
+## What this does not protect against
+
+- **Script running in the app's own origin** (for example through an XSS
+  bug) can *use* the device key even though it cannot read it. It could strip
+  the outer layer and then try passphrases offline against the inner layer,
+  without the on-screen attempt limit. Against that attacker the passphrase
+  is the only barrier, and PBKDF2 at 600,000 iterations slows a guess but
+  does not make a weak passphrase safe. The controls against this are the
+  strict Content Security Policy and the absence of third-party script.
+- **Someone with both the browser profile and the passphrase** can open the
+  journal on that device. That is what a passphrase is.
 
 ## Consequences
 

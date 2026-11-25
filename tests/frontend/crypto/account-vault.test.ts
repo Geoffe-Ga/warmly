@@ -443,6 +443,28 @@ describe("a trusted device (DEV-005, ADR-0004)", () => {
     await expect(vault.unlockWithRecoveryKey(key)).resolves.toBeUndefined();
   });
 
+  it("stops trusting the device after too many wrong passphrases; the recovery key still works", async () => {
+    const { key } = await onboarded();
+    const vault = new AccountVault(auth, server, deviceStore());
+    await vault.unlockWithRecoveryKey(key);
+    await vault.trustThisDevice(PASSPHRASE);
+    vault.lock();
+
+    for (let attempt = 1; attempt < 5; attempt += 1) {
+      expect(await code(vault.unlock("a wrong passphrase"))).toBe(
+        "wrong_device_passphrase",
+      );
+    }
+    expect(await code(vault.unlock("a wrong passphrase"))).toBe(
+      "device_locked_out",
+    );
+
+    expect(await vault.hasKeysOnThisDevice()).toBe(false);
+    expect(await code(vault.unlock(PASSPHRASE))).toBe("no_keys_on_device");
+    await vault.unlockWithRecoveryKey(key);
+    expect(vault.deviceTrustPending()).toBe(true);
+  });
+
   it("does not hide an unexpected storage failure", async () => {
     const { key } = await onboarded();
     const store = deviceStore();

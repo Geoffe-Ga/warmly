@@ -31,6 +31,8 @@ const MESSAGES: Readonly<Record<AuthErrorCode | VaultErrorCode, string>> = {
     "This device can't unlock on its own. Use your recovery key instead.",
   wrong_device_passphrase:
     "That passphrase didn't unlock this device. Check it and try again, or use your recovery key instead.",
+  device_locked_out:
+    "That was too many wrong passphrases, so this device is no longer trusted. Nothing is lost. Unlock with your recovery key, and you can set a new passphrase.",
   device_store_damaged:
     "This device's saved key can't be used any more, so it has been removed. Use your recovery key to unlock; you can then set this device up again.",
   nothing_to_trust:

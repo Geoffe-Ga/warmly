@@ -46,6 +46,12 @@ encrypted on the user's device and the backend stores ciphertext only.
 
 ## Known windows
 
+- **Same-origin script and the device passphrase.** Script running in the
+  app's origin can use the non-extractable device key and then guess the
+  device passphrase offline, bypassing the five-attempt limit on the lock
+  screen (ADR-0004). The CSP is the control; a long passphrase is the
+  backstop.
+
 - **The recovery envelope routes check the session, not the device.** Until
   every request is signed by a device key (#21, #23), a stolen access token
   can read the envelope, which is useless without the 256-bit recovery key,

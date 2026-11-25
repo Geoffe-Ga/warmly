@@ -18,6 +18,7 @@ import type {
 } from "../api/recovery-envelope-store";
 import type { AuthClient, AuthSession } from "../auth/auth-client";
 import {
+  DeviceLockedOutError,
   DevicePassphraseError,
   DeviceStoreDamagedError,
   type DeviceKeyStore,
@@ -203,6 +204,9 @@ export class AccountVault implements KeyVault {
     } catch (error) {
       if (error instanceof DevicePassphraseError) {
         throw new VaultError("wrong_device_passphrase");
+      }
+      if (error instanceof DeviceLockedOutError) {
+        throw new VaultError("device_locked_out");
       }
       if (error instanceof DeviceStoreDamagedError) {
         // An unusable record is removed, so the app stops offering a way to

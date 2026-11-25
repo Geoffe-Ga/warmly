@@ -15,6 +15,7 @@ export type VaultErrorCode =
   | "no_keys_on_device"
   | "wrong_device_passphrase"
   | "device_store_damaged"
+  | "device_locked_out"
   | "nothing_to_trust"
   | "no_account_keys"
   | "keys_already_exist"

@@ -61,7 +61,7 @@ test.describe("onboarding (AC-01, AC-23, DEV-006)", () => {
     await page.getByLabel("Device passphrase").fill("short");
     await page.getByLabel("Type it again").fill("different");
     await page.getByRole("button", { name: "Trust this device" }).click();
-    await expect(page.getByText("Use at least 8 characters.")).toBeVisible();
+    await expect(page.getByText("Use at least 12 characters.")).toBeVisible();
     await expect(page.getByLabel("Device passphrase")).toBeFocused();
     await expectNoViolations(page);
     await trustThisDevice(page);

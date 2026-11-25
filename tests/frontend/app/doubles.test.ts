@@ -490,6 +490,7 @@ describe("describeError", () => {
     [new VaultError("no_account_keys"), "hasn't finished setting up"],
     [new VaultError("wrong_device_passphrase"), "didn't unlock this device"],
     [new VaultError("device_store_damaged"), "has been removed"],
+    [new VaultError("device_locked_out"), "too many wrong passphrases"],
     [new VaultError("nothing_to_trust"), "set this device up"],
     [new VaultError("keys_already_exist"), "already set up on another device"],
     [

@@ -114,6 +114,15 @@ describe("inactivity lock clock (DEV-005, AC-21)", () => {
     expect(idle).toBe(1);
   });
 
+  it("locks if the clock goes backwards, since elapsed time can no longer be trusted", () => {
+    vi.advanceTimersByTime(5 * MINUTE);
+    vi.setSystemTime(Date.now() - 60 * MINUTE);
+
+    page.show();
+
+    expect(idle).toBe(1);
+  });
+
   it("stops listening and clears its timer when stopped", () => {
     watch.stop();
 

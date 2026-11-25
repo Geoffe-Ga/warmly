@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEVICE_FORMAT_VERSION,
+  DeviceLockedOutError,
   DevicePassphraseError,
   DeviceStoreDamagedError,
   IndexedDbDeviceKeyStore,
+  MAX_FAILED_UNLOCKS,
   MIN_DEVICE_PASSPHRASE_LENGTH,
   PBKDF2_ITERATIONS,
 } from "../../../src/crypto/device-key-store";
@@ -55,7 +57,8 @@ function raw<T>(
 describe("the device key store (ADR-0004, DEV-005)", () => {
   it("follows the current OWASP iteration count and a sensible minimum length", () => {
     expect(PBKDF2_ITERATIONS).toBe(600_000);
-    expect(MIN_DEVICE_PASSPHRASE_LENGTH).toBe(8);
+    expect(MIN_DEVICE_PASSPHRASE_LENGTH).toBe(12);
+    expect(MAX_FAILED_UNLOCKS).toBe(5);
   });
 
   it("has nothing for a device that was never enrolled", async () => {
@@ -206,12 +209,12 @@ describe("the device key store (ADR-0004, DEV-005)", () => {
     );
   });
 
-  it("opens a record made with a different iteration count", async () => {
-    const { store, name } = newStore(2_000);
+  it("opens a record made with a higher iteration count than its own", async () => {
+    const { store, name } = newStore(5_000);
     const root = generateRootKeyBytes();
     await store.enrol(USER, root, PASSPHRASE);
 
-    const later = new IndexedDbDeviceKeyStore(name, 5_000);
+    const later = new IndexedDbDeviceKeyStore(name, 2_000);
 
     expect(toBase64(await later.open(USER, PASSPHRASE))).toBe(toBase64(root));
   });
@@ -253,13 +256,122 @@ describe("the device key store (ADR-0004, DEV-005)", () => {
     const { store } = newStore();
 
     await expect(
-      store.enrol(USER, generateRootKeyBytes(), "short"),
+      store.enrol(USER, generateRootKeyBytes(), "eleven char"),
     ).rejects.toThrow("too short");
     await expect(
       store.enrol(USER, new Uint8Array(16), PASSPHRASE),
     ).rejects.toThrow("32 bytes");
     expect(await store.has(USER)).toBe(false);
   });
+
+  it("stops trusting the device after five wrong passphrases in a row", async () => {
+    const { store } = newStore();
+    await store.enrol(USER, generateRootKeyBytes(), PASSPHRASE);
+
+    for (let attempt = 1; attempt < MAX_FAILED_UNLOCKS; attempt += 1) {
+      await expect(
+        store.open(USER, "a wrong passphrase"),
+      ).rejects.toBeInstanceOf(DevicePassphraseError);
+    }
+    await expect(store.open(USER, "a wrong passphrase")).rejects.toBeInstanceOf(
+      DeviceLockedOutError,
+    );
+
+    // The record is gone: even the right passphrase no longer works here.
+    expect(await store.has(USER)).toBe(false);
+    await expect(store.open(USER, PASSPHRASE)).rejects.toBeInstanceOf(
+      DeviceStoreDamagedError,
+    );
+  });
+
+  it("counts wrong passphrases across reloads", async () => {
+    const { store, name } = newStore();
+    await store.enrol(USER, generateRootKeyBytes(), PASSPHRASE);
+    for (let attempt = 1; attempt < MAX_FAILED_UNLOCKS; attempt += 1) {
+      await expect(
+        new IndexedDbDeviceKeyStore(name, 1_000).open(USER, "wrong passphrase"),
+      ).rejects.toBeInstanceOf(DevicePassphraseError);
+    }
+
+    await expect(
+      new IndexedDbDeviceKeyStore(name, 1_000).open(USER, "wrong passphrase"),
+    ).rejects.toBeInstanceOf(DeviceLockedOutError);
+  });
+
+  it("starts the count again after a successful unlock", async () => {
+    const { store } = newStore();
+    const root = generateRootKeyBytes();
+    await store.enrol(USER, root, PASSPHRASE);
+
+    for (let round = 0; round < 3; round += 1) {
+      for (let attempt = 1; attempt < MAX_FAILED_UNLOCKS; attempt += 1) {
+        await expect(
+          store.open(USER, "a wrong passphrase"),
+        ).rejects.toBeInstanceOf(DevicePassphraseError);
+      }
+      expect(toBase64(await store.open(USER, PASSPHRASE))).toBe(toBase64(root));
+    }
+  });
+
+  it("a lockout on one account leaves another account's device trust alone", async () => {
+    const { store } = newStore();
+    await store.enrol(USER, generateRootKeyBytes(), PASSPHRASE);
+    await store.enrol(OTHER_USER, generateRootKeyBytes(), PASSPHRASE);
+
+    for (let attempt = 0; attempt < MAX_FAILED_UNLOCKS; attempt += 1) {
+      await store.open(USER, "a wrong passphrase").catch(() => undefined);
+    }
+
+    expect(await store.has(USER)).toBe(false);
+    await expect(store.open(OTHER_USER, PASSPHRASE)).resolves.toBeDefined();
+  });
+
+  it.each([
+    0,
+    99_999,
+    10_000_001,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    "600000",
+  ])(
+    "treats a record claiming %j iterations as damaged",
+    async (iterations) => {
+      const name = `device-test-${crypto.randomUUID()}`;
+      const store = new IndexedDbDeviceKeyStore(name);
+      const maker = new IndexedDbDeviceKeyStore(name, 100_000);
+      await maker.enrol(USER, generateRootKeyBytes(), PASSPHRASE);
+      const record = await raw<Record<string, unknown>>(name, "readonly", (s) =>
+        s.get(USER),
+      );
+      await raw(name, "readwrite", (s) =>
+        s.put({ ...record, iterations }, USER),
+      );
+
+      expect(await store.has(USER)).toBe(false);
+      await expect(store.open(USER, PASSPHRASE)).rejects.toBeInstanceOf(
+        DeviceStoreDamagedError,
+      );
+    },
+  );
+
+  it.each([-1, 6, 1.5, "0", undefined])(
+    "treats a record with a failed-attempt count of %j as damaged",
+    async (failedUnlocks) => {
+      const { store, name } = newStore();
+      await store.enrol(USER, generateRootKeyBytes(), PASSPHRASE);
+      const record = await raw<Record<string, unknown>>(name, "readonly", (s) =>
+        s.get(USER),
+      );
+      await raw(name, "readwrite", (s) =>
+        s.put({ ...record, failedUnlocks }, USER),
+      );
+
+      await expect(store.open(USER, PASSPHRASE)).rejects.toBeInstanceOf(
+        DeviceStoreDamagedError,
+      );
+    },
+  );
 
   it("uses a fresh salt and nonces every time", async () => {
     const { store, name } = newStore();

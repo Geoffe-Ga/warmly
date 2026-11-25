@@ -29,7 +29,16 @@ import { ROOT_KEY_BYTES } from "./root-key";
  */
 export const PBKDF2_ITERATIONS = 600_000;
 /** Shortest device passphrase accepted. */
-export const MIN_DEVICE_PASSPHRASE_LENGTH = 8;
+export const MIN_DEVICE_PASSPHRASE_LENGTH = 12;
+/**
+ * Wrong passphrases in a row before this device stops being trusted. The
+ * record is then removed and the recovery key is needed. Nothing is lost,
+ * and someone holding the locked device cannot keep guessing on its screen.
+ */
+export const MAX_FAILED_UNLOCKS = 5;
+/** Iteration counts outside this range mark a record as damaged. */
+const MIN_ACCEPTED_ITERATIONS = 100_000;
+const MAX_ACCEPTED_ITERATIONS = 10_000_000;
 /** The device-record format this code writes. */
 export const DEVICE_FORMAT_VERSION = 1;
 
@@ -42,6 +51,17 @@ export class DevicePassphraseError extends Error {
   constructor() {
     super("The device passphrase did not open the stored key");
     this.name = "DevicePassphraseError";
+  }
+}
+
+/**
+ * Too many wrong passphrases in a row. The device's record has been removed,
+ * and unlocking now takes the recovery key.
+ */
+export class DeviceLockedOutError extends Error {
+  constructor() {
+    super("Too many wrong passphrases; the device is no longer trusted");
+    this.name = "DeviceLockedOutError";
   }
 }
 
@@ -73,6 +93,8 @@ export interface DeviceKeyStore {
    * Recover the root-key material with the device passphrase.
    *
    * @throws DevicePassphraseError if the passphrase is wrong.
+   * @throws DeviceLockedOutError if that was one wrong passphrase too many;
+   *   the record has been removed.
    * @throws DeviceStoreDamagedError if there is no usable record.
    */
   open(userId: string, passphrase: string): Promise<Uint8Array<ArrayBuffer>>;
@@ -89,6 +111,8 @@ interface DeviceRecord {
   readonly outerNonce: Uint8Array<ArrayBuffer>;
   readonly innerNonce: Uint8Array<ArrayBuffer>;
   readonly wrapped: Uint8Array<ArrayBuffer>;
+  /** Wrong passphrases since the last successful unlock. */
+  readonly failedUnlocks: number;
 }
 
 // Values read back from IndexedDB are checked by shape, not with
@@ -112,7 +136,19 @@ function isKey(value: unknown): value is CryptoKey {
   );
 }
 
-function isRecord(value: unknown): value is DeviceRecord {
+function isCount(value: unknown, least: number, most: number): boolean {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= least &&
+    value <= most
+  );
+}
+
+function isRecord(
+  value: unknown,
+  leastIterations: number,
+): value is DeviceRecord {
   if (typeof value !== "object" || value === null) {
     return false;
   }
@@ -121,7 +157,10 @@ function isRecord(value: unknown): value is DeviceRecord {
     record.version === DEVICE_FORMAT_VERSION &&
     isKey(record.deviceKey) &&
     isBytes(record.salt) &&
-    typeof record.iterations === "number" &&
+    // A record claiming too few iterations would make guessing cheap; one
+    // claiming an absurd number would hang the unlock. Both are refused.
+    isCount(record.iterations, leastIterations, MAX_ACCEPTED_ITERATIONS) &&
+    isCount(record.failedUnlocks, 0, MAX_FAILED_UNLOCKS) &&
     isBytes(record.outerNonce) &&
     isBytes(record.innerNonce) &&
     isBytes(record.wrapped)
@@ -212,7 +251,9 @@ export class IndexedDbDeviceKeyStore implements DeviceKeyStore {
     if (value === undefined) {
       return undefined;
     }
-    if (!isRecord(value)) {
+    // A store built with fewer iterations (tests only) accepts its own.
+    const least = Math.min(this.#iterations, MIN_ACCEPTED_ITERATIONS);
+    if (!isRecord(value, least)) {
       throw new DeviceStoreDamagedError();
     }
     return value;
@@ -269,8 +310,9 @@ export class IndexedDbDeviceKeyStore implements DeviceKeyStore {
       outerNonce,
       innerNonce,
       wrapped: new Uint8Array(wrapped),
+      failedUnlocks: 0,
     };
-    await this.#run("readwrite", (store) => store.put(record, userId));
+    await this.#put(userId, record);
   }
 
   async open(
@@ -300,10 +342,26 @@ export class IndexedDbDeviceKeyStore implements DeviceKeyStore {
         await passphraseKey(passphrase, record.salt, record.iterations),
         inner,
       );
+      if (record.failedUnlocks > 0) {
+        await this.#put(userId, { ...record, failedUnlocks: 0 });
+      }
       return new Uint8Array(rootKeyBytes);
     } catch {
+      // A failure here is almost always a wrong passphrase. A damaged inner
+      // layer looks the same; either way the count below ends the guessing
+      // and hands over to the recovery key.
+      const failedUnlocks = record.failedUnlocks + 1;
+      if (failedUnlocks >= MAX_FAILED_UNLOCKS) {
+        await this.forget(userId);
+        throw new DeviceLockedOutError();
+      }
+      await this.#put(userId, { ...record, failedUnlocks });
       throw new DevicePassphraseError();
     }
+  }
+
+  async #put(userId: string, record: DeviceRecord): Promise<void> {
+    await this.#run("readwrite", (store) => store.put(record, userId));
   }
 
   async forget(userId: string): Promise<void> {
