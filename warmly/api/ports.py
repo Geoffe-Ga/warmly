@@ -10,6 +10,7 @@ from uuid import UUID
 
 from warmly.auth.device import DeviceKeys
 from warmly.schemas.devices import Device, RegisterDeviceRequest
+from warmly.schemas.enrollment import Enrollment, StartEnrollmentRequest
 from warmly.schemas.recovery import PutRecoveryEnvelopeRequest, RecoveryEnvelope
 
 
@@ -43,3 +44,38 @@ class DeviceStore(DeviceKeys, Protocol):
         self, owner_id: UUID, device_id: UUID, name_ciphertext: str, current: UUID
     ) -> Device | None:
         """Replace a device's encrypted name; ``None`` if it is not the owner's."""
+
+
+class EnrollmentStore(Protocol):
+    """One account's device pairing requests (PRD DEV-001 path A)."""
+
+    async def start(
+        self, owner_id: UUID, request: StartEnrollmentRequest
+    ) -> Enrollment:
+        """Open a request, ending the owner's earlier open ones."""
+
+    async def read(self, owner_id: UUID, enrollment_id: UUID) -> Enrollment | None:
+        """Return the owner's request, or ``None``."""
+
+    async def open_request(self, owner_id: UUID) -> Enrollment | None:
+        """Return the owner's request waiting to be taken up, if any."""
+
+    async def claim(
+        self, owner_id: UUID, enrollment_id: UUID, device_id: UUID, nonce: str
+    ) -> Enrollment | None:
+        """Take up a waiting request; ``None`` if it was not waiting."""
+
+    async def reveal(
+        self, owner_id: UUID, enrollment_id: UUID, nonce: str
+    ) -> Enrollment | None:
+        """Record the new device's value; ``None`` if not claimed."""
+
+    async def approve(
+        self, owner_id: UUID, enrollment_id: UUID, device_id: UUID, wrapped_key: str
+    ) -> Enrollment | None:
+        """Deliver the wrapped key; ``None`` unless revealed and claimed by it."""
+
+    async def reject(
+        self, owner_id: UUID, enrollment_id: UUID, device_id: UUID
+    ) -> Enrollment | None:
+        """Refuse a request; ``None`` unless this device had claimed it."""

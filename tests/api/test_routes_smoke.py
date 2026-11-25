@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 
 from tests.api.cases import (
     CASES,
-    CIPHERTEXT,
     DEVICE_ID,
     ENROLLMENT_ID,
     OP_ID,
@@ -110,13 +109,3 @@ def test_revoke_returns_a_revoked_device(client: TestClient) -> None:
 
     assert body["id"] == DEVICE_ID
     assert body["revoked_at"] is not None
-
-
-def test_approve_relays_the_wrapped_key_unchanged(client: TestClient) -> None:
-    """The server relays the wrapped key byte for byte (DEV-001)."""
-    body = client.post(
-        f"/v1/enrollments/{ENROLLMENT_ID}/approve", json={"wrapped_key": CIPHERTEXT}
-    ).json()
-
-    assert body["status"] == "approved"
-    assert body["wrapped_key"] == CIPHERTEXT

@@ -6,6 +6,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.auth.devices import DEVICE_ID as REGISTERED_DEVICE_ID
 from warmly.api.errors import PROBLEM_MEDIA_TYPE, handle_error, http_problem
 from warmly.app import create_app
 from warmly.schemas.common import MAX_PAYLOAD_CHARS, MAX_SMALL_CIPHERTEXT_CHARS
@@ -184,11 +185,13 @@ def test_payload_size_limit_is_inclusive(client: TestClient) -> None:
 
 def test_small_ciphertext_limit_is_inclusive(client: TestClient) -> None:
     """Device names and wrapped keys have their own, smaller limit."""
-    path = "/v1/enrollments/44444444-4444-4444-8444-444444444444/approve"
+    path = f"/v1/devices/{REGISTERED_DEVICE_ID}"
 
-    accepted = client.post(path, json={"wrapped_key": "A" * MAX_SMALL_CIPHERTEXT_CHARS})
-    refused = client.post(
-        path, json={"wrapped_key": "A" * (MAX_SMALL_CIPHERTEXT_CHARS + 1)}
+    accepted = client.patch(
+        path, json={"name_ciphertext": "A" * MAX_SMALL_CIPHERTEXT_CHARS}
+    )
+    refused = client.patch(
+        path, json={"name_ciphertext": "A" * (MAX_SMALL_CIPHERTEXT_CHARS + 1)}
     )
 
     assert accepted.status_code == 200

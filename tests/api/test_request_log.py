@@ -70,8 +70,11 @@ def test_each_request_logs_one_line_with_only_the_allowed_fields(
 
     response = case.send(client)
 
-    (fields,) = _fields(caplog)
-    assert set(fields) == REQUEST_LOG_FIELDS
+    # One line per request: the case's own, after any earlier pairing steps.
+    lines = _fields(caplog)
+    assert len(lines) == len(case.before) + 1
+    assert all(set(line) == REQUEST_LOG_FIELDS for line in lines)
+    fields = lines[-1]
     assert fields["method"] == case.method
     assert fields["status"] == response.status_code
     assert fields["event_id"] == response.headers[EVENT_ID_HEADER]

@@ -115,6 +115,24 @@
         "title": "ChangesResponse",
         "type": "object"
       },
+      "ClaimEnrollmentRequest": {
+        "additionalProperties": false,
+        "description": "An unlocked device takes up a request and contributes its random value.",
+        "properties": {
+          "approver_nonce": {
+            "maxLength": 44,
+            "minLength": 44,
+            "pattern": "^[A-Za-z0-9+/]{43}=$",
+            "title": "Approver Nonce",
+            "type": "string"
+          }
+        },
+        "required": [
+          "approver_nonce"
+        ],
+        "title": "ClaimEnrollmentRequest",
+        "type": "object"
+      },
       "Device": {
         "additionalProperties": false,
         "description": "One of the signed-in user's own devices.",
@@ -204,14 +222,35 @@
       },
       "Enrollment": {
         "additionalProperties": false,
-        "description": "A short-lived, single-use enrollment challenge.\n\nThe server relays ``wrapped_key`` and can never read it.",
+        "description": "A short-lived, single-use pairing between two of an account's devices.\n\nThe server relays every field and can read no secret in it:\n``wrapped_key`` is encrypted to the new device.",
         "properties": {
+          "approver_nonce": {
+            "anyOf": [
+              {
+                "maxLength": 44,
+                "minLength": 44,
+                "pattern": "^[A-Za-z0-9+/]{43}=$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approver Nonce"
+          },
           "challenge": {
-            "description": "Server nonce both devices bind into the pairing code.",
-            "maxLength": 4096,
-            "minLength": 1,
-            "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+            "description": "Server random value both devices bind into the pairing code.",
+            "maxLength": 44,
+            "minLength": 44,
+            "pattern": "^[A-Za-z0-9+/]{43}=$",
             "title": "Challenge",
+            "type": "string"
+          },
+          "commitment": {
+            "maxLength": 44,
+            "minLength": 44,
+            "pattern": "^[A-Za-z0-9+/]{43}=$",
+            "title": "Commitment",
             "type": "string"
           },
           "device_id": {
@@ -229,6 +268,20 @@
             "title": "Id",
             "type": "string"
           },
+          "joiner_nonce": {
+            "anyOf": [
+              {
+                "maxLength": 44,
+                "minLength": 44,
+                "pattern": "^[A-Za-z0-9+/]{43}=$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Joiner Nonce"
+          },
           "public_key": {
             "maxLength": 4096,
             "minLength": 1,
@@ -239,7 +292,10 @@
           "status": {
             "enum": [
               "pending",
+              "claimed",
+              "revealed",
               "approved",
+              "rejected",
               "expired"
             ],
             "title": "Status",
@@ -264,6 +320,7 @@
           "id",
           "device_id",
           "public_key",
+          "commitment",
           "challenge",
           "status",
           "expires_at"
@@ -608,16 +665,43 @@
         "title": "RenameDeviceRequest",
         "type": "object"
       },
+      "RevealEnrollmentRequest": {
+        "additionalProperties": false,
+        "description": "The new device reveals the random value it committed to.",
+        "properties": {
+          "joiner_nonce": {
+            "maxLength": 44,
+            "minLength": 44,
+            "pattern": "^[A-Za-z0-9+/]{43}=$",
+            "title": "Joiner Nonce",
+            "type": "string"
+          }
+        },
+        "required": [
+          "joiner_nonce"
+        ],
+        "title": "RevealEnrollmentRequest",
+        "type": "object"
+      },
       "StartEnrollmentRequest": {
         "additionalProperties": false,
         "description": "A new device asks to be approved by an existing one.",
         "properties": {
+          "commitment": {
+            "description": "A digest that fixes the new device's random value before the approving device has chosen its own.",
+            "maxLength": 44,
+            "minLength": 44,
+            "pattern": "^[A-Za-z0-9+/]{43}=$",
+            "title": "Commitment",
+            "type": "string"
+          },
           "device_id": {
             "format": "uuid",
             "title": "Device Id",
             "type": "string"
           },
           "public_key": {
+            "description": "The new device's one-time key-transfer public key.",
             "maxLength": 4096,
             "minLength": 1,
             "pattern": "^[A-Za-z0-9+/]+={0,2}$",
@@ -627,7 +711,8 @@
         },
         "required": [
           "device_id",
-          "public_key"
+          "public_key",
+          "commitment"
         ],
         "title": "StartEnrollmentRequest",
         "type": "object"
@@ -1007,7 +1092,7 @@
     },
     "/v1/enrollments": {
       "post": {
-        "description": "Create an enrollment challenge for a new device.\n\nStub: returns a fixed pending challenge.\n\nArgs:\n    request: The new device's ID and public key.\n\nReturns:\n    A pending enrollment.",
+        "description": "Open a pairing request for a new device.\n\nAny earlier open request of the account ends, so an approving device\nonly ever sees one.\n\nArgs:\n    request: The new device's ID, one-time public key and commitment.\n    owner: The verified account.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The request, with the server's challenge and its expiry.",
         "operationId": "start_enrollment_v1_enrollments_post",
         "requestBody": {
           "content": {
@@ -1066,7 +1151,74 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Start enrolling a new device",
+        "summary": "Ask to pair a new device",
+        "tags": [
+          "enrollment"
+        ]
+      }
+    },
+    "/v1/enrollments/open": {
+      "get": {
+        "description": "Return the account's pairing request that no device has taken up yet.\n\nArgs:\n    caller: The verified account and device.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The waiting request.\n\nRaises:\n    ProblemError: 404 if no request is waiting.",
+        "operationId": "get_open_enrollment_v1_enrollments_open_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrollment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such pairing request on this account"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Sign-in cannot be checked right now"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Read the request waiting to be approved",
         "tags": [
           "enrollment"
         ]
@@ -1074,7 +1226,7 @@
     },
     "/v1/enrollments/{enrollment_id}": {
       "get": {
-        "description": "Read the state of an enrollment.\n\nStub: always pending.\n\nArgs:\n    enrollment_id: The enrollment to read.\n\nReturns:\n    A pending enrollment with the requested ID.",
+        "description": "Read a pairing request. Both devices poll this while pairing.\n\nArgs:\n    enrollment_id: The request to read.\n    owner: The verified account.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The request as it stands.\n\nRaises:\n    ProblemError: 404 if the request is not one of the caller's.",
         "operationId": "get_enrollment_v1_enrollments__enrollment_id__get",
         "parameters": [
           {
@@ -1109,6 +1261,16 @@
             },
             "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such pairing request on this account"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1135,7 +1297,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Read an enrollment",
+        "summary": "Read a pairing request",
         "tags": [
           "enrollment"
         ]
@@ -1143,7 +1305,7 @@
     },
     "/v1/enrollments/{enrollment_id}/approve": {
       "post": {
-        "description": "Deliver the wrapped root key to a new device.\n\nStub: echoes the wrapped key back as an approved enrollment. The server\nonly ever relays this value; it cannot read it.\n\nArgs:\n    enrollment_id: The enrollment being approved.\n    request: The root key, encrypted to the new device.\n\nReturns:\n    An approved enrollment carrying the wrapped key.",
+        "description": "Deliver the root key, encrypted to the new device.\n\nOnly the device that claimed the request may approve it. The server\nrelays the wrapped key and cannot read it.\n\nArgs:\n    enrollment_id: The request being approved.\n    request: The root key, encrypted to the new device.\n    caller: The verified account and device.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The approved request carrying the wrapped key.",
         "operationId": "approve_enrollment_v1_enrollments__enrollment_id__approve_post",
         "parameters": [
           {
@@ -1188,6 +1350,26 @@
             },
             "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
           },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such pairing request on this account"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has expired, or is not at the step this call needs"
+          },
           "422": {
             "content": {
               "application/json": {
@@ -1214,7 +1396,294 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Approve an enrollment",
+        "summary": "Approve a pairing request",
+        "tags": [
+          "enrollment"
+        ]
+      }
+    },
+    "/v1/enrollments/{enrollment_id}/claim": {
+      "post": {
+        "description": "Take up a waiting request and contribute the approving device's value.\n\nArgs:\n    enrollment_id: The request to claim.\n    request: The approving device's random value.\n    caller: The verified account and device.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The claimed request.",
+        "operationId": "claim_enrollment_v1_enrollments__enrollment_id__claim_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "enrollment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Enrollment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClaimEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrollment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such pairing request on this account"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has expired, or is not at the step this call needs"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Sign-in cannot be checked right now"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Take up a pairing request",
+        "tags": [
+          "enrollment"
+        ]
+      }
+    },
+    "/v1/enrollments/{enrollment_id}/reject": {
+      "post": {
+        "description": "Refuse a request, for example because the pairing codes differed.\n\nArgs:\n    enrollment_id: The request being refused.\n    caller: The verified account and device.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The refused request.",
+        "operationId": "reject_enrollment_v1_enrollments__enrollment_id__reject_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "enrollment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Enrollment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrollment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such pairing request on this account"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has expired, or is not at the step this call needs"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Sign-in cannot be checked right now"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Refuse a pairing request",
+        "tags": [
+          "enrollment"
+        ]
+      }
+    },
+    "/v1/enrollments/{enrollment_id}/reveal": {
+      "post": {
+        "description": "Record the value the new device committed to when it started.\n\nThe server does not check the value against the commitment: the\napproving device does, because it is the one that must not be fooled.\n\nArgs:\n    enrollment_id: The request.\n    request: The new device's random value.\n    owner: The verified account.\n    enrollments: Where pairing requests are kept.\n\nReturns:\n    The request, now ready for the pairing code to be compared.",
+        "operationId": "reveal_enrollment_v1_enrollments__enrollment_id__reveal_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "enrollment_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Enrollment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevealEnrollmentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Enrollment"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Missing or unacceptable access token, or a request not signed by one of the account's devices"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "No such pairing request on this account"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "The request has expired, or is not at the step this call needs"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Invalid request"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Sign-in cannot be checked right now"
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Reveal the new device's random value",
         "tags": [
           "enrollment"
         ]
