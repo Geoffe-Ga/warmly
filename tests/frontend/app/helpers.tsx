@@ -7,6 +7,7 @@ import { createOnboarding } from "../../../src/app/onboarding";
 import type { Services } from "../../../src/app/services";
 import { createSession, type SessionState } from "../../../src/app/session";
 import { createRevocationSignal } from "../../../src/devices/revocation";
+import { MemoryRecordStore } from "../../../src/storage/record-store";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import { FakeDeviceDirectory } from "../../../src/testing/fake-device-directory";
 import { FakeDevicePairing } from "../../../src/testing/fake-device-pairing";
@@ -21,6 +22,7 @@ export interface TestServices extends Services {
   readonly vault: FakeKeyVault;
   readonly devices: FakeDeviceDirectory;
   readonly pairing: FakeDevicePairing;
+  readonly records: MemoryRecordStore;
 }
 
 /** Sample values for the `:id` segments of parameterised routes. */
@@ -52,6 +54,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     vault,
     devices,
     revocation,
+    records: new MemoryRecordStore(),
     forgetThisDevice: () => {
       vault.forgetThisDevice();
       return Promise.resolve();

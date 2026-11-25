@@ -23,9 +23,12 @@ import { AddDevice } from "../ui/screens/devices/AddDevice";
 import { ApproveDevice } from "../ui/screens/devices/ApproveDevice";
 import { DeviceRevoked } from "../ui/screens/devices/DeviceRevoked";
 import { ManageDevices } from "../ui/screens/devices/ManageDevices";
+import { Compose } from "../ui/screens/journal/Compose";
+import { Entry } from "../ui/screens/journal/Entry";
+import { Timeline } from "../ui/screens/journal/Timeline";
 import { redirectFor } from "./access";
 import { matchRoute } from "./router";
-import type { RouteDef, RouteId } from "./routes";
+import type { RouteDef, RouteId, RouteParams } from "./routes";
 import type { SessionState } from "./session";
 
 /** The product name, as shown in the header and the document title. */
@@ -38,9 +41,19 @@ export interface View {
   readonly render: () => JSX.Element;
 }
 
+/** What a screen is given: the values of its route's `:name` segments. */
+interface ScreenProps {
+  readonly params: RouteParams;
+}
+
 /** Screens that have been built. Every other route shows a placeholder. */
-const SCREENS: Readonly<Partial<Record<RouteId, () => JSX.Element>>> = {
+const SCREENS: Readonly<
+  Partial<Record<RouteId, (props: ScreenProps) => JSX.Element>>
+> = {
   home: Home,
+  journal: Timeline,
+  "journal-new": Compose,
+  "journal-entry": Entry,
   settings: Settings,
   devices: ManageDevices,
   "approve-device": ApproveDevice,
@@ -58,13 +71,17 @@ const SCREENS: Readonly<Partial<Record<RouteId, () => JSX.Element>>> = {
   locked: Locked,
 };
 
-function viewForRoute(route: RouteDef): View {
+function viewForRoute(route: RouteDef, params: RouteParams): View {
   const Screen = SCREENS[route.id];
   return {
     title: route.id === "home" ? APP_NAME : route.title,
     isHome: route.id === "home",
     render: () =>
-      Screen === undefined ? <Placeholder route={route} /> : <Screen />,
+      Screen === undefined ? (
+        <Placeholder route={route} />
+      ) : (
+        <Screen params={params} />
+      ),
   };
 }
 
@@ -110,7 +127,7 @@ export function resolve(path: string, state: SessionState): Resolution {
   if (match) {
     const to = redirectFor(match.route.access, state);
     return to === undefined
-      ? { kind: "view", view: viewForRoute(match.route) }
+      ? { kind: "view", view: viewForRoute(match.route, match.params) }
       : { kind: "redirect", to };
   }
   return {

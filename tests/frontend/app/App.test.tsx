@@ -264,15 +264,14 @@ describe("Lock and Sign out (DEV-005)", () => {
   it("Lock is available on every private screen and hides it at once", async () => {
     const services = await renderApp("/journal", testServices("unlocked"));
     await services.vault.createAccountKeys();
+    expect(screen.getByText("Your entries, newest first.")).toBeTruthy();
 
     await userEvent.click(screen.getByRole("button", { name: "Lock" }));
 
     expect(services.session.state).toBe("signed_in_locked");
     expect(services.vault.isUnlocked).toBe(false);
     expect(window.location.pathname).toBe("/locked");
-    expect(
-      screen.queryByText("Your entries in date order, with search."),
-    ).toBeNull();
+    expect(screen.queryByText("Your entries, newest first.")).toBeNull();
     expect(document.activeElement).toBe(heading());
   });
 
