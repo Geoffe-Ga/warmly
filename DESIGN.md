@@ -409,6 +409,8 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`card-reading`** — A conversation card's words as they are meant to be said: `{typography.title}` size in `{colors.ink}`, inside a `{component.card}`. Under it, one **`hint`** line in `{colors.ink-muted}` says who wrote the card ("Written by you." or "Drafted by AI from your journal. You can rewrite all of it.").
 
+**`card-row`** — One card in a collection's list: a `{component.action-link}` showing the card's words and its kind, and under it two `{component.button-secondary}`s, "Move up" and "Move down". The one that leads nowhere is `{component.button-disabled}`. After a move, a `hint` line says where the card went ("Moved to position 2 of 3."), which is also read out. A row can be dragged onto another row to take its place; the buttons do the same from the keyboard and on touch screens.
+
 **`present-card`** — Presentation mode: one card at a time on a `{colors.surface}` panel with a `{colors.border-strong}` border and generous padding, text at `{typography.heading}` size so it can be read from across a table. Below it a `hint` ("Card 1 of 3") and two `{component.button-secondary}`s, "Previous card" and "Next card"; the one that leads nowhere is `{component.button-disabled}`. Nothing else is on the panel: no source notes, no timers, no marks for cards already shown.
 
 **`print-sheet`** — What the print screen will print: the collection's name as a heading and its cards as a numbered list at `{typography.title}` size, then a `{component.button-primary}` "Print". Card text only.

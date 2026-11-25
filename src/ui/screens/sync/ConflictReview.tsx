@@ -39,6 +39,7 @@ import {
   DeletedThere,
   Version,
 } from "./ConflictViews";
+import { CardConflicts } from "./CardConflicts";
 
 /** What the screen has found. */
 type Found =
@@ -102,6 +103,8 @@ export function ConflictReview(): JSX.Element {
   const [tried, setTried] = useState(false);
   // Whether a choice was refused because the other version changed again.
   const [changed, setChanged] = useState(false);
+  // How many collections and cards are waiting, told by their own section.
+  const [cardsWaiting, setCardsWaiting] = useState(0);
 
   const mounted = useRef(true);
   /**
@@ -297,9 +300,9 @@ export function ConflictReview(): JSX.Element {
     <PageLayout
       title="Changed in two places"
       lead={
-        conflicts.length === 0
+        conflicts.length + cardsWaiting === 0
           ? "Nothing needs your attention."
-          : "These entries were changed or deleted on this device and on another one before they could sync. Nothing is removed until you choose."
+          : "These were changed or deleted on this device and on another one before they could sync. Nothing is removed until you choose."
       }
     >
       {done !== undefined && (
@@ -313,7 +316,7 @@ export function ConflictReview(): JSX.Element {
           {action.error}
         </StatusBanner>
       )}
-      {conflicts.length > 0 && (
+      {conflicts.length + cardsWaiting > 0 && (
         <p>
           Warmly never merges or picks for you. The version you do not keep is
           removed from this device and is not stored anywhere else.
@@ -385,6 +388,7 @@ export function ConflictReview(): JSX.Element {
           </StatusBanner>
         );
       })}
+      <CardConflicts onCount={setCardsWaiting} />
       {back}
     </PageLayout>
   );

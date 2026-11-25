@@ -5,11 +5,25 @@
  * the encrypted store (`encrypted-record-store.ts`), which writes ciphertext
  * to IndexedDB. The in-memory store here is for tests of screens.
  */
+import type { CardCollection, ConversationCard } from "../domain/cards/types";
 import type { JournalEntry } from "../domain/journal/types";
 
 /** Every kind of record, and the type stored under it. */
 export interface RecordKinds {
   readonly "journal-entry": JournalEntry;
+  /** A named set of conversation cards. */
+  readonly "card-collection": CardCollection;
+  /** One conversation card. */
+  readonly "conversation-card": ConversationCard;
+}
+
+/** An empty map for every kind of record. */
+function emptyRecords(): { [K in RecordKind]: Map<string, RecordKinds[K]> } {
+  return {
+    "journal-entry": new Map(),
+    "card-collection": new Map(),
+    "conversation-card": new Map(),
+  };
 }
 
 /** The name of a kind of record. */
@@ -164,13 +178,15 @@ export class RecordDeletedError extends Error {
 /** A {@link RecordStore} that keeps records in memory only. */
 export class MemoryRecordStore implements RecordStore {
   // One map per kind, each typed to that kind's records.
-  #records: { [K in RecordKind]: Map<string, RecordKinds[K]> } = {
-    "journal-entry": new Map(),
-  };
+  #records = emptyRecords();
   /** The other version of each record in conflict, by ID. */
   #parked = new Map<
     string,
-    { readonly theirs: JournalEntry | undefined; readonly revision: number }
+    {
+      readonly kind: RecordKind;
+      readonly theirs: RecordKinds[RecordKind] | undefined;
+      readonly revision: number;
+    }
   >();
   readonly #listeners = new Set<() => void>();
 
@@ -227,9 +243,15 @@ export class MemoryRecordStore implements RecordStore {
    * @param id - The record's ID.
    * @param theirs - The server's version; `undefined` if deleted there.
    * @param revision - The server's revision of it.
+   * @param kind - The kind of record; a journal entry unless said.
    */
-  park(id: string, theirs: JournalEntry | undefined, revision = 2): void {
-    this.#parked.set(id, { theirs, revision });
+  park<K extends RecordKind = "journal-entry">(
+    id: string,
+    theirs: RecordKinds[K] | undefined,
+    revision = 2,
+    kind: K = "journal-entry" as K,
+  ): void {
+    this.#parked.set(id, { kind, theirs, revision });
     this.#changed();
   }
 
@@ -237,13 +259,16 @@ export class MemoryRecordStore implements RecordStore {
     kind: K,
   ): Promise<RecordConflict<RecordKinds[K]>[]> {
     return Promise.resolve(
-      [...this.#parked.entries()].map(([id, { theirs, revision }]) => ({
-        id,
-        mine: this.#kind(kind).get(id),
-        theirs,
-        theirsDeleted: theirs === undefined,
-        revision,
-      })),
+      [...this.#parked.entries()]
+        .filter(([, parked]) => parked.kind === kind)
+        .map(([id, { theirs, revision }]) => ({
+          id,
+          mine: this.#kind(kind).get(id),
+          // Parked under this kind, so it is this kind's record.
+          theirs: theirs as RecordKinds[K] | undefined,
+          theirsDeleted: theirs === undefined,
+          revision,
+        })),
     );
   }
 
@@ -274,7 +299,7 @@ export class MemoryRecordStore implements RecordStore {
       if (parked.theirs === undefined) {
         this.#kind(kind).delete(id);
       } else {
-        this.#kind(kind).set(id, parked.theirs);
+        this.#kind(kind).set(id, parked.theirs as RecordKinds[K]);
       }
     } else if (merged !== undefined) {
       this.#kind(kind).set(id, merged);
@@ -292,7 +317,7 @@ export class MemoryRecordStore implements RecordStore {
   }
 
   lock(): void {
-    this.#records = { "journal-entry": new Map() };
+    this.#records = emptyRecords();
     this.#parked = new Map();
     this.#changed();
   }

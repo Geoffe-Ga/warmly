@@ -1,15 +1,11 @@
 /**
- * Invented collections and cards for development and tests.
- *
- * Until cards can be saved there is nothing real to show, so builds other
- * than production start with these. Every word is made up. This module is
- * never part of a production build.
+ * Invented collections and cards for tests. Every word is made up.
  */
-import { MemoryCardsStore } from "../domain/cards/store";
-import type { CardCollection, ConversationCard } from "../domain/cards/types";
-
-/** Marks this as invented data; a test checks it is not in a real build. */
-export const SEED_CARDS_MARK = "warmly.fake.seed-cards";
+import type {
+  CardCollection,
+  ConversationCard,
+} from "../../../src/domain/cards/types";
+import type { RecordStore } from "../../../src/storage/record-store";
 
 const MADE = "2026-11-01T09:00:00.000Z";
 
@@ -25,7 +21,8 @@ export const SEED = {
   entry: "5eed0000-0000-4000-8000-00000000e001",
 } as const;
 
-const CARDS: readonly ConversationCard[] = [
+/** The invented cards. */
+export const CARDS: readonly ConversationCard[] = [
   {
     id: SEED.thanks,
     collectionId: SEED.sunday,
@@ -118,7 +115,8 @@ const CARDS: readonly ConversationCard[] = [
   },
 ];
 
-const COLLECTIONS: readonly CardCollection[] = [
+/** The invented collections. */
+export const COLLECTIONS: readonly CardCollection[] = [
   {
     id: SEED.sunday,
     name: "Sunday talk",
@@ -130,23 +128,28 @@ const COLLECTIONS: readonly CardCollection[] = [
     id: SEED.money,
     name: "Money check-in",
     cardIds: [SEED.budget],
-    createdAt: MADE,
+    createdAt: "2026-11-02T09:00:00.000Z",
     updatedAt: MADE,
   },
   {
     id: SEED.empty,
     name: "Not started yet",
     cardIds: [],
-    createdAt: MADE,
+    createdAt: "2026-11-03T09:00:00.000Z",
     updatedAt: MADE,
   },
 ];
 
 /**
- * @returns A store holding the invented collections and cards.
+ * Put the invented collections and cards into a record store.
+ *
+ * @param records - The store to fill.
  */
-export function seededCards(): MemoryCardsStore & { readonly mark: string } {
-  return Object.assign(new MemoryCardsStore(COLLECTIONS, CARDS), {
-    mark: SEED_CARDS_MARK,
-  });
+export async function seedCards(records: RecordStore): Promise<void> {
+  for (const card of CARDS) {
+    await records.put("conversation-card", card);
+  }
+  for (const collection of COLLECTIONS) {
+    await records.put("card-collection", collection);
+  }
 }

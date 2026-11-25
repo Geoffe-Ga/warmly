@@ -7,6 +7,7 @@
  * `unlock` and `lock`. The database never holds a record's content or
  * anything derived from it.
  */
+import { isCardCollection, isConversationCard } from "../domain/cards/types";
 import { isJournalEntry } from "../domain/journal/types";
 import {
   DecryptError,
@@ -65,6 +66,12 @@ interface KindFormat<K extends RecordKind> {
 
 const FORMATS: { readonly [K in RecordKind]: KindFormat<K> } = {
   "journal-entry": { type: 1, schemaVersion: 1, isValid: isJournalEntry },
+  "card-collection": { type: 2, schemaVersion: 1, isValid: isCardCollection },
+  "conversation-card": {
+    type: 3,
+    schemaVersion: 1,
+    isValid: isConversationCard,
+  },
 };
 
 const KINDS = Object.keys(FORMATS) as RecordKind[];
@@ -193,8 +200,16 @@ async function openStore(
   // this tab's writes then fail, which is safer than blocking the upgrade.
   const opened: Opened = {
     database,
-    records: { "journal-entry": new Map() },
-    unreadable: { "journal-entry": new Set() },
+    records: {
+      "journal-entry": new Map(),
+      "card-collection": new Map(),
+      "conversation-card": new Map(),
+    },
+    unreadable: {
+      "journal-entry": new Set(),
+      "card-collection": new Set(),
+      "conversation-card": new Set(),
+    },
     superseded: false,
   };
   database.onversionchange = (event) => {
