@@ -9,6 +9,7 @@
  */
 import { isCardCollection, isConversationCard } from "../domain/cards/types";
 import { isJournalEntry } from "../domain/journal/types";
+import { isReflectSession } from "../domain/reflect/types";
 import {
   DecryptError,
   UnsupportedFormatError,
@@ -72,6 +73,7 @@ const FORMATS: { readonly [K in RecordKind]: KindFormat<K> } = {
     schemaVersion: 1,
     isValid: isConversationCard,
   },
+  "reflect-session": { type: 4, schemaVersion: 1, isValid: isReflectSession },
 };
 
 const KINDS = Object.keys(FORMATS) as RecordKind[];
@@ -204,11 +206,13 @@ async function openStore(
       "journal-entry": new Map(),
       "card-collection": new Map(),
       "conversation-card": new Map(),
+      "reflect-session": new Map(),
     },
     unreadable: {
       "journal-entry": new Set(),
       "card-collection": new Set(),
       "conversation-card": new Set(),
+      "reflect-session": new Set(),
     },
     superseded: false,
   };

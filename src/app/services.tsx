@@ -65,7 +65,7 @@ import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-sto
 import { RecordCardsStore, type CardsStore } from "../domain/cards/store";
 import { createEventBus, type EventBus } from "../domain/events";
 import {
-  MemoryReflectSessions,
+  RecordReflectSessions,
   type ReflectSessions,
 } from "../domain/reflect/sessions";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
@@ -96,7 +96,7 @@ export interface Services {
   readonly sync: SyncControl;
   /** The only way to reach an AI provider (D-17). */
   readonly ai: AiGateway;
-  /** Reflect sessions. In memory only, for now. */
+  /** Reflect sessions, read from the private records. */
   readonly reflect: ReflectSessions;
   /** Collections of conversation cards, read from the private records. */
   readonly cards: CardsStore;
@@ -402,7 +402,7 @@ export function createServices(): Services {
     updates: appUpdates,
     ai: createGateway(),
     cards: new RecordCardsStore(records),
-    reflect: new MemoryReflectSessions(),
+    reflect: new RecordReflectSessions(records),
     persistence,
     session: createSession(),
     onboarding: createOnboarding(),

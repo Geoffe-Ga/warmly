@@ -9,6 +9,10 @@ import {
   type ConversationCard,
 } from "../../../domain/cards/types";
 import {
+  firstQuestion,
+  type ReflectSession,
+} from "../../../domain/reflect/types";
+import {
   ConflictChangedError,
   RecordDeletedError,
 } from "../../../storage/record-store";
@@ -79,12 +83,38 @@ function CardVersion(props: {
   );
 }
 
+function exchangeCount(session: ReflectSession): string {
+  const asked = session.messages.filter(
+    (message) => message.role === "question",
+  ).length;
+  const count = asked === 1 ? "1 question" : `${String(asked)} questions`;
+  return session.status === "finished" ? `${count}, finished` : count;
+}
+
+function SessionVersion(props: {
+  readonly heading: string;
+  readonly session: ReflectSession;
+}): JSX.Element {
+  return (
+    <Card heading={props.heading}>
+      <p class="card-reading">{firstQuestion(props.session)}</p>
+      <p class="hint">{exchangeCount(props.session)}</p>
+    </Card>
+  );
+}
+
 function Version(props: {
   readonly heading: string;
   readonly conflict: CardsConflict;
   readonly which: "mine" | "theirs";
 }): JSX.Element | null {
   const { conflict, which } = props;
+  if (conflict.record === "reflect-session") {
+    const session = conflict[which];
+    return session === undefined ? null : (
+      <SessionVersion heading={props.heading} session={session} />
+    );
+  }
   if (conflict.record === "card-collection") {
     const collection = conflict[which];
     return collection === undefined ? null : (
@@ -97,18 +127,39 @@ function Version(props: {
   );
 }
 
+/** What each kind of record is called, in the middle of a sentence. */
+const NAMES = {
+  "card-collection": "collection",
+  "conversation-card": "card",
+  "reflect-session": "reflection",
+} as const;
+
+/** What is said when both versions exist. */
+const EDITED = {
+  "card-collection":
+    "This collection was changed here and on another device. Whichever you keep, no card is lost: cards are kept separately from the collection's name and order.",
+  "conversation-card": "This card was changed here and on another device.",
+  "reflect-session":
+    "This reflection was added to, or finished, here and on another device. The version you do not keep is removed, with any questions and answers only it has.",
+} as const;
+
+/** What is said when the other device deleted it. */
+const DELETED_ELSEWHERE = {
+  "card-collection":
+    "This collection was deleted on another device after you changed it here. A deleted collection does not come back. You can keep yours as a new collection, which starts with no cards, or let it go.",
+  "conversation-card": `This card was deleted on another device after you changed it here. A deleted card does not come back. You can keep your words as a new card, or let it go. If its collection is gone too, the new card goes into a collection called "${KEPT_CARDS_NAME}".`,
+  "reflect-session":
+    "This reflection was deleted on another device after you added to it here. A deleted reflection does not come back. You can keep yours as a new reflection, with all of its questions and answers, or let it go.",
+} as const;
+
 /** What each kind of difference is, in a sentence. */
 function explain(conflict: CardsConflict): string {
-  const what = conflict.record === "card-collection" ? "collection" : "card";
+  const what = NAMES[conflict.record];
   switch (conflict.kind) {
     case "edited":
-      return conflict.record === "card-collection"
-        ? "This collection was changed here and on another device. Whichever you keep, no card is lost: cards are kept separately from the collection's name and order."
-        : "This card was changed here and on another device.";
+      return EDITED[conflict.record];
     case "deleted-elsewhere":
-      return conflict.record === "card-collection"
-        ? `This collection was deleted on another device after you changed it here. A deleted collection does not come back. You can keep yours as a new collection, which starts with no cards, or let it go.`
-        : `This card was deleted on another device after you changed it here. A deleted card does not come back. You can keep your words as a new card, or let it go. If its collection is gone too, the new card goes into a collection called "${KEPT_CARDS_NAME}".`;
+      return DELETED_ELSEWHERE[conflict.record];
     case "deleted-here":
       return `You deleted this ${what} here, and it was changed on another device before the deletion reached it.`;
     case "unreadable":
@@ -130,7 +181,7 @@ function Item(props: {
 }): JSX.Element {
   const { records } = useServices();
   const { conflict } = props;
-  const what = conflict.record === "card-collection" ? "collection" : "card";
+  const what = NAMES[conflict.record];
   const options: Option[] = [];
   if (conflict.kind === "edited") {
     options.push(
@@ -174,8 +225,7 @@ function Item(props: {
       },
     );
   }
-  const title =
-    conflict.record === "card-collection" ? "A collection" : "A card";
+  const title = `A ${what}`;
 
   return (
     <section class="conflict" aria-label={title}>
@@ -208,8 +258,8 @@ function Item(props: {
 }
 
 /**
- * The collections and cards changed in two places, each with the ways to
- * settle it (PRD SYNC-004, SYNC-005; invariant 5). Nothing is merged or
+ * The collections, cards and reflections changed in two places, each with
+ * the ways to settle it (PRD SYNC-004, SYNC-005; invariant 5). Nothing is merged or
  * chosen for the person, and nothing is removed until they choose.
  *
  * @param props - `onCount` is told how many are waiting, so the screen
