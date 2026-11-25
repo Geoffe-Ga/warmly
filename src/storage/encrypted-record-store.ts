@@ -47,9 +47,7 @@ import {
   type RecordStore,
 } from "./record-store";
 
-export { RecordDeletedError } from "./record-store";
-
-export { StaleRecordError } from "./record-store";
+export { RecordDeletedError, StaleRecordError } from "./record-store";
 
 /** How one kind of record is stored. */
 interface KindFormat<K extends RecordKind> {
@@ -388,12 +386,7 @@ function settle(database: IDBDatabase, choice: Choice): Promise<Settled> {
           result({ kind: "changed" });
           return;
         }
-        // A record deleted on either side never comes back under this ID.
-        const revives =
-          keep === "mine"
-            ? theirs.tombstone
-            : mine?.tombstone === true && !theirs.tombstone;
-        if (revives) {
+        if (revives(choice, mine, theirs)) {
           result({ kind: "deleted" });
           return;
         }
@@ -423,6 +416,26 @@ function settle(database: IDBDatabase, choice: Choice): Promise<Settled> {
       };
     },
   );
+}
+
+/**
+ * Whether a choice would bring a deleted record back (ADR-0006).
+ *
+ * A record the server holds as deleted never comes back under its ID, and
+ * new text is never written over a deletion made here. The one thing that
+ * may be undone is a deletion made on this device that the server never
+ * accepted: it is this device's own unsent change.
+ */
+function revives(
+  choice: Choice,
+  mine: StoredRecord | undefined,
+  theirs: ParkedRecord,
+): boolean {
+  const deletedHere = mine?.tombstone === true;
+  if (choice.keep === "mine") {
+    return deletedHere ? choice.replacement !== undefined : theirs.tombstone;
+  }
+  return deletedHere && mine.dirty === false && !theirs.tombstone;
 }
 
 /**
@@ -794,7 +807,15 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
       return [];
     }
     const { rows, operations } = await readAll(opened.database);
-    const byKey = new Map(rows.map((row) => [keyOf(row), row]));
+    // A record with a server version kept beside it is not sent: the server
+    // has moved on from what it was based on and would refuse it again.
+    // It is sent once the person has chosen.
+    const aside = new Set((await readParked(opened.database)).map(keyOf));
+    const byKey = new Map(
+      rows
+        .filter((row) => !aside.has(keyOf(row)))
+        .map((row) => [keyOf(row), row]),
+    );
     // Only the record as it is now is worth sending, however many times it
     // changed. It is sent under the ID of its oldest queued change: if an
     // earlier attempt reached the server and the answer was lost, the

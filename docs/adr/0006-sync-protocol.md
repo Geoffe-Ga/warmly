@@ -220,14 +220,47 @@ history (PRD §5.2). If the server's version changes again before the choice
 is sent, the push is refused again and the newer version is parked: a
 conflict on top of a conflict is just another conflict.
 
-A choice that would bring a deleted record back is refused by the store.
-Edit-against-delete is settled by its own rules (#37).
+#### Deletion (PRD SYNC-005, OPS-003; decision D-11)
+
+A deleted record stays deleted on every device, in every order of events.
+
+- **A tombstone is permanent.** Deleting a record replaces it with a
+  tombstone: the row keeps its owner, ID, revision and sequence, and loses
+  its ciphertext. Tombstones are **never removed or compacted** in the MVP.
+  A tombstone is a few bytes, and keeping it means a device that has been
+  offline for a year, or a record restored from an old backup, is still
+  told the record is gone. Operation receipts are kept in the same way.
+- **The database enforces it.** A trigger refuses any change at all to a
+  tombstoned row, and the API role cannot delete rows.
+- **Every deletion is in a ledger.** `warmly_private.deletion_ledger`
+  holds `(owner_id, record_id, deleted_at)` and nothing else. A database
+  trigger writes it in the same transaction as the tombstone, so no code
+  path can delete without it. It is append-only and separate from the
+  records table, so the fact of a deletion outlives a restore of that table
+  (used by the backup work, #65).
+- **A change sent to a deleted record** gets `deleted`. The device keeps
+  the person's text and does not send that record again. The person
+  chooses: **save as a new entry** (the same text under a new ID; the old
+  record becomes a tombstone here too) or **discard**.
+- **A deletion made on an out-of-date copy** is a conflict like any other:
+  the server answers `conflict` and nothing is deleted. The other device's
+  version is kept beside the unsent deletion and the person chooses:
+  **delete it anyway** (the deletion is sent on top of the other change) or
+  **keep the edited version** (the unsent deletion is taken back; no other
+  device ever saw it).
+- **Nothing brings a record back.** A device never applies a live version
+  over a deletion the server has accepted, and the store refuses any choice
+  that would. A record waiting for the person's choice is not sent.
+
+A test runs random orders of creating, editing, deleting, syncing and
+choosing across three devices and checks that they converge and that no
+record the server holds as deleted is readable anywhere.
 
 ### What is deliberately left to later issues
 
 - Browser tests of two devices against the real API and database: they
   need a deployed auth provider (#63).
-- Tombstone retention, compaction and a deletion ledger (#37, #65).
+- What a backup restore does with the deletion ledger (#65).
 - Rate limits and cross-account tests (#38); schema negotiation (#39).
 
 ## Consequences

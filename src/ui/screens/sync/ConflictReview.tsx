@@ -5,22 +5,27 @@ import { Link } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import type { EntryContent } from "../../../domain/journal/drafts";
-import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
+import type { JournalEntry } from "../../../domain/journal/types";
 import { unanswered } from "../../../domain/journal/validation";
 import {
   ConflictChangedError,
   ConflictGoneError,
   IncompleteMergeError,
+  deleteAnyway,
+  discardMine,
+  isDeletedElsewhere,
+  isDeletedHere,
   isEdited,
+  keepEdited,
   keepMerged,
   keepMine,
   keepTheirs,
   listConflicts,
+  saveAsNew,
   type EditedConflict,
   type EntryConflict,
 } from "../../../sync/conflicts";
 import { Button } from "../../components/Button";
-import { Card } from "../../components/Card";
 import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
@@ -28,6 +33,12 @@ import { describeOpenFailure } from "../../storage-messages";
 import { AccountForm, useAction } from "../account/shared";
 import { EntryFields } from "../journal/EntryFields";
 import { formatEntryDate } from "../journal/shared";
+import {
+  Choice,
+  DeletedHereChoice,
+  DeletedThere,
+  Version,
+} from "./ConflictViews";
 
 /** What the screen has found. */
 type Found =
@@ -44,102 +55,24 @@ const KEPT = {
     "Saved the version you wrote. The two earlier versions have been removed.",
 } as const;
 
-/** What a difference that cannot be settled here yet is, in words. */
-const NOT_SETTLED_HERE = {
-  "deleted-elsewhere":
-    "This entry was deleted on another device after you changed it here. Your version is still on this device.",
-  "deleted-here":
-    "You deleted this entry on this device, and it was changed on another device before that reached it. It stays deleted here.",
-  unreadable:
-    "This entry was changed on another device by a newer version of Warmly, which this version cannot read. Your version is still on this device. Update Warmly on this device to see both.",
+/** What is said after a choice about a deleted entry. */
+const SETTLED = {
+  saved:
+    "Saved what you wrote as a new entry. The earlier entry stays deleted.",
+  discarded:
+    "Removed this device's version. The entry is deleted on all your devices.",
+  deleted:
+    "The entry will be deleted from your other devices the next time they sync.",
+  restored:
+    "Kept the version from your other device. The entry is back on this device.",
 } as const;
+
+/** Said when the other version cannot be read by this version of the app. */
+const UNREADABLE =
+  "This entry was changed on another device by a newer version of Warmly, which this version cannot read. Your version is still on this device. Update Warmly on this device to see both.";
 
 function contentOf(entry: JournalEntry): EntryContent {
   return { responses: entry.responses, feelings: entry.feelings ?? [] };
-}
-
-function formatChanged(instant: string): string {
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(instant));
-}
-
-/** One version of an entry, in full. */
-function Version(props: {
-  readonly heading: string;
-  readonly entry: JournalEntry;
-}): JSX.Element {
-  const { entry } = props;
-  return (
-    <Card heading={props.heading}>
-      <p class="version__changed">
-        Last changed {formatChanged(entry.updatedAt)}.
-        {entry.status === "draft" ? " A draft." : ""}
-      </p>
-      <dl class="version">
-        {PROMPTS.map((prompt) => (
-          <div key={prompt.key}>
-            <dt>{prompt.label}</dt>
-            <dd>
-              {entry.responses[prompt.key].trim() === ""
-                ? "Not answered."
-                : entry.responses[prompt.key]}
-            </dd>
-          </div>
-        ))}
-        <div>
-          <dt>Feelings noted</dt>
-          <dd>
-            {entry.feelings === undefined || entry.feelings.length === 0
-              ? "None."
-              : entry.feelings.join(", ")}
-          </dd>
-        </div>
-      </dl>
-    </Card>
-  );
-}
-
-/** Both versions of one entry, and the ways to settle it. */
-function Choice(props: {
-  readonly conflict: EditedConflict;
-  readonly busy: boolean;
-  readonly onKeep: (which: "mine" | "theirs") => void;
-  readonly onMerge: () => void;
-}): JSX.Element {
-  const { conflict } = props;
-  const day = formatEntryDate(conflict.mine.entryDate);
-  return (
-    <section class="conflict" aria-label={`Entry from ${day}`}>
-      <h2>Entry from {day}</h2>
-      <div class="versions">
-        <Version heading="On this device" entry={conflict.mine} />
-        <Version heading="On your other device" entry={conflict.theirs} />
-      </div>
-      <div class="button-row">
-        <Button
-          disabled={props.busy}
-          onClick={() => {
-            props.onKeep("mine");
-          }}
-        >
-          Keep this device's version
-        </Button>
-        <Button
-          disabled={props.busy}
-          onClick={() => {
-            props.onKeep("theirs");
-          }}
-        >
-          Keep the other version
-        </Button>
-        <Button disabled={props.busy} onClick={props.onMerge}>
-          Write one from both
-        </Button>
-      </div>
-    </section>
-  );
 }
 
 /**
@@ -150,6 +83,12 @@ function Choice(props: {
  * person and neither version is removed until they choose: keep one, or
  * write one from both. The version that is not kept is then removed from
  * this device; there is no history. Nothing here calls AI.
+ *
+ * An entry deleted on one device and changed on another is settled here
+ * too (PRD SYNC-005; AC-17). A deleted entry never comes back under its
+ * ID: text written after a deletion can be saved as a new entry or let go,
+ * and a deletion that has not reached the other devices can be confirmed
+ * or taken back.
  *
  * @returns The review screen.
  */
@@ -360,7 +299,7 @@ export function ConflictReview(): JSX.Element {
       lead={
         conflicts.length === 0
           ? "Nothing needs your attention."
-          : "These entries were changed on this device and on another one before they could sync. Both versions are kept until you choose."
+          : "These entries were changed or deleted on this device and on another one before they could sync. Nothing is removed until you choose."
       }
     >
       {done !== undefined && (
@@ -380,38 +319,72 @@ export function ConflictReview(): JSX.Element {
           removed from this device and is not stored anywhere else.
         </p>
       )}
-      {conflicts.map((conflict) =>
-        isEdited(conflict) ? (
-          <Choice
-            key={conflict.id}
-            conflict={conflict}
-            busy={action.busy}
-            onKeep={(which) => {
-              action.run(async () => {
-                await settle(KEPT[which], () =>
-                  (which === "mine" ? keepMine : keepTheirs)(
-                    { records, events },
-                    conflict,
-                  ),
+      {conflicts.map((conflict) => {
+        const deps = { records, events };
+        const choose = (said: string, work: () => Promise<unknown>): void => {
+          action.run(async () => {
+            await settle(said, work);
+          });
+        };
+        if (isEdited(conflict)) {
+          return (
+            <Choice
+              key={conflict.id}
+              conflict={conflict}
+              busy={action.busy}
+              onKeep={(which) => {
+                choose(KEPT[which], () =>
+                  (which === "mine" ? keepMine : keepTheirs)(deps, conflict),
                 );
-              });
-            }}
-            onMerge={() => {
-              setDone(undefined);
-              setContent(contentOf(conflict.mine));
-              setMerging(conflict);
-            }}
-          />
-        ) : (
+              }}
+              onMerge={() => {
+                setDone(undefined);
+                setContent(contentOf(conflict.mine));
+                setMerging(conflict);
+              }}
+            />
+          );
+        }
+        if (isDeletedElsewhere(conflict)) {
+          return (
+            <DeletedThere
+              key={conflict.id}
+              conflict={conflict}
+              busy={action.busy}
+              onSave={() => {
+                choose(SETTLED.saved, () => saveAsNew(deps, conflict));
+              }}
+              onDiscard={() => {
+                choose(SETTLED.discarded, () => discardMine(deps, conflict));
+              }}
+            />
+          );
+        }
+        if (isDeletedHere(conflict)) {
+          return (
+            <DeletedHereChoice
+              key={conflict.id}
+              conflict={conflict}
+              busy={action.busy}
+              onDelete={() => {
+                choose(SETTLED.deleted, () => deleteAnyway(deps, conflict));
+              }}
+              onKeep={() => {
+                choose(SETTLED.restored, () => keepEdited(deps, conflict));
+              }}
+            />
+          );
+        }
+        return (
           <StatusBanner
             key={conflict.id}
             tone="warning"
-            label="Deleted or unreadable"
+            label="Can't be read here"
           >
-            {NOT_SETTLED_HERE[conflict.kind]}
+            {UNREADABLE}
           </StatusBanner>
-        ),
-      )}
+        );
+      })}
       {back}
     </PageLayout>
   );

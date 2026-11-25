@@ -30,9 +30,15 @@ async function expectNoViolations(page: Page): Promise<void> {
 /**
  * Keep the entry's stored version aside as "the other device's", as sync
  * does when a change from the server meets an unsent local change.
+ *
+ * @param page - The page.
+ * @param deletedThere - Whether the other device deleted the entry.
  */
-async function parkStoredVersion(page: Page): Promise<void> {
-  await page.evaluate(async () => {
+async function parkStoredVersion(
+  page: Page,
+  deletedThere = false,
+): Promise<void> {
+  await page.evaluate(async (tombstone) => {
     const settled = <T>(request: IDBRequest<T>): Promise<T> =>
       new Promise((resolve, reject) => {
         request.onsuccess = () => {
@@ -66,14 +72,15 @@ async function parkStoredVersion(page: Page): Promise<void> {
       transaction.objectStore("parked").put({
         type: row.type,
         id: row.id,
-        envelope: row.envelope,
+        // A deletion carries no ciphertext.
+        envelope: tombstone ? null : row.envelope,
         schemaVersion: row.schemaVersion,
         revision: row.baseRevision + 1,
-        tombstone: false,
+        tombstone,
       }),
     );
     database.close();
-  });
+  }, deletedThere);
 }
 
 test.describe("an entry changed in two places", () => {
@@ -200,5 +207,63 @@ test.describe("an entry changed in two places", () => {
       .click();
     await expect(page.getByText("Synthetic, from both")).toBeVisible();
     await expect(page.getByText("Synthetic second version")).toBeVisible();
+  });
+
+  test("an entry deleted on another device stays deleted, and what was written here can be saved as a new entry", async ({
+    page,
+    context,
+  }) => {
+    await onboard(page);
+    const status = page.locator(".sync-status [role=status]");
+    await page.getByRole("link", { name: "Journal", exact: true }).click();
+    await page.getByRole("link", { name: "Write a new entry" }).click();
+    for (const prompt of PROMPTS) {
+      await page.getByLabel(prompt).fill("Synthetic first version");
+    }
+    await page.getByRole("button", { name: "Save entry" }).click();
+    await expect(page.getByText("A journal entry.")).toBeVisible();
+    await expect(status).toHaveText("All changes saved");
+    const entryUrl = page.url();
+
+    // Another device deletes the entry. This one, offline since before
+    // that, changes it.
+    await parkStoredVersion(page, true);
+    await context.setOffline(true);
+    await page.getByRole("link", { name: "Edit this entry" }).click();
+    await page.getByLabel(PROMPTS[0] ?? "").fill("Synthetic written after");
+    await page.getByRole("button", { name: "Save changes" }).click();
+    await expect(page.getByText("A journal entry.")).toBeVisible();
+
+    await page.getByRole("link", { name: "Review the two versions" }).click();
+    await expect(
+      page.getByText(/deleted on another device after you changed it here/),
+    ).toBeVisible();
+    await expect(
+      page.locator(".card", { hasText: "On this device" }),
+    ).toContainText("Synthetic written after");
+    await expectNoViolations(page);
+
+    await page.getByRole("button", { name: "Save as a new entry" }).click();
+    await expect(
+      page.getByText(/Saved what you wrote as a new entry/),
+    ).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1 })).toBeFocused();
+    await expectNoViolations(page);
+
+    // The text is in the journal once, under a new entry.
+    await page.getByRole("link", { name: "Back to your journal" }).click();
+    const entries = page
+      .getByRole("navigation", { name: "Entries" })
+      .getByRole("link");
+    await expect(entries).toHaveCount(1);
+    await entries.first().click();
+    await expect(page.getByText("Synthetic written after")).toBeVisible();
+    expect(page.url()).not.toBe(entryUrl);
+
+    // The old entry stays deleted: its address shows nothing.
+    await page.goto(entryUrl);
+    await unlockThisDevice(page);
+    await expect(page.getByText("Synthetic written after")).toHaveCount(0);
+    await expect(page.getByText("Synthetic first version")).toHaveCount(0);
   });
 });

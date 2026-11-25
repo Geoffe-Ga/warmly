@@ -256,6 +256,12 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   "Changed in two places" screen. Never merge for them, never choose by
   time, and never remove either version before they choose. The server
   holds no second version: a choice is an ordinary operation.
+- A deleted record never comes back under its ID. Text written after a
+  deletion is offered as a new entry (`saveAsNew`), never re-sent under the
+  old ID. Tombstones and the deletion ledger are never removed or
+  compacted; the ledger is written by a database trigger, never by
+  application code. Only a deletion the server has not accepted may be
+  taken back, and only by the person (`keepEdited`).
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

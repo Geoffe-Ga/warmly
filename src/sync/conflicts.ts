@@ -113,6 +113,18 @@ export async function listConflicts(
     .sort((left, right) => created(left).localeCompare(created(right)));
 }
 
+/** An entry changed here and deleted on another device. */
+export interface DeletedElsewhere extends OtherConflict {
+  readonly kind: "deleted-elsewhere";
+  readonly mine: JournalEntry;
+}
+
+/** An entry deleted here and changed on another device. */
+export interface DeletedHere extends OtherConflict {
+  readonly kind: "deleted-here";
+  readonly theirs: JournalEntry;
+}
+
 /** Whether both versions of a conflict can be shown and chosen between. */
 export function isEdited(conflict: EntryConflict): conflict is EditedConflict {
   return conflict.kind === "edited";
@@ -237,4 +249,138 @@ export async function keepMerged(
   await settle(deps.records, conflict, "mine", merged);
   await announce(deps.events, mine, merged);
   return merged;
+}
+
+/** Whether the entry was changed here and deleted on another device. */
+export function isDeletedElsewhere(
+  conflict: EntryConflict,
+): conflict is DeletedElsewhere {
+  return conflict.kind === "deleted-elsewhere" && conflict.mine !== undefined;
+}
+
+/** Whether the entry was deleted here and changed on another device. */
+export function isDeletedHere(
+  conflict: EntryConflict,
+): conflict is DeletedHere {
+  return conflict.kind === "deleted-here" && conflict.theirs !== undefined;
+}
+
+/**
+ * Store a choice about a deleted entry, for the version that was shown.
+ *
+ * @throws ConflictGoneError if the entry is no longer waiting for a choice.
+ * @throws ConflictChangedError if the other version has changed since.
+ */
+async function settleDeleted(
+  records: RecordStore,
+  conflict: DeletedElsewhere | DeletedHere,
+  keep: "mine" | "theirs",
+): Promise<void> {
+  const settled = await records.resolve(
+    "journal-entry",
+    conflict.id,
+    keep,
+    conflict.revision,
+  );
+  if (!settled) {
+    throw new ConflictGoneError();
+  }
+}
+
+/** Tell whatever was built from a finished entry that the entry is gone. */
+async function announceGone(
+  events: EventBus,
+  entry: JournalEntry,
+): Promise<void> {
+  if (entry.status === "complete") {
+    await events.emit("journal.deleted", {
+      entryId: entry.id,
+      oldHash: entry.contentHash,
+    });
+  }
+}
+
+/**
+ * The entry was deleted on another device after it was changed here. Keep
+ * what this device has as a new entry, and let the old one stay deleted.
+ *
+ * A deleted entry never comes back, so the text is saved under a new ID:
+ * the same answers, feelings, day and times, as a separate entry. Anything
+ * built from the old entry is told it is gone.
+ *
+ * @param deps - The record store and the event bus.
+ * @param conflict - The conflict as the person was shown it.
+ * @returns The new entry.
+ * @throws ConflictGoneError if the entry is not waiting for this choice.
+ * @throws ConflictChangedError if the other version has changed since.
+ */
+export async function saveAsNew(
+  deps: ConflictDeps,
+  conflict: DeletedElsewhere,
+): Promise<JournalEntry> {
+  const { mine } = conflict;
+  const copy: JournalEntry = { ...mine, id: crypto.randomUUID() };
+  // The copy is stored first: if anything fails after this, the text
+  // exists twice, never not at all.
+  await deps.records.put("journal-entry", copy);
+  try {
+    await settleDeleted(deps.records, conflict, "theirs");
+  } catch (error) {
+    // The old entry was not settled, so the copy would be a second one.
+    await deps.records.delete("journal-entry", copy.id);
+    throw error;
+  }
+  await announceGone(deps.events, mine);
+  return copy;
+}
+
+/**
+ * The entry was deleted on another device after it was changed here. Let it
+ * be deleted here too. This device's version is removed and is not kept.
+ *
+ * @param deps - The record store and the event bus.
+ * @param conflict - The conflict as the person was shown it.
+ * @throws ConflictGoneError if the entry is not waiting for this choice.
+ */
+export async function discardMine(
+  deps: ConflictDeps,
+  conflict: DeletedElsewhere,
+): Promise<void> {
+  await settleDeleted(deps.records, conflict, "theirs");
+  await announceGone(deps.events, conflict.mine);
+}
+
+/**
+ * The entry was deleted here and changed on another device before the
+ * deletion reached it. Delete it everywhere: the deletion is sent on the
+ * next sync, on top of the other device's change.
+ *
+ * @param deps - The record store and the event bus.
+ * @param conflict - The conflict as the person was shown it.
+ * @throws ConflictGoneError if the entry is not waiting for this choice.
+ * @throws ConflictChangedError if the other version has changed since.
+ */
+export async function deleteAnyway(
+  deps: ConflictDeps,
+  conflict: DeletedHere,
+): Promise<void> {
+  await settleDeleted(deps.records, conflict, "mine");
+}
+
+/**
+ * The entry was deleted here and changed on another device before the
+ * deletion reached it. Take the deletion back and keep the other device's
+ * version. The deletion was never accepted by the server, so no other
+ * device has seen it.
+ *
+ * @param deps - The record store and the event bus.
+ * @param conflict - The conflict as the person was shown it.
+ * @throws ConflictGoneError if the entry is not waiting for this choice.
+ * @throws ConflictChangedError if the other version has changed since.
+ */
+export async function keepEdited(
+  deps: ConflictDeps,
+  conflict: DeletedHere,
+): Promise<void> {
+  await settleDeleted(deps.records, conflict, "theirs");
 }
