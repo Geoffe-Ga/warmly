@@ -252,6 +252,12 @@ A deleted record stays deleted on every device, in every order of events.
   over a deletion the server has accepted, and the store refuses any choice
   that would. A record waiting for the person's choice is not sent.
 
+"Save as a new entry" is two local steps: store the copy, then accept the
+deletion of the old entry. The copy comes first, so a crash between them
+leaves the text twice and never not at all. If the second step is refused,
+the copy is deleted again; a record created and deleted before any sync is
+sent as a single tombstone for an ID that never held anything.
+
 A test runs random orders of creating, editing, deleting, syncing and
 choosing across three devices and checks that they converge and that no
 record the server holds as deleted is readable anywhere.

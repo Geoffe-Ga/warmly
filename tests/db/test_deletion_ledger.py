@@ -13,8 +13,9 @@ import psycopg
 import pytest
 import pytest_asyncio
 
-from tests.db.conftest import BROWSER_ROLES
+from tests.db.conftest import BROWSER_ROLES, throwaway_database
 from warmly.db.database import Database
+from warmly.db.migrate import apply_migrations, discover
 from warmly.db.sync_store import PostgresSyncStore
 from warmly.schemas.sync import SyncOperation
 
@@ -274,3 +275,34 @@ async def test_browser_roles_cannot_read_the_ledger(
     ):
         conn.execute(f"SET ROLE {role}")
         conn.execute("SELECT 1 FROM warmly_private.deletion_ledger")
+
+
+async def test_deletions_made_before_the_ledger_existed_are_recorded_by_the_migration(
+    admin_url: str,
+) -> None:
+    """A database that already holds tombstones gets a complete ledger."""
+    migrations = discover()
+    ledger = next(
+        index for index, each in enumerate(migrations) if "deletion_ledger" in each.name
+    )
+    deleted, live = uuid4(), uuid4()
+    with throwaway_database(admin_url) as url, psycopg.connect(url) as conn:
+        apply_migrations(conn, migrations[:ledger])
+        conn.execute(
+            "INSERT INTO warmly_private.records (owner_id, record_id, type,"
+            " schema_version, revision, sequence, tombstone, payload, etag,"
+            " updated_at) VALUES"
+            " (%(owner)s, %(deleted)s, 1, 1, 2, 2, true, NULL, %(etag)s,"
+            "  '2026-11-01T00:00:00Z'),"
+            " (%(owner)s, %(live)s, 1, 1, 1, 1, false, 'eA==', %(etag)s, now())",
+            {"owner": OWNER_A, "deleted": deleted, "live": live, "etag": "0" * 64},
+        )
+        conn.commit()
+
+        apply_migrations(conn, migrations)
+
+        rows = conn.execute(
+            "SELECT owner_id, record_id, deleted_at::date::text"
+            " FROM warmly_private.deletion_ledger"
+        ).fetchall()
+    assert rows == [(OWNER_A, deleted, "2026-11-01")]

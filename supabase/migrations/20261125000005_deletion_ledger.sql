@@ -31,8 +31,21 @@ CREATE POLICY deletion_ledger_owner_only ON warmly_private.deletion_ledger
 -- Append-only: no UPDATE and no DELETE.
 GRANT SELECT, INSERT ON warmly_private.deletion_ledger TO warmly_api;
 
+-- Deletions made before this table existed are recorded now, so the ledger
+-- is complete from its first day. Their time is the tombstone's own.
+INSERT INTO warmly_private.deletion_ledger (owner_id, record_id, deleted_at)
+     SELECT owner_id, record_id, updated_at
+       FROM warmly_private.records
+      WHERE tombstone
+ON CONFLICT (owner_id, record_id) DO NOTHING;
+
 -- The ledger is written by the database itself, in the same transaction as
 -- the tombstone, so no code path can delete a record without it.
+--
+-- The function runs with the rights of whoever writes the record, not its
+-- owner's (it is deliberately not SECURITY DEFINER). The API role may insert
+-- into the ledger, and row-level security still confines the insert to the
+-- account the transaction is acting for.
 CREATE OR REPLACE FUNCTION warmly_private.record_deletion()
 RETURNS trigger
 LANGUAGE plpgsql
