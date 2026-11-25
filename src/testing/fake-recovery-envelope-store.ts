@@ -16,7 +16,12 @@ import { fromBase64, toBase64 } from "../crypto/encoding";
 /** Storage key for the fake server's envelopes. */
 export const FAKE_RECOVERY_STORAGE_KEY = "warmly.fake.server.recovery";
 
-type Stored = [userId: string, version: number, envelope: string][];
+type Stored = [
+  userId: string,
+  version: number,
+  envelope: string,
+  formatVersion: number,
+][];
 
 /** See the module comment. */
 export class FakeRecoveryEnvelopeStore implements RecoveryEnvelopeStore {
@@ -44,6 +49,7 @@ export class FakeRecoveryEnvelopeStore implements RecoveryEnvelopeStore {
     session: AuthSession,
     expectedVersion: number,
     envelope: Uint8Array<ArrayBuffer>,
+    formatVersion: number,
   ): Promise<boolean> {
     const all = this.#all();
     const current = all.find(([userId]) => userId === session.userId);
@@ -51,7 +57,12 @@ export class FakeRecoveryEnvelopeStore implements RecoveryEnvelopeStore {
       return Promise.resolve(false);
     }
     const others = all.filter(([userId]) => userId !== session.userId);
-    others.push([session.userId, expectedVersion + 1, toBase64(envelope)]);
+    others.push([
+      session.userId,
+      expectedVersion + 1,
+      toBase64(envelope),
+      formatVersion,
+    ]);
     this.#storage.setItem(FAKE_RECOVERY_STORAGE_KEY, JSON.stringify(others));
     return Promise.resolve(true);
   }
