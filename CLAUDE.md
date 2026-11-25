@@ -60,6 +60,7 @@ revocation and invalidation infrastructure exist.
 
 ```
 docs/plans/              PRD and plans (source of truth)
+DESIGN.md                Design system for people and design agents; mirrors src/styles.css
 git-issues/              Source files for the filed MVP backlog; start at the
                          *_SPEC_summary.md decision register and FILED.md
 plans/architecture/      import-linter rules for Python layering
@@ -167,6 +168,9 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   violates the CSP. Unit tests cannot use the network at all.
 - Backend logs use the closed field set in `warmly/logs.py`. Never log a body,
   header, query string, concrete path or exception text.
+- Design tokens live in the `:root` block of `src/styles.css`. [DESIGN.md](DESIGN.md)
+  describes them and every component; a unit test fails when the two differ, so
+  change both together. Read it before building or restyling a screen.
 - Strict TypeScript (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`). Use
   `tsconfig.node.json` for config and E2E files.
 
