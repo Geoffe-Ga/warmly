@@ -346,6 +346,18 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   collection was deleted meanwhile. The words a real provider is given
   are `cardsTexts` (`src/ai/prompts/cards.ts`); never change
   `CARDS_POLICY` without `tests/frontend/cards/prompt.test.ts`.
+- A card AI drafted is shown in two modes on its own screen (PRD CC-005,
+  CC-006). Conversation mode comes first, every time, and is the card's
+  words and nothing else. Learning mode makes each part a button
+  (`SegmentHighlight`) that names its kind in words, never by colour
+  alone, and opens `SegmentDetail`. What a part rests on is worked out
+  when it is shown, by `provenanceOf` (`src/domain/cards/provenance.ts`),
+  from the entry as it is now and only if its content hash still matches:
+  otherwise no words are shown. An inference or a suggestion is always
+  labelled as that. Never store an excerpt in a card, and never show one
+  from an entry that has changed. Switching mode and opening a part call
+  no AI; the mode lives in component state only. Never check, score or
+  correct the person's wording.
 - An unedited AI card is a derived record (`CARD_RULE`,
   `src/domain/cards/dependencies.ts`): it is deleted when any entry sent
   for it is changed or deleted. A `user_owned` card depends on nothing.

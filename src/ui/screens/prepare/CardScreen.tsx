@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useId, useRef, useState } from "preact/hooks";
 
 import { Link } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
@@ -10,14 +10,18 @@ import {
   type ConversationCard,
 } from "../../../domain/cards/types";
 import { deleteCard, editCard } from "../../../domain/cards/cards";
+import { provenanceOf } from "../../../domain/cards/provenance";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TextArea } from "../../components/Field";
 import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
+import { SegmentDetail } from "../../components/SegmentDetail";
+import { SegmentHighlight } from "../../components/SegmentHighlight";
 import { StatusBanner } from "../../components/StatusBanner";
 import { DELETE_WARNING } from "../journal/Entry";
+import { useJournalEntries } from "../journal/shared";
 import {
   CardTypePicker,
   ChangeError,
@@ -35,8 +39,129 @@ const AUTHORSHIP = {
   user_owned: "Written by you.",
 } as const;
 
+/** The two ways to look at a card AI drafted. */
+type Mode = "conversation" | "learning";
+
+const MODES: readonly { readonly mode: Mode; readonly label: string }[] = [
+  { mode: "conversation", label: "Conversation: just the words" },
+  { mode: "learning", label: "Learning: where each part comes from" },
+];
+
+/** Said above the parts in learning mode. */
+export const LEARNING_LEAD =
+  "Each part is a button. Press one to see which of your own words it rests on, or that it is inferred or suggested, and why the wording may help.";
+
+function ModePicker(props: {
+  readonly value: Mode;
+  readonly onChange: (mode: Mode) => void;
+}): JSX.Element {
+  const name = useId();
+  return (
+    <fieldset class="choices">
+      <legend class="field__label">How to show this card</legend>
+      <ul class="choices__list">
+        {MODES.map(({ mode, label }) => (
+          <li key={mode}>
+            <label class="choices__option">
+              <input
+                type="radio"
+                name={name}
+                value={mode}
+                checked={props.value === mode}
+                onChange={() => {
+                  props.onChange(mode);
+                }}
+              />
+              <span>{label}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+    </fieldset>
+  );
+}
+
+/** The parts of a card as buttons, one of which may have its detail open. */
+function LearningParts(props: {
+  readonly card: ConversationCard;
+}): JSX.Element {
+  const { card } = props;
+  const journal = useJournalEntries();
+  const entries = journal.state === "ready" ? journal.entries : [];
+  const [open, setOpen] = useState<string>();
+  const buttons = useRef(new Map<string, HTMLButtonElement>());
+  const panelId = useId();
+
+  const close = (segmentId: string): void => {
+    setOpen(undefined);
+    // Back to the part the panel belonged to.
+    buttons.current.get(segmentId)?.focus();
+  };
+
+  return (
+    <Card heading="Its parts">
+      <p class="hint">{LEARNING_LEAD}</p>
+      <ol class="segments" aria-label="The parts of this card">
+        {card.segments.map((segment) => (
+          <li key={segment.id}>
+            <SegmentHighlight
+              segment={segment}
+              open={open === segment.id}
+              controls={panelId}
+              buttonRef={(element) => {
+                if (element === null) {
+                  buttons.current.delete(segment.id);
+                } else {
+                  buttons.current.set(segment.id, element);
+                }
+              }}
+              onToggle={() => {
+                setOpen(open === segment.id ? undefined : segment.id);
+              }}
+            />
+            {open === segment.id && (
+              <SegmentDetail
+                id={panelId}
+                segment={segment}
+                provenance={provenanceOf(segment, entries)}
+                onClose={() => {
+                  close(segment.id);
+                }}
+              />
+            )}
+          </li>
+        ))}
+      </ol>
+    </Card>
+  );
+}
+
+/**
+ * A card AI drafted, in one of two modes (PRD CC-005, CC-006; AC-11).
+ * Conversation mode is the card's words and nothing else. Learning mode
+ * adds the parts as buttons. The mode is kept only while the screen is
+ * open, and it always starts in conversation mode. Neither mode calls AI.
+ */
+function DraftedBody(props: { readonly card: ConversationCard }): JSX.Element {
+  const { card } = props;
+  const [mode, setMode] = useState<Mode>("conversation");
+  return (
+    <>
+      <Card heading={CARD_TYPE_LABELS[card.type]}>
+        <p class="card-reading">{readingText(card)}</p>
+        <p class="hint">{AUTHORSHIP[card.authorship]}</p>
+      </Card>
+      <ModePicker value={mode} onChange={setMode} />
+      {mode === "learning" && <LearningParts card={card} />}
+    </>
+  );
+}
+
 function CardBody(props: { readonly card: ConversationCard }): JSX.Element {
   const { card } = props;
+  if (card.authorship === "ai_generated") {
+    return <DraftedBody card={card} />;
+  }
   return (
     <>
       <Card heading={CARD_TYPE_LABELS[card.type]}>
@@ -180,9 +305,11 @@ function EditCard(props: {
 }
 
 /**
- * One card: what it says, what kind it is and who wrote it (PRD CC-007,
- * CC-010). The person's own card can be changed or deleted here. Opening,
- * changing or deleting a card never calls AI.
+ * One card: what it says, what kind it is and who wrote it (PRD CC-005 to
+ * CC-007, CC-010). The person's own card can be changed or deleted here.
+ * A card AI drafted can be read plainly, or in learning mode, where each
+ * part shows what it rests on. Opening, changing or deleting a card, and
+ * switching mode or opening a part, never call AI.
  *
  * @param props - The route's parameters: `id` names the collection and
  *   `cardId` the card.

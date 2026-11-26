@@ -219,14 +219,23 @@ describe("one card (CC-007)", () => {
         "Drafted by AI from journal entries you picked. It can be wrong. It is removed if one of those entries is changed or deleted.",
       ),
     ).toBeTruthy();
+    // Conversation mode comes first: the words and nothing about them.
+    expect(
+      screen.queryByRole("list", { name: "The parts of this card" }),
+    ).toBeNull();
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("radio", { name: /^Learning/ }));
+
     const parts = screen.getByRole("list", { name: "The parts of this card" });
     expect(
       within(parts)
-        .getAllByRole("listitem")
+        .getAllByRole("button")
         .map((item) => item.textContent),
     ).toEqual([
-      "appreciationI loved cooking with you on Sunday.",
-      "feelingIt made me feel close to you.",
+      "Appreciation I loved cooking with you on Sunday.",
+      "Feeling It made me feel close to you.",
     ]);
   });
 
