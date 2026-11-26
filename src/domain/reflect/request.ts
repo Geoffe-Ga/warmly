@@ -18,7 +18,7 @@ import type {
   SourceEntry,
 } from "../../ai/provider";
 import type { JournalEntry } from "../journal/types";
-import { selectContext } from "./context";
+import { EntryTooLargeError, selectContext } from "./context";
 
 /**
  * The limits on a request and a way to size one, from the gateway
@@ -48,6 +48,37 @@ export class SessionTooLongError extends Error {
   constructor() {
     super("The reflection is too long to send with another question");
     this.name = "SessionTooLongError";
+  }
+}
+
+/**
+ * Choose the entries for a follow-up, and say truly why none fits.
+ *
+ * With earlier turns in the request there is less room. If no entry fits
+ * in what is left, but one would fit a first question, the reflection is
+ * what is too long, not the entry.
+ *
+ * @param select - Chooses the entries for the follow-up.
+ * @param asFirstQuestion - Builds the same request with no earlier turns;
+ *   it throws if no entry fits even then.
+ * @returns What `select` chose.
+ * @throws SessionTooLongError if only the earlier turns stop every entry.
+ * @throws EntryTooLargeError if no entry would fit a first question either.
+ */
+function blamingTheSession<T>(select: () => T, asFirstQuestion: () => void): T {
+  try {
+    return select();
+  } catch (error) {
+    if (!(error instanceof EntryTooLargeError)) {
+      throw error;
+    }
+    try {
+      asFirstQuestion();
+    } catch {
+      // No entry fits a first question either: the entry is the cause.
+      throw error;
+    }
+    throw new SessionTooLongError();
   }
 }
 
@@ -118,17 +149,24 @@ export function reflectRequest(
   if (room <= 0 && history.length > 0) {
     throw new SessionTooLongError();
   }
-  const selection = selectContext({
-    entries,
-    question: asked,
-    budget: room,
-    estimate: (entry) =>
-      sizing === undefined
-        ? 1
-        : sizing.estimate({ ...empty, entries: [sourceOf(entry)] }) -
-          framing +
-          1,
-  });
+  const select = (): ReturnType<typeof selectContext> =>
+    selectContext({
+      entries,
+      question: asked,
+      budget: room,
+      estimate: (entry) =>
+        sizing === undefined
+          ? 1
+          : sizing.estimate({ ...empty, entries: [sourceOf(entry)] }) -
+            framing +
+            1,
+    });
+  const selection =
+    history.length === 0
+      ? select()
+      : blamingTheSession(select, () => {
+          reflectRequest(question, entries, sizing);
+        });
   return {
     ...empty,
     entries: selection.entries.map(sourceOf),

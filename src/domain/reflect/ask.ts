@@ -18,11 +18,25 @@ import {
 import type { ReflectSession } from "./types";
 
 /**
+ * An earlier answer's prose without its claim marks. A mark such as
+ * `[c1]` pointed at a citation of that answer, and means nothing in a new
+ * request, where the marks start again from `c1`.
+ */
+function withoutMarks(markdown: string): string {
+  return markdown.replace(/ ?\[c[1-9]\d?\]/g, "");
+}
+
+/**
  * The earlier turns of one session, as they are sent with a new question.
  *
  * Only questions that got an answer are included, each with the prose of
  * its answer. Citations are left out: they point into the journal by ID
  * and hash, which a provider is never given.
+ *
+ * The turns are those this device holds when the question is asked. One
+ * added on another device since the last sync is not among them; it is
+ * still kept when the answer is stored, because storing adds to the
+ * session as it then is.
  *
  * @param session - The session being asked in, if there is one yet.
  * @returns The turns, oldest first. Empty for a new session.
@@ -34,7 +48,7 @@ export function historyOf(session: ReflectSession | undefined): EarlierTurn[] {
     if (message.role === "question") {
       question = message.text;
     } else if (question !== undefined) {
-      turns.push({ question, answer: message.answer.markdown });
+      turns.push({ question, answer: withoutMarks(message.answer.markdown) });
       question = undefined;
     }
   }

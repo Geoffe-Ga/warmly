@@ -22,6 +22,7 @@ import {
   historyOf,
   storeExchange,
 } from "../../../src/domain/reflect/ask";
+import { EntryTooLargeError } from "../../../src/domain/reflect/context";
 import {
   SessionTooLongError,
   reflectRequest,
@@ -361,8 +362,9 @@ describe("what a session sends with a new question (RF-006, AC-08)", () => {
       ],
     };
 
+    // The claim mark goes too: it pointed at a citation of that answer.
     expect(historyOf(session)).toEqual([
-      { question: "Why?", answer: "Because. [c1]" },
+      { question: "Why?", answer: "Because." },
     ]);
     expect(JSON.stringify(historyOf(session))).not.toContain("SECRET");
   });
@@ -414,6 +416,53 @@ describe("what a session sends with a new question (RF-006, AC-08)", () => {
       SessionTooLongError,
     );
     expect(new SessionTooLongError().name).toBe("SessionTooLongError");
+  });
+
+  it("takes the claim marks out of an earlier answer and leaves its words alone", () => {
+    const at = "2026-11-20T10:00:00.000Z";
+    const session: ReflectSession = {
+      id: "s1",
+      status: "active",
+      createdAt: at,
+      updatedAt: at,
+      messages: [
+        { id: "q", role: "question", text: "Why?", at },
+        {
+          id: "a",
+          role: "answer",
+          at,
+          answer: answer(
+            "You cooked. [c1] You walked. [c2][c12]\n\nA list [not a mark] and [c0] and [c100] stay.",
+          ),
+        },
+      ],
+    };
+
+    expect(historyOf(session)[0]?.answer).toBe(
+      "You cooked. You walked.\n\nA list [not a mark] and [c0] and [c100] stay.",
+    );
+  });
+
+  it("blames the reflection, not an entry, when only the earlier turns leave no room for it", () => {
+    const sizing = new AiGateway(new FakeProvider()).sizing();
+    // One entry that fits a first question with a little room to spare.
+    const big = entry(1, "We talked it through. ".repeat(600));
+    const some = [{ question: "Why?", answer: "Because. ".repeat(900) }];
+
+    expect(reflectRequest("And?", [big], sizing).entries).toHaveLength(1);
+    expect(() => reflectRequest("And?", [big], sizing, some)).toThrow(
+      SessionTooLongError,
+    );
+  });
+
+  it("blames the entry when it would not fit a first question either", () => {
+    const sizing = new AiGateway(new FakeProvider()).sizing();
+    const huge = entry(1, "We talked it through. ".repeat(5000));
+    const some = [{ question: "Why?", answer: "Because." }];
+
+    expect(() => reflectRequest("And?", [huge], sizing, some)).toThrow(
+      EntryTooLargeError,
+    );
   });
 
   it("the dialog's words say that earlier turns go too, only when they do", () => {

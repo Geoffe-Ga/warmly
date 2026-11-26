@@ -305,6 +305,29 @@ describe("following a citation (RF-005, AC-07)", () => {
     }
   });
 
+  it("says where the cited words start and end even when the range starts on a line break", async () => {
+    const services = await setUp();
+    const good = ENTRY.responses.good;
+    const firstBreak = good.indexOf("\n");
+    // From the line break itself to the end of the second line.
+    services.passage.point({
+      entryId: ENTRY.id,
+      responseKey: "good",
+      start: firstBreak,
+      end: good.indexOf("\n", firstBreak + 1),
+      sourceHash: ENTRY.contentHash,
+    });
+
+    await renderApp(pathFor("journal-entry", { id: ENTRY.id }), services);
+    await screen.findByText(PASSAGE_MARKED);
+
+    const marks = [...document.querySelectorAll("mark.cited-passage")];
+    expect(marks).toHaveLength(1);
+    expect(marks[0]?.textContent).toBe(
+      "Start of the cited words: We cooked dinner together on Sunday. End of the cited words.",
+    );
+  });
+
   it("marks nothing when the entry is opened any other way, or opened again", async () => {
     const services = await setUp();
     await renderApp(NEW, services);

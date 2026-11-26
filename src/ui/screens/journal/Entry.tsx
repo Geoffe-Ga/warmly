@@ -1,5 +1,5 @@
 import type { JSX } from "preact";
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 
 import { Link } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
@@ -106,18 +106,41 @@ export function passageIn(
     : undefined;
 }
 
-/** One line of an answer, with the part inside the range marked. */
-function Line(props: {
+/** One line of an answer, and the part of it that is cited, if any. */
+interface MarkedLine {
   readonly text: string;
-  /** The range, counted from the start of this line. */
-  readonly mark: Range | undefined;
+  /** Where the cited part starts and ends in this line; equal if none. */
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * Split an answer into the lines the person wrote, with the part of each
+ * that lies inside the cited range. The range is counted over the whole
+ * answer, line breaks included.
+ */
+function markedLines(text: string, mark: Range | undefined): MarkedLine[] {
+  let offset = 0;
+  return text.split("\n").map((line) => {
+    const start = offset;
+    offset += line.length + 1;
+    const from = Math.max(0, (mark?.start ?? 0) - start);
+    const to = Math.min(line.length, (mark?.end ?? 0) - start);
+    return mark === undefined || from >= to
+      ? { text: line, from: 0, to: 0 }
+      : { text: line, from, to };
+  });
+}
+
+/** One line of an answer, with its cited part marked. */
+function Line(props: {
+  readonly line: MarkedLine;
+  /** Whether this is the first, and the last, line that shows a mark. */
   readonly first: boolean;
   readonly last: boolean;
 }): JSX.Element {
-  const { text, mark } = props;
-  const from = Math.max(0, mark?.start ?? 0);
-  const to = Math.min(text.length, mark?.end ?? 0);
-  if (mark === undefined || from >= to) {
+  const { text, from, to } = props.line;
+  if (from >= to) {
     return <p>{text}</p>;
   }
   return (
@@ -144,31 +167,23 @@ function Answer(props: {
   if (props.text.trim() === "") {
     return <p>Not answered yet.</p>;
   }
-  const { mark } = props;
-  // One paragraph per line the person wrote, so line breaks are kept. A
-  // marked range is counted over the whole answer, line breaks included.
-  let offset = 0;
+  // One paragraph per line the person wrote, so line breaks are kept.
+  const lines = markedLines(props.text, props.mark);
+  // The start and the end are said on the lines that really show a mark:
+  // a range can begin or end on a line break, which shows nothing.
+  const shown = lines.flatMap((line, index) =>
+    line.from < line.to ? [index] : [],
+  );
   return (
     <>
-      {props.text.split("\n").map((line, index) => {
-        const start = offset;
-        offset += line.length + 1;
-        const within =
-          mark === undefined
-            ? undefined
-            : { start: mark.start - start, end: mark.end - start };
-        return (
-          <Line
-            key={index}
-            text={line}
-            mark={within}
-            first={
-              mark !== undefined && mark.start >= start && mark.start < offset
-            }
-            last={mark !== undefined && mark.end > start && mark.end <= offset}
-          />
-        );
-      })}
+      {lines.map((line, index) => (
+        <Line
+          key={index}
+          line={line}
+          first={index === shown[0]}
+          last={index === shown.at(-1)}
+        />
+      ))}
     </>
   );
 }
@@ -187,8 +202,10 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
   const action = useAction();
   const id = props.params["id"];
   // The passage of a citation that was just followed here, taken once.
-  const [cited] = useState(() =>
-    id === undefined ? undefined : passage.take(id),
+  // Taken again only if this screen is given a different entry.
+  const cited = useMemo(
+    () => (id === undefined ? undefined : passage.take(id)),
+    [id, passage],
   );
   const [found, setFound] = useState<Found>({ kind: "loading" });
   const [confirming, setConfirming] = useState(false);
