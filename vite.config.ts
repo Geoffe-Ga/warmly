@@ -101,7 +101,13 @@ export default defineConfig(({ mode }) => {
         workbox: {
           // Cache the public app shell only. Journal plaintext must never be
           // placed in a service-worker cache (PRD §5.1 SYNC-001).
-          globPatterns: ["**/*.{js,css,html,svg,png,webmanifest}"],
+          // The only images are the app's own icons, named one by one so no
+          // other picture is ever cached by accident.
+          globPatterns: [
+            "**/*.{js,css,html,svg,webmanifest}",
+            "icon-*.png",
+            "apple-touch-icon.png",
+          ],
           navigateFallback: "index.html",
           runtimeCaching: [],
         },

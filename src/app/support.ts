@@ -16,19 +16,20 @@ export const UNSUPPORTED_BROWSER =
   "This browser is missing something Warmly needs to keep your writing private and saved on this device, so Warmly may not work here. Use a current version of Safari, Chrome, Edge or Firefox, in a normal (not private) window.";
 
 function has(value: unknown, name: string): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as Record<string, unknown>)[name] !== undefined &&
-    (value as Record<string, unknown>)[name] !== null
-  );
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const found = (value as Record<string, unknown>)[name];
+  return found !== undefined && found !== null;
 }
 
 /**
  * Work out what this browser lacks.
  *
- * - `encryption`: WebCrypto with its key functions. They are absent in
- *   very old browsers and on a page that was not served securely.
+ * - `encryption`: WebCrypto with its key functions (`subtle`), random
+ *   bytes (`getRandomValues`) and `randomUUID`, which the app uses to make
+ *   IDs. They are absent in very old browsers and on a page
+ *   that was not served securely.
  * - `storage`: IndexedDB, which some private windows turn off.
  * - `offline`: a service worker, without which the app cannot open with
  *   no connection. Everything else still works.

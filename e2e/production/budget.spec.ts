@@ -42,6 +42,12 @@ test.describe("production build: download size", () => {
     ).toBeLessThanOrEqual(INITIAL_BUDGET_BYTES);
     // A budget far above what is used protects nothing. If the app has
     // shrunk to under half of it, lower the budget.
-    expect(total).toBeGreaterThan(INITIAL_BUDGET_BYTES / 2);
+    // Failing here is good news: lower INITIAL_BUDGET_BYTES above (and the
+    // figure in CLAUDE.md and docs/support/browsers.md) to a little over
+    // the new size.
+    expect(
+      total,
+      `A first visit is now only ${String(total)} bytes compressed. Lower INITIAL_BUDGET_BYTES so the budget still protects something.`,
+    ).toBeGreaterThan(INITIAL_BUDGET_BYTES / 2);
   });
 });
