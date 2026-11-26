@@ -28,7 +28,10 @@ import { createEventBus } from "../../../src/domain/events";
 import { deleteEntry } from "../../../src/domain/journal/delete";
 import { editEntry } from "../../../src/domain/journal/edit";
 import { newEntry, type JournalEntry } from "../../../src/domain/journal/types";
-import { MemoryRecordStore } from "../../../src/storage/record-store";
+import {
+  MemoryRecordStore,
+  StaleRecordError,
+} from "../../../src/storage/record-store";
 
 const MADE = "2026-11-04T09:00:00.000Z";
 const LATER = new Date("2026-11-06T09:00:00.000Z");
@@ -112,6 +115,69 @@ function parts(card: ConversationCard, changes: Record<string, string> = {}) {
   }));
 }
 
+describe("a card that changed under the form (invariant 5)", () => {
+  it("is not saved over, part by part or as one text, and is saved once the newer card has been seen", async () => {
+    const { records, card } = await setUp();
+    // It changes under the form: sync brought another device's rewording.
+    const newer = await rewriteParts({ records }, card.id, {
+      type: card.type,
+      parts: parts(card, { s2: "From another device." }),
+    });
+
+    await expect(
+      rewriteParts(
+        { records },
+        card.id,
+        { type: card.type, parts: parts(card, { s1: "Typed here." }) },
+        { seen: card },
+      ),
+    ).rejects.toThrow(StaleRecordError);
+    await expect(
+      editCard(
+        { records },
+        card.id,
+        { type: card.type, text: "Typed here." },
+        { seen: card },
+      ),
+    ).rejects.toThrow(StaleRecordError);
+    expect(await records.get("conversation-card", card.id)).toEqual(newer);
+    if (newer === undefined) {
+      throw new Error("the card is expected to be here");
+    }
+
+    const saved = await editCard(
+      { records },
+      card.id,
+      { type: card.type, text: "Typed here." },
+      { seen: newer },
+    );
+    expect(saved?.segments.map((segment) => segment.text)).toEqual([
+      "Typed here.",
+    ]);
+  });
+
+  it("counts a change of kind, but not a move to another place, as a change", async () => {
+    const { records, card } = await setUp();
+    const draft = { type: card.type, parts: parts(card, { s1: "Typed." }) };
+
+    // Read again after a lock, or moved: the same kind and parts.
+    const reread = JSON.parse(JSON.stringify(card)) as ConversationCard;
+    await records.put("conversation-card", {
+      ...reread,
+      collectionId: "00000000-0000-4000-8000-00000000c0ff",
+    });
+    expect(
+      await rewriteParts({ records }, card.id, draft, { seen: card }),
+    ).toBeDefined();
+
+    const { records: other, card: second } = await setUp();
+    await other.put("conversation-card", { ...second, type: "need_request" });
+    await expect(
+      rewriteParts({ records: other }, second.id, draft, { seen: second }),
+    ).rejects.toThrow(StaleRecordError);
+  });
+});
+
 describe("the first saved change makes an AI card the person's own (CC-008, D-15)", () => {
   it("changes ownership when one part is rewritten, and that part alone loses its AI notes", async () => {
     const { records, card, quoted } = await setUp();
@@ -120,7 +186,7 @@ describe("the first saved change makes an AI card the person's own (CC-008, D-15
       { records },
       card.id,
       { type: card.type, parts: parts(card, { s2: "I felt close to you." }) },
-      LATER,
+      { now: LATER },
     );
 
     expect(changed?.authorship).toBe("user_owned");

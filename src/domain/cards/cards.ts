@@ -7,7 +7,8 @@
  * many cards a collection holds; the limit of three is for one AI request.
  * The words are the person's: nothing here corrects, scores or blocks them.
  */
-import type { RecordStore } from "../../storage/record-store";
+import { StaleRecordError, type RecordStore } from "../../storage/record-store";
+import { sameValue } from "../same";
 import { readingText, type CardType, type ConversationCard } from "./types";
 
 /** The longest a card's text may be, in characters. */
@@ -94,6 +95,39 @@ export async function createCard(
   return card;
 }
 
+/** What a change to a card's words may be told besides the new words. */
+export interface CardEditOptions {
+  /** The current time. */
+  readonly now?: Date;
+  /**
+   * The card as the person was shown it. If its kind or its parts are
+   * different by the time the change is saved, the change is refused
+   * (no last-write-wins, invariant 5).
+   */
+  readonly seen?: ConversationCard;
+}
+
+/**
+ * Refuse a change to a card that is no longer what the person was shown:
+ * sync or another tab changed it while the form was open.
+ *
+ * @param existing - The card as it is stored now.
+ * @param seen - The card as the form was filled from it, if known.
+ * @throws StaleRecordError if its kind or its parts have changed.
+ */
+export function refuseIfChanged(
+  existing: ConversationCard,
+  seen: ConversationCard | undefined,
+): void {
+  if (
+    seen !== undefined &&
+    (existing.type !== seen.type ||
+      !sameValue(existing.segments, seen.segments))
+  ) {
+    throw new StaleRecordError();
+  }
+}
+
 /**
  * Rewrite a whole card as one text: its kind, its words, or both.
  *
@@ -107,21 +141,24 @@ export async function createCard(
  * @param deps - The record store.
  * @param cardId - The card's ID.
  * @param draft - Its kind and its words.
- * @param now - The current time.
+ * @param options - See {@link CardEditOptions}.
  * @returns The card as it now is, or `undefined` if it is not here.
  * @throws InvalidCardTextError if the text is empty or too long.
+ * @throws StaleRecordError if `options.seen` is given and the card is no
+ *   longer that. Nothing is stored.
  */
 export async function editCard(
   deps: Deps,
   cardId: string,
   draft: CardDraft,
-  now: Date = new Date(),
+  options: CardEditOptions = {},
 ): Promise<ConversationCard | undefined> {
   const text = cleanCardText(draft.text);
   const existing = await deps.records.get("conversation-card", cardId);
   if (existing === undefined) {
     return undefined;
   }
+  refuseIfChanged(existing, options.seen);
   if (
     existing.authorship === "ai_generated" &&
     draft.type === existing.type &&
@@ -143,7 +180,7 @@ export async function editCard(
     ],
     sourceEntryIds: [],
     createdAt: existing.createdAt,
-    updatedAt: now.toISOString(),
+    updatedAt: (options.now ?? new Date()).toISOString(),
   };
   await deps.records.put("conversation-card", changed);
   return changed;

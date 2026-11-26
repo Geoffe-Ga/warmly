@@ -39,7 +39,10 @@ import { askRequest } from "../../../src/domain/reflect/ask";
 import { selectContext } from "../../../src/domain/reflect/context";
 import { RecordReflectSessions } from "../../../src/domain/reflect/sessions";
 import { OUTBOX, RECORDS, type StoredRecord } from "../../../src/storage/db";
-import { MemoryRecordStore } from "../../../src/storage/record-store";
+import {
+  MemoryRecordStore,
+  StaleRecordError,
+} from "../../../src/storage/record-store";
 import {
   chooseVersion,
   keepAsNew,
@@ -143,7 +146,7 @@ describe("it can be changed and deleted (PC-003)", () => {
       records,
       made.id,
       { ...WORDS, difficult: "One thing was left open." },
-      new Date("2026-11-22T09:00:00.000Z"),
+      { now: new Date("2026-11-22T09:00:00.000Z") },
     );
 
     expect(changed.id).toBe(made.id);
@@ -165,6 +168,35 @@ describe("it can be changed and deleted (PC-003)", () => {
       editAfter(records, "00000000-0000-4000-8000-00000000dead", WORDS),
     ).rejects.toBeInstanceOf(AfterNotFoundError);
     expect(await records.get("post-conversation", made.id)).toEqual(made);
+  });
+
+  it("is not saved over when it is no longer what the form was filled from (invariant 5)", async () => {
+    const records = new MemoryRecordStore();
+    const made = await createAfter(records, WORDS, AT);
+    // It changes under the form: sync brought another device's edit.
+    const newer = await editAfter(records, made.id, {
+      ...WORDS,
+      difficult: "From another device.",
+    });
+
+    await expect(
+      editAfter(
+        records,
+        made.id,
+        { ...WORDS, difficult: "Typed here." },
+        { seen: made.responses },
+      ),
+    ).rejects.toBeInstanceOf(StaleRecordError);
+    expect(await records.get("post-conversation", made.id)).toEqual(newer);
+
+    // Shown the newer one, the person saves again and it is stored.
+    const saved = await editAfter(
+      records,
+      made.id,
+      { ...WORDS, difficult: "Typed here." },
+      { seen: newer.responses },
+    );
+    expect(saved.responses.difficult).toBe("Typed here.");
   });
 
   it("is deleted for good, and deleting what is not here does nothing", async () => {

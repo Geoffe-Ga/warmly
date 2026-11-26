@@ -15,6 +15,7 @@ import type { PostConversationReflection } from "../../../src/domain/post-conver
 import { StaleRecordError } from "../../../src/storage/record-store";
 import {
   AFTER_LEAD,
+  AFTER_OUT_OF_DATE,
   NEW_AFTER,
   NOTHING_WRITTEN,
 } from "../../../src/ui/screens/journal/AfterConversation";
@@ -239,6 +240,36 @@ describe("the form (PC-001, PC-003)", () => {
     expect(
       notes.find((each) => each.id !== AFTER.id)?.responses.difficult,
     ).toBe("Typed here.");
+  });
+
+  it("is not saved over when sync changed it while the form was open (invariant 5)", async () => {
+    const services = testServices("unlocked");
+    await services.records.put("post-conversation", AFTER);
+    await renderApp(HERE, services);
+    await userEvent
+      .setup()
+      .type(await screen.findByLabelText(/What felt difficult/), "Typed here.");
+    // Another device's change arrives: the store now holds a newer note,
+    // and its own stale-copy check has nothing to object to.
+    const newer: PostConversationReflection = {
+      ...AFTER,
+      responses: { ...AFTER.responses, remember: "From the phone." },
+      contentHash: "1".repeat(64),
+    };
+    await services.records.put("post-conversation", newer);
+
+    await press("Save changes");
+
+    expect(await screen.findByText(AFTER_OUT_OF_DATE)).toBeTruthy();
+    expect(await services.records.get("post-conversation", AFTER.id)).toEqual(
+      newer,
+    );
+
+    // The same at a lock: the typed words become a note of their own.
+    expect(await services.lockHooks.flush()).toBe(0);
+    const notes = await services.records.list("post-conversation");
+    expect(notes).toHaveLength(2);
+    expect(notes.find((each) => each.id === AFTER.id)).toEqual(newer);
   });
 
   it("stores a change once when the app locks while Save changes is still storing it", async () => {
