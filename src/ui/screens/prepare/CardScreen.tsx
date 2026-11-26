@@ -10,6 +10,10 @@ import {
   type CardSegment,
   type ConversationCard,
 } from "../../../domain/cards/types";
+import {
+  alternativesRequest,
+  chooseAlternative,
+} from "../../../domain/cards/alternatives";
 import { deleteCard, editCard } from "../../../domain/cards/cards";
 import {
   provenanceOf,
@@ -90,6 +94,7 @@ function LearningParts(props: {
   readonly card: ConversationCard;
 }): JSX.Element {
   const { card } = props;
+  const { records } = useServices();
   const journal = useJournalEntries();
   const entries = journal.state === "ready" ? journal.entries : [];
   const [open, setOpen] = useState<string>();
@@ -142,6 +147,22 @@ function LearningParts(props: {
                 id={panelId}
                 segment={segment}
                 provenance={provenance(segment)}
+                request={() => alternativesRequest(card, segment.id, entries)}
+                onChoose={async (text) => {
+                  try {
+                    const changed = await chooseAlternative(
+                      { records },
+                      card.id,
+                      segment.id,
+                      text,
+                    );
+                    return changed !== undefined;
+                  } catch {
+                    // The panel says it was not saved. Never the error's
+                    // own text.
+                    return false;
+                  }
+                }}
                 onClose={() => {
                   close(segment.id);
                 }}

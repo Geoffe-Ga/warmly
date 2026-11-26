@@ -17,7 +17,7 @@ import {
   JOURNAL_LOADING,
   JOURNAL_NOT_OPEN,
   I_STATEMENT_CAVEAT,
-  MORE_OPTIONS_LATER,
+  MORE_OPTIONS_HINT,
   OWN_WORDS,
   SUGGESTED,
   UNRESOLVED,
@@ -496,17 +496,13 @@ describe("learning mode (CC-005, AC-11)", () => {
     ).toBe("true");
   });
 
-  it("calls no AI: not by switching mode, opening a part, or the button for more options", async () => {
+  it("calls no AI by switching mode or opening a part", async () => {
     const { services, provider } = await setUp();
     await renderApp(PATH, services);
     await learning();
     await openPart(/need i need more notice/i);
 
-    const more = screen.getByRole("button", { name: "Generate more options" });
-    await userEvent.setup().click(more);
-
-    expect(more.getAttribute("aria-disabled")).toBe("true");
-    expect(screen.getByText(MORE_OPTIONS_LATER)).toBeTruthy();
+    expect(screen.getByText(MORE_OPTIONS_HINT)).toBeTruthy();
     expect(screen.queryByRole("alertdialog")).toBeNull();
     expect(provider.calls).toEqual([]);
   });

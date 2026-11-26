@@ -1,12 +1,19 @@
 import type { JSX } from "preact";
-import { useEffect, useRef } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+
+import type { SegmentAlternatives } from "../../ai/contracts";
+import type { SegmentAlternativesRequest } from "../../ai/provider";
+import { AiRequestController } from "../../ai/request-controller";
+import { useServices } from "../../app/services";
 
 import { Link } from "../../app/navigation";
 import { pathFor } from "../../app/routes";
 import type { Provenance } from "../../domain/cards/provenance";
 import type { CardSegment } from "../../domain/cards/types";
 import { formatEntryDate } from "../screens/journal/shared";
+import { AiRequestStatus, useAiRequest } from "./AiRequestStatus";
 import { Button } from "./Button";
+import { StatusBanner } from "./StatusBanner";
 
 /** Said of a part that is the AI's reading of what the person wrote. */
 export const INFERRED =
@@ -37,9 +44,21 @@ export const OWN_WORDS = "These are your own words.";
 export const I_STATEMENT_CAVEAT =
   'A sentence that starts with "I" says what you experienced: what you noticed, felt or need. That is yours to say. It does not make a claim about what happened true, or beyond question.';
 
-/** Said beside the button that will ask for other wordings. */
-export const MORE_OPTIONS_LATER =
-  "Asking AI for other ways to word this part is not available yet.";
+/** Said beside the button that asks for other wordings. */
+export const MORE_OPTIONS_HINT =
+  "Asks AI for other ways to say this part. You are shown what would be sent, and nothing is sent unless you agree.";
+
+/** Said above the wordings that came back. */
+export const OPTIONS_ARE_SUGGESTIONS =
+  "These are AI suggestions. Nothing has checked them against your journal. Use one only if it says what you mean; they are not saved unless you pick one.";
+
+/** Said once a wording has been put in place. */
+export const WORDING_USED =
+  "This part now uses the wording you picked. It is marked as a suggestion.";
+
+/** Said when a picked wording could not be stored. */
+export const WORDING_NOT_SAVED =
+  "Warmly couldn't save that wording, so the card is as it was. The suggestions are still here. Try again in a moment.";
 
 /** Props for {@link SegmentDetail}. */
 export interface SegmentDetailProps {
@@ -49,6 +68,138 @@ export interface SegmentDetailProps {
   /** What the part rests on, worked out from the journal as it is now. */
   readonly provenance: Provenance;
   readonly onClose: () => void;
+  /**
+   * Builds the request for other wordings of this part. Called only when
+   * the person presses the button, never when the panel opens.
+   */
+  readonly request: () => SegmentAlternativesRequest;
+  /**
+   * Puts a wording the person picked in place of this part.
+   *
+   * @returns Whether it was stored.
+   */
+  readonly onChoose: (text: string) => Promise<boolean>;
+}
+
+/**
+ * The button that asks for other wordings, the request's dialog and
+ * status, and the wordings that come back.
+ *
+ * Nothing is asked until the button is pressed, and each press is its own
+ * request with its own dialog. The wordings are kept only here, on
+ * screen: closing the panel, dismissing them or leaving the page forgets
+ * them, and none is stored unless the person picks it.
+ */
+function MoreOptions(props: {
+  readonly request: () => SegmentAlternativesRequest;
+  readonly onChoose: (text: string) => Promise<boolean>;
+  readonly onClose: () => void;
+}): JSX.Element {
+  const { ai } = useServices();
+  const controller = useMemo(
+    () =>
+      new AiRequestController<SegmentAlternativesRequest, SegmentAlternatives>(
+        (request, consent, signal) =>
+          ai.generateSegmentAlternatives(request, consent, signal),
+      ),
+    [ai],
+  );
+  const state = useAiRequest(controller);
+  const [options, setOptions] = useState<readonly string[]>();
+  const [used, setUsed] = useState(false);
+  const [problem, setProblem] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Closing the panel, leaving the screen or locking stops a request and
+  // forgets it, with any wordings that had come back.
+  useEffect(
+    () => () => {
+      controller.reset();
+    },
+    [controller],
+  );
+
+  useEffect(() => {
+    if (state.phase === "done") {
+      setOptions(state.result.alternatives);
+      controller.reset();
+    }
+  }, [state, controller]);
+
+  const busy =
+    saving || state.phase === "running" || state.phase === "awaiting-consent";
+
+  return (
+    <>
+      <div class="button-row">
+        <Button
+          disabled={busy}
+          onClick={() => {
+            setUsed(false);
+            setProblem(false);
+            setOptions(undefined);
+            // Nothing is sent here: this opens the dialog that asks first.
+            controller.ask(props.request());
+          }}
+        >
+          Generate more options
+        </Button>
+        <Button onClick={props.onClose}>Close</Button>
+      </div>
+      <p class="hint">{MORE_OPTIONS_HINT}</p>
+      <AiRequestStatus controller={controller} />
+      {options !== undefined && (
+        <section aria-label="Other ways to say this part">
+          <h4>Other ways to say this part</h4>
+          <p class="hint">{OPTIONS_ARE_SUGGESTIONS}</p>
+          <ul class="segment-detail__options">
+            {options.map((text, index) => (
+              <li key={index}>
+                <p class="card-reading">{text}</p>
+                <Button
+                  disabled={busy}
+                  ariaLabel={`Use this wording: ${text}`}
+                  onClick={() => {
+                    setProblem(false);
+                    setSaving(true);
+                    void props.onChoose(text).then((stored) => {
+                      setSaving(false);
+                      if (stored) {
+                        setOptions(undefined);
+                        setUsed(true);
+                      } else {
+                        setProblem(true);
+                      }
+                    });
+                  }}
+                >
+                  Use this wording
+                </Button>
+              </li>
+            ))}
+          </ul>
+          {problem && (
+            <StatusBanner tone="error" label="Not saved">
+              {WORDING_NOT_SAVED}
+            </StatusBanner>
+          )}
+          <div class="button-row">
+            <Button
+              disabled={busy}
+              onClick={() => {
+                setOptions(undefined);
+              }}
+            >
+              Dismiss these suggestions
+            </Button>
+          </div>
+        </section>
+      )}
+      <p role="status" class="hint">
+        {used ? WORDING_USED : ""}
+      </p>
+    </>
+  );
 }
 
 function Source(props: { readonly provenance: Provenance }): JSX.Element {
@@ -94,8 +245,10 @@ function Source(props: { readonly provenance: Provenance }): JSX.Element {
  * - what it rests on: the person's own words, read from the journal as it
  *   is now, or a plain statement that it is inferred or suggested;
  * - why the wording may help, with what an I-statement is and is not;
- * - the button that will ask AI for other wordings. It does nothing yet,
- *   and says so.
+ * - a button that asks AI for other wordings of this part. Each press is
+ *   a request of its own, with its own dialog saying what would be sent.
+ *   What comes back is shown as suggestions and is not stored unless the
+ *   person picks one.
  *
  * Opening it calls no AI and sends nothing. The heading takes focus when
  * the panel opens, Escape closes it, and the screen puts focus back on
@@ -138,11 +291,11 @@ export function SegmentDetail(props: SegmentDetailProps): JSX.Element {
             <p class="hint">{I_STATEMENT_CAVEAT}</p>
           </>
         )}
-      <div class="button-row">
-        <Button disabled>Generate more options</Button>
-        <Button onClick={onClose}>Close</Button>
-      </div>
-      <p class="hint">{MORE_OPTIONS_LATER}</p>
+      <MoreOptions
+        request={props.request}
+        onChoose={props.onChoose}
+        onClose={onClose}
+      />
     </section>
   );
 }
