@@ -23,6 +23,7 @@ export type RouteId =
   | "prepare"
   | "collection"
   | "card"
+  | "suggest-cards"
   | "present"
   | "print"
   | "settings"
@@ -162,6 +163,13 @@ export const ROUTES: readonly RouteDef[] = [
     path: "/prepare/collections/:id/cards/:cardId",
     title: "Card",
     summary: "One conversation card, which you can rewrite freely.",
+    access: "private",
+  },
+  {
+    id: "suggest-cards",
+    path: "/prepare/collections/:id/suggest",
+    title: "Suggest cards",
+    summary: "Pick journal entries and ask AI to draft cards from them.",
     access: "private",
   },
   {

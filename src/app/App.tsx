@@ -176,22 +176,40 @@ function UpdateNotice(): JSX.Element {
  * they were built from was changed or deleted (PRD DEP-003). A count and
  * fixed words: never which reflection, which entry or what either said.
  *
- * @param count - How many were removed.
+ * @param count - How many were removed, of both kinds.
+ * @param cards - How many of them are cards drafted by AI; the rest are
+ *   reflections.
  * @returns The sentence.
  */
-export function removedText(count: number): string {
-  return count === 1
-    ? "A reflection was removed because a journal entry it was built from was changed or deleted."
-    : `${count.toLocaleString("en-US")} reflections were removed because a journal entry they were built from was changed or deleted.`;
+export function removedText(count: number, cards = 0): string {
+  const things = [
+    counted(count - cards, "reflection", "reflections"),
+    counted(cards, "card drafted by AI", "cards drafted by AI"),
+  ].filter((each) => each !== undefined);
+  const one = count === 1;
+  return `${capitalised(things.join(" and "))} ${one ? "was" : "were"} removed because a journal entry ${one ? "it was" : "they were"} built from was changed or deleted.`;
+}
+
+/** "a reflection", "3 reflections", or nothing when there are none. */
+function counted(count: number, one: string, many: string): string | undefined {
+  if (count <= 0) {
+    return undefined;
+  }
+  return count === 1 ? `a ${one}` : `${count.toLocaleString("en-US")} ${many}`;
+}
+
+function capitalised(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 /**
- * Tells the person when reflections have been removed, until they say
+ * Tells the person when reflections or AI cards have been removed, until they say
  * they have seen it. Removing them calls no AI and nothing is made again.
  */
 function RemovedNotice(props: { readonly state: SessionState }): JSX.Element {
   const { invalidation } = useServices();
   const [count, setCount] = useState(() => invalidation.removed);
+  const [cards, setCards] = useState(() => invalidation.removedCards);
   const unlocked = props.state === "unlocked";
 
   useEffect(() => {
@@ -206,6 +224,7 @@ function RemovedNotice(props: { readonly state: SessionState }): JSX.Element {
   useEffect(() => {
     const update = (): void => {
       setCount(invalidation.removed);
+      setCards(invalidation.removedCards);
     };
     update();
     return invalidation.subscribe(update);
@@ -213,7 +232,7 @@ function RemovedNotice(props: { readonly state: SessionState }): JSX.Element {
 
   return (
     <div class="removed-notice">
-      <p role="status">{count > 0 ? removedText(count) : ""}</p>
+      <p role="status">{count > 0 ? removedText(count, cards) : ""}</p>
       {count > 0 && (
         <Button
           onClick={() => {

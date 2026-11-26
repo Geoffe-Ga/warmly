@@ -30,7 +30,8 @@ import {
 
 /** Who the wording belongs to, said plainly. */
 const AUTHORSHIP = {
-  ai_generated: "Drafted by AI from your journal. You can rewrite all of it.",
+  ai_generated:
+    "Drafted by AI from journal entries you picked. It can be wrong. It is removed if one of those entries is changed or deleted.",
   user_owned: "Written by you.",
 } as const;
 
@@ -53,6 +54,53 @@ function CardBody(props: { readonly card: ConversationCard }): JSX.Element {
         </ol>
       </Card>
     </>
+  );
+}
+
+/**
+ * Deleting a card that AI drafted. It cannot be changed here yet, but it
+ * is the person's to remove at any time.
+ */
+function DeleteDrafted(props: {
+  readonly card: ConversationCard;
+  readonly onDeleted: () => void;
+}): JSX.Element {
+  const { records } = useServices();
+  const change = useChange();
+  const [confirming, setConfirming] = useState(false);
+  return (
+    <Card heading="Delete this card">
+      <ChangeError change={change} />
+      <div class="button-row">
+        <Button
+          variant="danger"
+          disabled={change.busy}
+          onClick={() => {
+            setConfirming(true);
+          }}
+        >
+          Delete this card
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={confirming}
+        title="Delete this card?"
+        confirmLabel="Delete card"
+        destructive
+        onCancel={() => {
+          setConfirming(false);
+        }}
+        onConfirm={() => {
+          setConfirming(false);
+          change.run(async () => {
+            await deleteCard({ records }, props.card.id);
+            props.onDeleted();
+          });
+        }}
+      >
+        <p>{DELETE_WARNING}</p>
+      </ConfirmDialog>
+    </Card>
   );
 }
 
@@ -181,10 +229,17 @@ export function CardScreen(props: {
       {card !== undefined && (
         <>
           <CardBody card={card} />
-          {card.authorship === "user_owned" && (
+          {card.authorship === "user_owned" ? (
             <EditCard
               // A newer version from elsewhere starts the form afresh.
               key={`${card.id}/${card.updatedAt}`}
+              card={card}
+              onDeleted={() => {
+                setDeleted(true);
+              }}
+            />
+          ) : (
+            <DeleteDrafted
               card={card}
               onDeleted={() => {
                 setDeleted(true);

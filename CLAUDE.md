@@ -18,13 +18,13 @@ Manage Devices, device-pairing and device-removal flows (real cryptography; in-m
 servers outside production) and a journal that can be written, listed, read,
 searched, edited in place and deleted for good, with drafts saved as they
 are typed, stored encrypted in IndexedDB. The AI seam exists (gateway,
-consent dialog, checked answers, a stand-in provider outside production) but no screen calls
-it and no real provider is connected. A sync engine sends the outbox
+consent dialog, checked answers, a stand-in provider outside production) and no real
+provider is connected. A sync engine sends the outbox
 and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Collections and manual conversation cards can be made, edited, reordered,
 printed, presented and deleted; they are encrypted records that sync like
 journal entries. Reflect has its landing and session screens, answered by
 the stand-in provider outside production; sessions are encrypted records
-that sync, can be finished into a read-only state and can be deleted, and are removed when an entry they were built from changes. A note can be written after a conversation, only when the person chooses to; it is a record of its own kind that syncs and can be asked about in Reflect. Other routes render accessible placeholders.
+that sync, can be finished into a read-only state and can be deleted, and are removed when an entry they were built from changes. Cards can also be drafted by AI from journal entries the person ticks; they are stored with their provenance and removed when one of those entries changes. A note can be written after a conversation, only when the person chooses to; it is a record of its own kind that syncs and can be asked about in Reflect. Other routes render accessible placeholders.
 
 ---
 
@@ -330,6 +330,25 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   deleted on another) is never hidden: `CardsStore.strays` lists it and
   the collections screen offers to keep or delete it. Never move or
   delete such cards without being asked.
+- Cards are drafted by AI only on the "Suggest cards" screen
+  (`src/ui/screens/prepare/SelectEntries.tsx`, route `suggest-cards`;
+  PRD CC-001 to CC-004). Nothing is ticked to begin with: never tick an
+  entry for the person, and never add "select all", "recent" or
+  suggested selections. The request is built by `cardsRequest`
+  (`src/domain/cards/generate.ts`) from exactly the ticked entries: never
+  add one, and never drop one to make the request fit (the person is
+  asked to tick fewer). One to three cards come back; fewer than three is
+  a success and nothing tops them up. Accepted cards are made by
+  `cardsFrom` and stored by `saveGenerated` as `ai_generated`, each with
+  `sources`: every entry that was sent, quoted or not, with its hash
+  then. Cards that have arrived are never dropped: they stay on the page
+  until stored, are stored before a lock, and are kept even if their
+  collection was deleted meanwhile. The words a real provider is given
+  are `cardsTexts` (`src/ai/prompts/cards.ts`); never change
+  `CARDS_POLICY` without `tests/frontend/cards/prompt.test.ts`.
+- An unedited AI card is a derived record (`CARD_RULE`,
+  `src/domain/cards/dependencies.ts`): it is deleted when any entry sent
+  for it is changed or deleted. A `user_owned` card depends on nothing.
 - A manual card is `user_owned` with no AI fields; making, changing,
   moving or deleting one never calls AI or the network (PRD CC-010). Never
   correct, score or block what the person writes on a card. Reordering

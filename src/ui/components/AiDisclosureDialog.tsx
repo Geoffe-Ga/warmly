@@ -145,7 +145,7 @@ function listed(parts: readonly string[]): string {
 export function describeSent(disclosure: Disclosure): string {
   return listed([
     ...writingText(disclosure),
-    disclosure.also,
+    ...(disclosure.also === undefined ? [] : [disclosure.also]),
     ...(disclosure.earlierTurns > 0 ? [EARLIER_TURNS] : []),
   ]);
 }

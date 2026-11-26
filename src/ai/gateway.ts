@@ -90,8 +90,12 @@ export interface Disclosure {
   readonly afterOmitted: number;
   /** How many of {@link Disclosure.tooLong} are such notes. */
   readonly afterTooLong: number;
-  /** What else is included, in the person's own words elsewhere on screen. */
-  readonly also: "your question" | "your topic" | "the wording you chose";
+  /**
+   * What else is included, in the person's own words elsewhere on screen.
+   * Absent when nothing else is: a request for cards with no topic holds
+   * the chosen entries and nothing more.
+   */
+  readonly also?: "your question" | "your topic" | "the wording you chose";
   /**
    * How many earlier turns of the same Reflect session go with the
    * question (PRD RF-006). Zero for a first question and for other kinds.
@@ -203,7 +207,9 @@ export class AiGateway {
         request.kind === "reflect" ? (request.coverage?.afterOmitted ?? 0) : 0,
       afterTooLong:
         request.kind === "reflect" ? (request.coverage?.afterTooLong ?? 0) : 0,
-      also: ALSO[request.kind],
+      ...(request.kind === "cards" && request.topic.trim() === ""
+        ? {}
+        : { also: ALSO[request.kind] }),
       earlierTurns:
         request.kind === "reflect" ? (request.history ?? []).length : 0,
       estimatedTokens,
