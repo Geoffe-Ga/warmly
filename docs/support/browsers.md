@@ -107,5 +107,13 @@ On desktop, in the current Firefox and the current Safari:
 10. Sign up, write an entry, lock, unlock, search, make a collection with
     two cards, present them, and open the print view.
 11. In Firefox, open the app in a private window. Read what it says.
+12. In each of Chrome, Firefox and Safari, open the app in two tabs and
+    unlock both. Write an entry in the first. The second shows it in the
+    journal within a moment, without a reload. Change the entry in the
+    first tab while the second has it open for editing with something
+    typed: the second tab's save is refused, it offers the latest version,
+    and what was typed is still on the page. Delete the entry in the first
+    tab: it leaves the second tab's journal. No automated test does this
+    with two real tabs (ADR-0017).
 
 Report anything that fails as a blocking issue with the device details.
