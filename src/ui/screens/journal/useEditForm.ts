@@ -95,6 +95,9 @@ export function useEditForm(id: string): EditForm {
   const entry = useRef<JournalEntry | undefined>(undefined);
   // The version of the entry the changes on the form were made to.
   const basedOn = useRef("");
+  // What the entry said when it was last put on the form or, with unsaved
+  // changes brought back, when the person was told what saving replaces.
+  const seen = useRef<EntryContent>(BLANK);
   const latest = useRef<EntryContent>(BLANK);
   const autosave = useRef<Autosave<UnfinishedEdit> | undefined>(undefined);
   // True while the entry is being saved or the edit given up: nothing typed
@@ -154,6 +157,7 @@ export function useEditForm(id: string): EditForm {
       ? { responses: unsaved.responses, feelings: unsaved.feelings }
       : contentOf(saved);
     basedOn.current = offered ? unsaved.basedOn : saved.contentHash;
+    seen.current = contentOf(saved);
     latest.current = shown;
     setFound({ kind: "entry", entry: saved });
     setContent(shown);
@@ -262,7 +266,11 @@ export function useEditForm(id: string): EditForm {
       autosave.current?.cancel();
       await autosave.current?.flush();
       try {
-        await editEntry({ records, events }, id, content);
+        // Refused if the entry has changed under the form meanwhile, by
+        // sync or in another tab: it is never replaced unseen.
+        await editEntry({ records, events }, id, content, {
+          seen: seen.current,
+        });
       } catch (error) {
         // The entry was not stored, so what is on the form is unsaved
         // again and is kept as before.

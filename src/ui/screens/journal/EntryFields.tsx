@@ -75,9 +75,10 @@ export function OutOfDate(props: {
 }): JSX.Element {
   return (
     <StatusBanner tone="warning" label="Changed somewhere else">
-      This {props.what} was changed in another tab or window, so what is here
-      was not saved over it. Loading the latest version replaces what you have
-      typed here. Copy anything you want to keep first.
+      This {props.what} was changed in another tab or window, or on another of
+      your devices, so what is here was not saved over it. Loading the latest
+      version replaces what you have typed here. Copy anything you want to keep
+      first.
       <div class="button-row">
         <Button disabled={props.disabled} onClick={props.onLoad}>
           Load the latest version

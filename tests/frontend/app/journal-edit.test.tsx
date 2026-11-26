@@ -511,6 +511,20 @@ describe("changes to an entry that were not saved (JR-006, DEV-005; ADR-0015)", 
     expect(CHANGES_NOT_KEPT).toContain("still on this page");
   });
 
+  it("say they could not be kept when the entry was deleted meanwhile", async () => {
+    const { services } = await openEdit();
+    await services.records.delete("journal-entry", ID);
+
+    await userEvent.type(box(0), " and more");
+    await services.lockHooks.flush();
+
+    await waitFor(() => {
+      expect(status()).toBe(CHANGES_NOT_KEPT);
+    });
+    expect(await services.records.unfinished(ID)).toBeUndefined();
+    expect(box(0)).toHaveProperty("value", "Good one and more");
+  });
+
   it("do not stop the entry from being edited when they cannot be read", async () => {
     const services = testServices("unlocked");
     await services.records.put("journal-entry", stored());
@@ -578,6 +592,51 @@ describe("an entry changed in another tab (invariant 5)", () => {
     expect(
       (await services.records.get("journal-entry", ID))?.responses.good,
     ).toBe("From the other tab, and mine");
+  });
+
+  it("is not saved over when sync changed it while the form was open", async () => {
+    const { services, heard } = await openEdit();
+    await userEvent.type(box(0), " mine");
+    // Another device's edit arrives: the store now holds a newer entry,
+    // and its own stale-copy check has nothing to object to.
+    const newer = stored({
+      responses: { good: "From the phone", improve: "i", loved: "l" },
+      updatedAt: "2026-11-04T10:00:00.000Z",
+      contentHash: "1".repeat(64),
+    });
+    await services.records.put("journal-entry", newer);
+
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    const banner = (
+      await screen.findByText(/on another of your devices/)
+    ).closest('[role="status"]');
+    expect(banner?.textContent).toContain("was not saved over it");
+    expect(await services.records.get("journal-entry", ID)).toEqual(newer);
+    expect(heard).toEqual([]);
+    // What was typed is still on the page, and still kept.
+    expect(box(0)).toHaveProperty("value", "Good one mine");
+    await services.lockHooks.flush();
+    expect((await services.records.unfinished(ID))?.responses.good).toBe(
+      "Good one mine",
+    );
+
+    await userEvent.click(
+      within(banner as HTMLElement).getByRole("button", {
+        name: "Load the latest version",
+      }),
+    );
+    await waitFor(() => {
+      expect(box(0)).toHaveProperty("value", "From the phone");
+    });
+    await userEvent.type(box(0), ", and mine");
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(`/journal/entries/${ID}`);
+    });
+    expect(
+      (await services.records.get("journal-entry", ID))?.responses.good,
+    ).toBe("From the phone, and mine");
   });
 
   it("says there is nothing left to edit when the other tab deleted the entry", async () => {

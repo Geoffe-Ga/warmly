@@ -594,7 +594,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   entry makes it complete. Autosave never calls AI or the network.
 - A completed entry is changed only through `editEntry`
   (`src/domain/journal/edit.ts`): it keeps the ID, creation time and day,
-  applies the completion rule, and keeps no copy of the old text. When the
+  applies the completion rule, and keeps no copy of the old text. A
+  screen passes what the entry said when the person was shown it (`seen`),
+  and the edit is refused (`StaleRecordError`) if the entry says something
+  else by then: sync can change an entry under an open form, and the
+  store's own stale-copy check does not catch that. When the
   content hash changes it announces `journal.changed` on `services.events`
   (`src/domain/events.ts`) after the entry is stored. Events carry IDs and
   hashes only, never text, and stay in memory on this device. An event is
