@@ -13,7 +13,12 @@
  * nothing calls AI.
  */
 import type { RecordStore } from "../../storage/record-store";
-import { InvalidCardTextError, cleanCardText } from "./cards";
+import {
+  InvalidCardTextError,
+  cleanCardText,
+  refuseIfChanged,
+  type CardEditOptions,
+} from "./cards";
 import type { CardSegment, CardType, ConversationCard } from "./types";
 
 /** One part as the person left it in the form. */
@@ -162,21 +167,25 @@ function cleanParts(
  * @param deps - The record store.
  * @param cardId - The card.
  * @param draft - Its kind and the words of its parts.
- * @param now - The current time.
+ * @param options - The current time, and the card as the person was
+ *   shown it.
  * @returns The card as it now is, or `undefined` if it is not here.
  * @throws InvalidCardTextError if no part has any words left, or a part
  *   is too long.
+ * @throws StaleRecordError if `options.seen` is given and the card is no
+ *   longer that. Nothing is stored.
  */
 export async function rewriteParts(
   deps: { readonly records: RecordStore },
   cardId: string,
   draft: PartsDraft,
-  now: Date = new Date(),
+  options: CardEditOptions = {},
 ): Promise<ConversationCard | undefined> {
   const card = await deps.records.get("conversation-card", cardId);
   if (card === undefined) {
     return undefined;
   }
+  refuseIfChanged(card, options.seen);
   const segments = cleanParts(card, draft.parts);
   const same =
     draft.type === card.type &&
@@ -185,7 +194,12 @@ export async function rewriteParts(
   if (same) {
     return card;
   }
-  const changed = owned(card, draft.type, segments, now.toISOString());
+  const changed = owned(
+    card,
+    draft.type,
+    segments,
+    (options.now ?? new Date()).toISOString(),
+  );
   await deps.records.put("conversation-card", changed);
   return changed;
 }

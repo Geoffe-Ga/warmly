@@ -280,17 +280,27 @@ function EditCard(props: {
         onSubmit={(event) => {
           event.preventDefault();
           setSaved("");
+          // This form was filled from `card`: a newer version starts the
+          // form afresh (see the key where it is used). If the stored card
+          // has changed and the screen has not caught up yet, the save is
+          // refused instead of replacing what the person has not seen.
+          const options = { seen: card };
           change.run(async () => {
             if (whole) {
-              await editCard({ records }, card.id, { type, text });
+              await editCard({ records }, card.id, { type, text }, options);
             } else {
-              await rewriteParts({ records }, card.id, {
-                type,
-                parts: card.segments.map((segment) => ({
-                  id: segment.id,
-                  text: texts[segment.id] ?? segment.text,
-                })),
-              });
+              await rewriteParts(
+                { records },
+                card.id,
+                {
+                  type,
+                  parts: card.segments.map((segment) => ({
+                    id: segment.id,
+                    text: texts[segment.id] ?? segment.text,
+                  })),
+                },
+                options,
+              );
             }
             setSaved("Saved.");
           });

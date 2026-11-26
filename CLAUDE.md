@@ -598,7 +598,9 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   screen passes what the entry said when the person was shown it (`seen`),
   and the edit is refused (`StaleRecordError`) if the entry says something
   else by then: sync can change an entry under an open form, and the
-  store's own stale-copy check does not catch that. When the
+  store's own stale-copy check does not catch that. `editAfter`,
+  `editCard` and `rewriteParts` take `seen` the same way: a form that
+  replaces a record's words always passes what it was filled from. When the
   content hash changes it announces `journal.changed` on `services.events`
   (`src/domain/events.ts`) after the entry is stored. Events carry IDs and
   hashes only, never text, and stay in memory on this device. An event is

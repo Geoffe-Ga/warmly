@@ -600,7 +600,7 @@ describe("changing and deleting a card (CC-010)", () => {
       { records },
       SEED.wondering,
       { type: "need_request", text: " Could we talk on Friday? " },
-      LATER,
+      { now: LATER },
     );
 
     expect(changed).toEqual({

@@ -7,7 +7,8 @@
  * dependency engine when its words change or it is deleted, the same as
  * for a journal entry (ADR-0010).
  */
-import type { RecordStore } from "../../storage/record-store";
+import { StaleRecordError, type RecordStore } from "../../storage/record-store";
+import { sameValue } from "../same";
 import {
   afterContentHash,
   canSaveAfter,
@@ -54,6 +55,18 @@ export async function createAfter(
   return made;
 }
 
+/** What an edit may be told besides the new answers. */
+export interface AfterEditOptions {
+  /** The current time. */
+  readonly now?: Date;
+  /**
+   * What the reflection said when the person was shown it. If it says
+   * something else by the time the edit is saved, the edit is refused
+   * (no last-write-wins, invariant 5).
+   */
+  readonly seen?: AfterResponses;
+}
+
 /**
  * Change what a reflection says. It keeps its ID, its day and when it was
  * first written. No copy of the old words is kept.
@@ -61,20 +74,31 @@ export async function createAfter(
  * @param records - The record store.
  * @param id - The reflection to change.
  * @param responses - The three answers as they should now be.
- * @param now - The current time.
+ * @param options - See {@link AfterEditOptions}.
  * @returns The stored reflection.
  * @throws AfterNotFoundError if it is not on this device.
  * @throws NothingToSaveError if every answer is empty.
+ * @throws StaleRecordError if `options.seen` is given and the reflection
+ *   no longer says that. Nothing is stored.
  */
 export async function editAfter(
   records: RecordStore,
   id: string,
   responses: AfterResponses,
-  now: Date = new Date(),
+  options: AfterEditOptions = {},
 ): Promise<PostConversationReflection> {
   const existing = await records.get("post-conversation", id);
   if (existing === undefined) {
     throw new AfterNotFoundError();
+  }
+  if (
+    options.seen !== undefined &&
+    !sameValue(existing.responses, options.seen)
+  ) {
+    // Not what the person was shown: sync or another tab changed it while
+    // the form was open. It is not replaced by words written without
+    // seeing it.
+    throw new StaleRecordError();
   }
   if (!canSaveAfter(responses)) {
     throw new NothingToSaveError();
@@ -83,7 +107,7 @@ export async function editAfter(
     ...existing,
     responses,
     contentHash: await afterContentHash(responses),
-    updatedAt: now.toISOString(),
+    updatedAt: (options.now ?? new Date()).toISOString(),
   };
   await records.put("post-conversation", changed);
   return changed;

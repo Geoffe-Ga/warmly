@@ -131,7 +131,11 @@ function AfterForm(props: {
     const stored =
       record === undefined
         ? createAfter(records, responses)
-        : editAfter(records, record.id, responses);
+        : // Refused if the note has changed under the form meanwhile, by
+          // sync or in another tab: it is never replaced unseen.
+          editAfter(records, record.id, responses, {
+            seen: record.responses,
+          });
     saving.current = stored;
     try {
       const now = await stored;
@@ -176,7 +180,9 @@ function AfterForm(props: {
           return;
         }
         try {
-          await editAfter(records, now.record.id, now.responses);
+          await editAfter(records, now.record.id, now.responses, {
+            seen: now.record.responses,
+          });
         } catch (error) {
           if (!(error instanceof StaleRecordError)) {
             throw error;
