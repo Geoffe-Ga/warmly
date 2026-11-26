@@ -12,7 +12,10 @@ import type { JournalEntry } from "../../../src/domain/journal/types";
 import { importRootKey } from "../../../src/crypto/root-key";
 import { OUTBOX, RECORDS } from "../../../src/storage/db";
 import { EncryptedRecordStore } from "../../../src/storage/encrypted-record-store";
-import { MemoryRecordStore } from "../../../src/storage/record-store";
+import {
+  MemoryRecordStore,
+  StaleRecordError,
+} from "../../../src/storage/record-store";
 import { readRows } from "../storage/idb-snapshot";
 
 const WRITTEN = new Date("2026-11-03T09:00:00Z");
@@ -51,12 +54,9 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
       feelings: ORIGINAL.feelings,
     };
 
-    const edited = await editEntry(
-      { records, events },
-      entry.id,
-      rewritten,
-      EDITED,
-    );
+    const edited = await editEntry({ records, events }, entry.id, rewritten, {
+      now: EDITED,
+    });
 
     expect(edited).toEqual({
       ...entry,
@@ -110,7 +110,7 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
       { records, events },
       entry.id,
       { responses: ORIGINAL.responses, feelings: ["sad", "calm"] },
-      EDITED,
+      { now: EDITED },
     );
 
     expect(heard).toEqual([]);
@@ -145,7 +145,7 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
       { records, events },
       entry.id,
       { responses: { ...ORIGINAL.responses }, feelings: ["calm"] },
-      EDITED,
+      { now: EDITED },
     );
 
     expect(same).toBe(entry);
@@ -268,5 +268,66 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
       "owner-1",
     );
     expect(await store.get("journal-entry", entry.id)).toEqual(edited);
+  });
+
+  it("refuses to save over an entry that is no longer what the form was filled from (invariant 5)", async () => {
+    const { records, events, heard, entry } = await setUp();
+    // The entry changes under the form: sync brought another device's edit.
+    const newer = await editEntry({ records, events }, entry.id, {
+      responses: { ...ORIGINAL.responses, good: "from another device" },
+      feelings: ORIGINAL.feelings,
+    });
+    heard.length = 0;
+
+    await expect(
+      editEntry(
+        { records, events },
+        entry.id,
+        {
+          responses: { ...ORIGINAL.responses, good: "typed here" },
+          feelings: ORIGINAL.feelings,
+        },
+        { seen: ORIGINAL },
+      ),
+    ).rejects.toThrow(StaleRecordError);
+
+    expect(await records.get("journal-entry", entry.id)).toEqual(newer);
+    expect(heard).toEqual([]);
+  });
+
+  it("counts a change of feelings alone as a change under the form", async () => {
+    const { records, events, entry } = await setUp();
+    await editEntry({ records, events }, entry.id, {
+      responses: ORIGINAL.responses,
+      feelings: ["sad"],
+    });
+
+    await expect(
+      editEntry(
+        { records, events },
+        entry.id,
+        {
+          responses: { ...ORIGINAL.responses, good: "typed here" },
+          feelings: ORIGINAL.feelings,
+        },
+        { seen: ORIGINAL },
+      ),
+    ).rejects.toThrow(StaleRecordError);
+  });
+
+  it("saves when the entry is still what the form was filled from", async () => {
+    const { records, events, entry } = await setUp();
+
+    const edited = await editEntry(
+      { records, events },
+      entry.id,
+      {
+        responses: { ...ORIGINAL.responses, good: "typed here" },
+        feelings: ORIGINAL.feelings,
+      },
+      { seen: ORIGINAL },
+    );
+
+    expect(edited.responses.good).toBe("typed here");
   });
 });

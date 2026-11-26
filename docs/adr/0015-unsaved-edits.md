@@ -131,6 +131,13 @@ what to do: the words are still on the page and can be saved.
 - Cancel on the edit screen is now a button, because it removes something.
 - If the row cannot be removed after a save, it is found to say what the
   entry says the next time the entry is edited, and removed then.
+- The edit screen remembers what the entry said when it was put on the
+  form (or, with unsaved changes brought back, when the person was told
+  what saving replaces). `editEntry` refuses to save if the entry says
+  something else by then, with the same notice as a stale tab: sync or
+  another tab changed it under the form, and it is not replaced unseen.
+  The comparison is of the answers and the feelings, not the hash, because
+  the hash does not cover feelings (D-24).
 - An unsaved edit for an entry that was changed elsewhere is offered with
   a warning, and saving it replaces the newer wording. That is the
   person's choice, made with the warning in front of them; the store's

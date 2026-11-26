@@ -6,7 +6,7 @@
  * again. The old text is not kept anywhere: there is no history and no undo.
  */
 import type { EventBus } from "../events";
-import type { RecordStore } from "../../storage/record-store";
+import { StaleRecordError, type RecordStore } from "../../storage/record-store";
 import { completedFrom, type EntryContent } from "./drafts";
 import { inListOrder } from "./feelings";
 import { PROMPTS } from "./prompts";
@@ -27,6 +27,18 @@ export class IncompleteEntryError extends Error {
     super("Every answer needs some text");
     this.name = "IncompleteEntryError";
   }
+}
+
+/** What an edit may be told besides the new content. */
+export interface EditOptions {
+  /** The current time. */
+  readonly now?: Date;
+  /**
+   * What the entry said when the person was shown it. If it says something
+   * else by the time the edit is saved, the edit is refused
+   * (no last-write-wins, invariant 5).
+   */
+  readonly seen?: EntryContent;
 }
 
 function sameContent(entry: JournalEntry, content: EntryContent): boolean {
@@ -58,21 +70,29 @@ function sameContent(entry: JournalEntry, content: EntryContent): boolean {
  * @param deps - The record store and the event bus.
  * @param id - The entry's ID.
  * @param content - The new answers and feelings.
- * @param now - The current time.
+ * @param options - See {@link EditOptions}.
  * @returns The entry as stored. If nothing changed, the entry as it was.
  * @throws EntryNotFoundError if there is no completed entry with that ID.
  *   A draft is changed on the compose screen, not here.
  * @throws IncompleteEntryError if an answer would be left empty.
+ * @throws StaleRecordError if `options.seen` is given and the entry no
+ *   longer says that. Nothing is stored.
  */
 export async function editEntry(
   deps: { readonly records: RecordStore; readonly events: EventBus },
   id: string,
   content: EntryContent,
-  now: Date = new Date(),
+  options: EditOptions = {},
 ): Promise<JournalEntry> {
   const existing = await deps.records.get("journal-entry", id);
   if (existing?.status !== "complete") {
     throw new EntryNotFoundError();
+  }
+  if (options.seen !== undefined && !sameContent(existing, options.seen)) {
+    // The entry is not what the person was shown: it was changed by sync
+    // or in another tab while the form was open. It is not replaced by
+    // words written without seeing it.
+    throw new StaleRecordError();
   }
   if (!canComplete(content.responses)) {
     throw new IncompleteEntryError();
@@ -80,7 +100,7 @@ export async function editEntry(
   if (sameContent(existing, content)) {
     return existing;
   }
-  const edited = await completedFrom(content, existing, now);
+  const edited = await completedFrom(content, existing, options.now);
   await deps.records.put("journal-entry", edited);
   if (edited.contentHash !== existing.contentHash) {
     await deps.events.emit("journal.changed", {
