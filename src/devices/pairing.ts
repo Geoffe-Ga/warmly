@@ -32,13 +32,7 @@
  * device, which would then encrypt the journal under a key the relay knows.
  */
 import type { AuthClient, AuthSession } from "../auth/auth-client";
-import {
-  concat,
-  fromBase64,
-  lengthPrefixed,
-  toBase64,
-  utf8,
-} from "../crypto/encoding";
+import { concat, toBase64, utf8 } from "../crypto/encoding";
 import {
   HPKE_PUBLIC_KEY_BYTES,
   HpkeOpenError,
@@ -47,278 +41,54 @@ import {
   hpkeSeal,
 } from "../crypto/hpke";
 import type { DeviceIdentity, DeviceIdentityStore } from "./identity";
+import {
+  CODE_DIGITS,
+  NONCE_BYTES,
+  ROOT_KEY_BYTES,
+  decoded,
+  newConfirmationCode,
+  normalisePairingCode,
+  pairingCode,
+  pairingCommitment,
+  sameBytes,
+  sealedKey,
+  transferMessage,
+  type PairingTranscript,
+} from "./pairing-codes";
 import type { PairingRelay, PairingRequest } from "./pairing-relay";
+import {
+  PairingError,
+  type Approval,
+  type DevicePairing,
+  type JoinConfirmation,
+  type JoinProgress,
+  type RootKeyAccess,
+  type RootKeyCredential,
+} from "./pairing-types";
+
+export {
+  formatPairingCode,
+  newConfirmationCode,
+  normalisePairingCode,
+  pairingCode,
+  pairingCommitment,
+  type PairingTranscript,
+} from "./pairing-codes";
+export {
+  PairingError,
+  type Approval,
+  type DevicePairing,
+  type JoinConfirmation,
+  type JoinProgress,
+  type PairingErrorCode,
+  type RootKeyAccess,
+  type RootKeyCredential,
+} from "./pairing-types";
 
 type Bytes = Uint8Array<ArrayBuffer>;
 
-const NONCE_BYTES = 32;
-const ROOT_KEY_BYTES = 32;
-const CODE_DIGITS = 6;
 /** How often a device asks the relay whether the other has moved on. */
 export const PAIRING_POLL_MS = 1_000;
-
-/** Why a pairing ended without the key being handed over. */
-export type PairingErrorCode =
-  /** The five minutes ran out, or a newer request replaced this one. */
-  | "pairing_expired"
-  /** The approving device refused the request. */
-  | "pairing_rejected"
-  /** A value was changed in transit. Nothing was handed over. */
-  | "pairing_tampered"
-  /** The typed code was not the code this pairing produced. */
-  | "pairing_code_mismatch"
-  /** The confirmation code typed on the new device was not the sender's. */
-  | "pairing_confirmation_mismatch"
-  /** The screen was left before the pairing finished. */
-  | "pairing_cancelled";
-
-/** A pairing that ended early, with a reason the UI can explain. */
-export class PairingError extends Error {
-  readonly code: PairingErrorCode;
-
-  constructor(code: PairingErrorCode) {
-    super(`Pairing ended: ${code}`);
-    this.name = "PairingError";
-    this.code = code;
-  }
-}
-
-/** How the approving device proves again that it may release the root key. */
-export type RootKeyCredential =
-  | { readonly kind: "device_passphrase"; readonly passphrase: string }
-  | { readonly kind: "recovery_key"; readonly recoveryKey: string };
-
-/** What pairing needs from the key vault. */
-export interface RootKeyAccess {
-  /**
-   * Hand the raw root key to `use`, then wipe it. The unlocked key cannot be
-   * exported, so it is opened again with the credential, which also confirms
-   * that the person approving is the account's owner.
-   *
-   * @throws VaultError as for unlocking with that credential.
-   */
-  withRootKeyBytes<T>(
-    credential: RootKeyCredential,
-    use: (rootKeyBytes: Bytes) => Promise<T>,
-  ): Promise<T>;
-  /** Unlock this device with a root key received from another device. */
-  acceptRootKey(rootKeyBytes: Bytes): Promise<void>;
-}
-
-/** What the new device's screen is told while pairing. */
-export type JoinProgress =
-  | { readonly kind: "waiting_for_approver" }
-  | { readonly kind: "compare_code"; readonly code: string };
-
-/** A key the new device has received and not yet decided to keep. */
-export interface JoinConfirmation {
-  /**
-   * Keep the received key, if the typed confirmation code is the one the
-   * approving device shows. Unlocks this device.
-   *
-   * @param typedCode - The confirmation code, as typed here.
-   * @throws PairingError `pairing_confirmation_mismatch`. The received key
-   *   is then discarded and the pairing is over.
-   */
-  confirm(typedCode: string): Promise<void>;
-}
-
-/** A request the approving device has taken up and checked. */
-export interface Approval {
-  /** When the request stops being usable. */
-  readonly expiresAt: Date;
-  /**
-   * Hand the root key to the new device, if the typed code is right.
-   *
-   * @param typedCode - The code shown on the new device, as typed here.
-   * @param credential - Re-opens the root key on this device.
-   * @returns The confirmation code to show, for the person to type into
-   *   the new device.
-   * @throws PairingError `pairing_code_mismatch` (the pairing is then over),
-   *   `pairing_expired`; VaultError if the credential is wrong, after which
-   *   this may be called again.
-   */
-  approve(typedCode: string, credential: RootKeyCredential): Promise<string>;
-  /** Refuse the request. */
-  reject(): Promise<void>;
-}
-
-/** What the pairing screens need. */
-export interface DevicePairing {
-  /**
-   * New device: run a pairing until a key has arrived. This device is not
-   * unlocked yet: the person must still confirm where the key came from.
-   *
-   * @param onProgress - Told when to wait and when to show the code.
-   * @param signal - Aborted when the screen is left. A received key that
-   *   has not been confirmed is then discarded.
-   * @returns The received key, waiting for its confirmation code.
-   * @throws PairingError if the pairing ended early.
-   */
-  join(
-    onProgress: (progress: JoinProgress) => void,
-    signal: AbortSignal,
-  ): Promise<JoinConfirmation>;
-  /**
-   * Approving device: take up the waiting request, if there is one.
-   *
-   * @param signal - Aborted when the screen is left.
-   * @returns The request, ready for the code to be typed, or `undefined` if
-   *   no device is waiting.
-   * @throws PairingError `pairing_tampered` or `pairing_expired`.
-   */
-  takeUpRequest(signal: AbortSignal): Promise<Approval | undefined>;
-}
-
-/** The values a pairing code is computed from. */
-export interface PairingTranscript {
-  readonly owner: string;
-  readonly requestId: string;
-  readonly deviceId: string;
-  readonly publicKey: Bytes;
-  readonly commitment: Bytes;
-  readonly challenge: Bytes;
-  readonly approverNonce: Bytes;
-  readonly joinerNonce: Bytes;
-}
-
-async function sha256(data: Bytes): Promise<Bytes> {
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", data));
-}
-
-/**
- * Commit to the new device's random value without revealing it.
- *
- * @param deviceId - The new device's ID.
- * @param publicKey - Its one-time public key.
- * @param joinerNonce - The random value, revealed later.
- * @returns The 32-byte commitment.
- */
-export function pairingCommitment(
-  deviceId: string,
-  publicKey: Bytes,
-  joinerNonce: Bytes,
-): Promise<Bytes> {
-  return sha256(
-    concat(
-      utf8("warmly-pairing-commit-v1"),
-      lengthPrefixed("device", deviceId),
-      publicKey,
-      joinerNonce,
-    ),
-  );
-}
-
-function transcriptBytes(label: string, transcript: PairingTranscript): Bytes {
-  return concat(
-    utf8(label),
-    lengthPrefixed("owner", transcript.owner),
-    lengthPrefixed("request", transcript.requestId),
-    lengthPrefixed("device", transcript.deviceId),
-    transcript.publicKey,
-    transcript.commitment,
-    transcript.challenge,
-    transcript.approverNonce,
-    transcript.joinerNonce,
-  );
-}
-
-/**
- * The six-digit code both devices derive from everything they exchanged.
- *
- * @param transcript - The exchanged values, as this device saw them.
- * @returns Six digits. Two devices that saw different values get different
- *   codes, except by a one-in-a-million coincidence.
- */
-export async function pairingCode(
-  transcript: PairingTranscript,
-): Promise<string> {
-  const digest = await sha256(
-    transcriptBytes("warmly-pairing-code-v1", transcript),
-  );
-  const number = new DataView(digest.buffer).getUint32(0);
-  // 2^32 is not a multiple of a million, so the lowest codes are very
-  // slightly likelier than the rest: by about one part in four thousand,
-  // which does not help anyone guess one.
-  return String(number % 10 ** CODE_DIGITS).padStart(CODE_DIGITS, "0");
-}
-
-/**
- * Write a code the way it is shown: two groups of three digits.
- *
- * @param code - Six digits.
- * @returns For example "042 917".
- */
-export function formatPairingCode(code: string): string {
-  return `${code.slice(0, 3)} ${code.slice(3)}`;
-}
-
-/**
- * Reduce a typed code to its digits, so spaces and dashes do not matter.
- *
- * @param typed - What the person typed.
- * @returns The digits only.
- */
-export function normalisePairingCode(typed: string): string {
-  return typed.replace(/\D/g, "");
-}
-
-/** Bind the key transfer to this pairing, so it cannot be used in another. */
-function transferMessage(transcript: PairingTranscript): {
-  info: Bytes;
-  aad: Bytes;
-} {
-  return {
-    info: transcriptBytes("warmly-root-key-transfer-v1", transcript),
-    aad: new Uint8Array(0),
-  };
-}
-
-function bytes(encoded: string, length: number): Bytes {
-  let decoded: Bytes;
-  try {
-    decoded = fromBase64(encoded);
-  } catch {
-    throw new PairingError("pairing_tampered");
-  }
-  if (decoded.length !== length) {
-    throw new PairingError("pairing_tampered");
-  }
-  return decoded;
-}
-
-/** Decode a wrapped key; anything undecodable counts as altered. */
-function sealedKey(encoded: string): Bytes {
-  try {
-    return fromBase64(encoded);
-  } catch {
-    throw new PairingError("pairing_tampered");
-  }
-}
-
-function sameBytes(left: Bytes, right: Bytes): boolean {
-  return (
-    left.length === right.length &&
-    left.every((byte, index) => byte === right[index])
-  );
-}
-
-/**
- * Pick a confirmation code: six digits, every code equally likely.
- *
- * @returns The code.
- */
-export function newConfirmationCode(): string {
-  const span = 10 ** CODE_DIGITS;
-  // Values at the top of the range are thrown away, so that taking the
-  // remainder does not favour the low codes.
-  const limit = Math.floor(2 ** 32 / span) * span;
-  const draw = new Uint32Array(1);
-  do {
-    crypto.getRandomValues(draw);
-  } while ((draw[0] ?? limit) >= limit);
-  return String((draw[0] ?? 0) % span).padStart(CODE_DIGITS, "0");
-}
 
 function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
@@ -455,8 +225,8 @@ export class AccountPairing implements DevicePairing {
       deviceId: identity.deviceId,
       publicKey: recipient.publicKey,
       commitment,
-      challenge: bytes(started.challenge, NONCE_BYTES),
-      approverNonce: bytes(claimed.approverNonce ?? "", NONCE_BYTES),
+      challenge: decoded(started.challenge, NONCE_BYTES),
+      approverNonce: decoded(claimed.approverNonce ?? "", NONCE_BYTES),
       joinerNonce,
     };
     // Revealed only now, after the approving device has fixed its value.
@@ -548,9 +318,9 @@ export class AccountPairing implements DevicePairing {
     revealedNonce: string,
   ): Promise<PairingTranscript> {
     try {
-      const publicKey = bytes(waiting.publicKey, HPKE_PUBLIC_KEY_BYTES);
-      const commitment = bytes(waiting.commitment, NONCE_BYTES);
-      const joinerNonce = bytes(revealedNonce, NONCE_BYTES);
+      const publicKey = decoded(waiting.publicKey, HPKE_PUBLIC_KEY_BYTES);
+      const commitment = decoded(waiting.commitment, NONCE_BYTES);
+      const joinerNonce = decoded(revealedNonce, NONCE_BYTES);
       const expected = await pairingCommitment(
         waiting.deviceId,
         publicKey,
@@ -565,7 +335,7 @@ export class AccountPairing implements DevicePairing {
         deviceId: waiting.deviceId,
         publicKey,
         commitment,
-        challenge: bytes(waiting.challenge, NONCE_BYTES),
+        challenge: decoded(waiting.challenge, NONCE_BYTES),
         approverNonce,
         joinerNonce,
       };
