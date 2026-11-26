@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "preact/hooks";
 
@@ -163,7 +164,7 @@ function Ask(props: {
    */
   readonly onSavedElsewhere: (sessionId: string) => void;
 }): JSX.Element {
-  const { ai, reflect } = useServices();
+  const { ai, reflect, lockHooks } = useServices();
   const { navigate } = useContext(NavigationContext);
   const { onSavedElsewhere } = props;
   const [question, setQuestion] = useState("");
@@ -217,11 +218,33 @@ function Ask(props: {
     if (state.phase !== "done") {
       return;
     }
-    const exchange = { question: state.request.question, answer: state.result };
+    const exchange = {
+      // Made once, so storing it again after a failure never copies it.
+      id: crypto.randomUUID(),
+      question: state.request.question,
+      answer: state.result,
+    };
     controller.reset();
     setUnsaved(exchange);
     void save(exchange);
   }, [state, controller, save]);
+
+  // An answer that is here but not stored yet is stored before the keys
+  // are dropped, when the app locks (ADR-0004). It needs the keys, and the
+  // screen goes away with them.
+  const waiting = useRef<Exchange | undefined>(undefined);
+  useEffect(() => {
+    waiting.current = unsaved;
+  }, [unsaved]);
+  useEffect(
+    () =>
+      lockHooks.register(async () => {
+        if (waiting.current !== undefined) {
+          await storeExchange(reflect, sessionId, waiting.current);
+        }
+      }),
+    [lockHooks, reflect, sessionId],
+  );
 
   const busy =
     state.phase === "running" ||

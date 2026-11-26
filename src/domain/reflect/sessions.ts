@@ -23,6 +23,15 @@ import type { ReflectSession } from "./types";
 export interface Exchange {
   readonly question: string;
   readonly answer: ReflectionAnswer;
+  /**
+   * A random ID made once for this exchange, when its answer arrived.
+   * With it, storing the same exchange again changes nothing: a session
+   * started with it is found instead of started twice, and a session that
+   * already holds it is left as it is. So "Save the answer" can be tried
+   * again after a failure whose outcome is not known, without ever making
+   * a second copy.
+   */
+  readonly id?: string;
 }
 
 /** The session is finished, so nothing more can be added to it. */
@@ -80,21 +89,25 @@ export interface ReflectSessions {
   subscribe(listener: () => void): () => void;
 }
 
+/** The ID of an exchange's question turn, which marks it as stored. */
+function questionId(exchange: Exchange): string {
+  return exchange.id ?? crypto.randomUUID();
+}
+
 function turns(exchange: Exchange, at: string): ReflectSession["messages"] {
+  const id = questionId(exchange);
   return [
-    {
-      id: crypto.randomUUID(),
-      role: "question",
-      text: exchange.question,
-      at,
-    },
-    {
-      id: crypto.randomUUID(),
-      role: "answer",
-      answer: exchange.answer,
-      at,
-    },
+    { id, role: "question", text: exchange.question, at },
+    { id: `${id}-answer`, role: "answer", answer: exchange.answer, at },
   ];
+}
+
+/** Whether a session already holds this exchange. */
+function holds(session: ReflectSession, exchange: Exchange): boolean {
+  return (
+    exchange.id !== undefined &&
+    session.messages.some((message) => message.id === exchange.id)
+  );
 }
 
 /** The sessions the app uses: a view of the private record store. */
@@ -122,9 +135,15 @@ export class RecordReflectSessions implements ReflectSessions {
     exchange: Exchange,
     now: Date = new Date(),
   ): Promise<ReflectSession> {
+    // An exchange with an ID starts the session of that ID, once.
+    const known =
+      exchange.id === undefined ? undefined : await this.get(exchange.id);
+    if (known !== undefined && holds(known, exchange)) {
+      return known;
+    }
     const at = now.toISOString();
     const session: ReflectSession = {
-      id: crypto.randomUUID(),
+      id: exchange.id ?? crypto.randomUUID(),
       status: "active",
       messages: turns(exchange, at),
       createdAt: at,
@@ -142,6 +161,10 @@ export class RecordReflectSessions implements ReflectSessions {
     const existing = await this.get(id);
     if (existing === undefined) {
       return undefined;
+    }
+    if (holds(existing, exchange)) {
+      // Stored already, by an earlier try whose outcome was not known.
+      return existing;
     }
     if (existing.status === "finished") {
       throw new SessionFinishedError();

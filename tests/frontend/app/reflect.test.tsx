@@ -640,6 +640,71 @@ const SAVED_ANSWER = {
   coverage: { includedEntryIds: [], omittedEntryCount: 0, truncated: false },
 };
 
+describe("storing the same exchange twice (AI-014)", () => {
+  const exchange = {
+    id: "00000000-0000-4000-8000-0000000000f1",
+    question: "Why?",
+    answer: {
+      markdown: "Because.",
+      citations: [],
+      sources: [],
+      coverage: {
+        includedEntryIds: [],
+        omittedEntryCount: 0,
+        truncated: false,
+      },
+    },
+  };
+
+  it("starts one session, however many times it is started", async () => {
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
+
+    const first = await sessions.start(exchange);
+    const again = await sessions.start(exchange);
+
+    expect(again).toEqual(first);
+    expect(first.id).toBe(exchange.id);
+    expect(await sessions.list()).toHaveLength(1);
+    expect(first.messages.map((each) => each.id)).toEqual([
+      exchange.id,
+      `${exchange.id}-answer`,
+    ]);
+  });
+
+  it("is added to a session once, however many times it is added", async () => {
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
+    const session = await sessions.start({ ...exchange, id: "first" });
+
+    const added = await sessions.add(session.id, exchange);
+    const again = await sessions.add(session.id, exchange);
+
+    expect(again).toEqual(added);
+    expect(again?.messages).toHaveLength(4);
+  });
+
+  it("adding it again to a session that has since been finished is not an error: it is there", async () => {
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
+    const session = await sessions.start({ ...exchange, id: "first" });
+    await sessions.add(session.id, exchange);
+    await sessions.finish(session.id);
+
+    const again = await sessions.add(session.id, exchange);
+
+    expect(again?.status).toBe("finished");
+    expect(again?.messages).toHaveLength(4);
+  });
+
+  it("an exchange with no ID is a new one each time", async () => {
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
+    const plain = { question: exchange.question, answer: exchange.answer };
+
+    await sessions.start(plain);
+    await sessions.start(plain);
+
+    expect(await sessions.list()).toHaveLength(2);
+  });
+});
+
 describe("the life of a session (RF-007, RF-008, AC-08)", () => {
   async function made() {
     const records = new MemoryRecordStore();
@@ -1105,6 +1170,69 @@ describe("an answer that has arrived is never lost (AI-014)", () => {
     await screen.findByRole("heading", { name: "You asked" });
     expect(await services.reflect.list()).toHaveLength(1);
     expect(provider.calls).toHaveLength(1);
+  });
+
+  it("is stored once even if the first try was written and then reported as failed", async () => {
+    const { services, provider } = await setUp();
+    await renderApp(NEW, services);
+    const put = services.records.put.bind(services.records);
+    let lying = true;
+    services.records.put = async (kind, record) => {
+      await put(kind, record);
+      if (lying && kind === "reflect-session") {
+        lying = false;
+        throw new Error("synthetic failure after the write");
+      }
+    };
+
+    await askAndSend("What has gone well?");
+    const alert = await screen.findByRole("alert");
+    expect(await services.reflect.list()).toHaveLength(1);
+
+    await userEvent
+      .setup()
+      .click(within(alert).getByRole("button", { name: "Save the answer" }));
+    await screen.findByRole("heading", { name: "You asked" });
+
+    // One reflection with one question and one answer: not two of either.
+    const stored = await services.reflect.list();
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.messages).toHaveLength(2);
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("is stored before the app locks, if it was still waiting to be saved", async () => {
+    const { services } = await setUp();
+    await renderApp(NEW, services);
+    const put = services.records.put.bind(services.records);
+    let failing = true;
+    services.records.put = (kind, record) =>
+      failing && kind === "reflect-session"
+        ? Promise.reject(new Error("synthetic"))
+        : put(kind, record);
+    await askAndSend("What has gone well?");
+    await screen.findByRole("alert");
+    expect(await services.reflect.list()).toEqual([]);
+
+    // Storage works again by the time the person locks.
+    failing = false;
+    expect(await services.lockHooks.flush()).toBe(0);
+
+    const stored = await services.reflect.list();
+    expect(stored).toHaveLength(1);
+    expect(stored[0] === undefined ? "" : firstQuestion(stored[0])).toBe(
+      "What has gone well?",
+    );
+  });
+
+  it("locking with nothing waiting stores nothing", async () => {
+    const { services } = await setUp();
+    await renderApp(NEW, services);
+    await screen.findByLabelText(BOX);
+
+    expect(await services.lockHooks.flush()).toBe(0);
+
+    expect(await services.reflect.list()).toEqual([]);
   });
 
   it("is saved as a new reflection if its own was finished on another device meanwhile", async () => {
