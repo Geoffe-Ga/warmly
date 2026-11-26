@@ -103,13 +103,24 @@ so it is the right `basedOn` for the next change. After a refusal the
 caller reads again (`RecordStore.reload`) and shows the person the newer
 version; it never writes again without doing so.
 
+## What this supersedes
+
+ADR-0015 says, among its consequences, that the edit screen remembers what
+the entry said when it was put on the form and that `editEntry` compares
+the answers and the feelings. That consequence is replaced by this
+decision: the screen keeps the entry object it was given and the store
+compares that. The rest of ADR-0015 stands, and its text is left as it
+was written.
+
 ## Consequences
 
 - A record is never replaced by a change made to an older copy of it,
   whether the newer copy came from another tab or from sync, and whenever
   it arrived.
-- The content comparisons from #131 to #133 and `src/domain/same.ts` are
-  removed. `seen` is now the record object, not its content.
+- The content comparisons from #131 to #133 are removed. `seen` is now the
+  record object, not its content. `sameValue` in `src/domain/same.ts` is no
+  longer used by the app; it and its test are kept, because a test file
+  under a required suite is not deleted without a person's say-so.
 - A caller that clones a record and passes the clone is refused. This is
   deliberate: a clone says nothing about when it was read.
 - Any change to a record refuses an edit based on the older copy, even one

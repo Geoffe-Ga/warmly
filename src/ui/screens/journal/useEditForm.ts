@@ -18,7 +18,10 @@ import {
   sameContent,
   type UnfinishedEdit,
 } from "../../../domain/journal/unfinished";
-import type { RecordStore } from "../../../storage/record-store";
+import {
+  StaleRecordError,
+  type RecordStore,
+} from "../../../storage/record-store";
 import { describeOpenFailure } from "../../storage-messages";
 
 /** What the screen has found out about the entry to edit. */
@@ -269,12 +272,13 @@ export function useEditForm(id: string): EditForm {
       try {
         // Refused if the entry has changed under the form meanwhile, by
         // sync or in another tab: it is never replaced unseen.
-        await editEntry(
-          { records, events },
-          id,
-          content,
-          seen.current === undefined ? {} : { seen: seen.current },
-        );
+        const shown = seen.current;
+        if (shown === undefined) {
+          // Nothing was put on the form, so there is nothing this save
+          // could be a change to. It is refused, never written unchecked.
+          throw new StaleRecordError();
+        }
+        await editEntry({ records, events }, id, content, { seen: shown });
       } catch (error) {
         // The entry was not stored, so what is on the form is unsaved
         // again and is kept as before.
