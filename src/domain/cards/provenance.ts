@@ -33,13 +33,35 @@ export interface Excerpt {
  * - `inferred`: it is the AI's reading of what the person wrote.
  * - `suggested`: it is the AI's own addition.
  * - `own`: it has no annotation; the person wrote it.
+ * - `loading`, `unknown`: the journal is not available to look in, which
+ *   is not the same as the entry being gone, and is never said to be.
  */
 export type Provenance =
+  /** The journal is still being read, so nothing can be said yet. */
+  | { readonly kind: "loading" }
+  /** The journal could not be opened, so nothing can be said. */
+  | { readonly kind: "unknown" }
   | { readonly kind: "quoted"; readonly excerpts: readonly Excerpt[] }
   | { readonly kind: "unresolved" }
   | { readonly kind: "inferred" }
   | { readonly kind: "suggested" }
   | { readonly kind: "own" };
+
+/**
+ * Drop half a character from either end of a piece of text.
+ *
+ * A range is counted in UTF-16 code units, so it can begin or end in the
+ * middle of an emoji (ADR-0008). Half an emoji cannot be shown, so it is
+ * left out: only the display changes, never the stored range.
+ */
+function wholeCharacters(text: string): string {
+  const isLow = (unit: number): boolean => unit >= 0xdc00 && unit <= 0xdfff;
+  const isHigh = (unit: number): boolean => unit >= 0xd800 && unit <= 0xdbff;
+  const from = text.length > 0 && isLow(text.charCodeAt(0)) ? 1 : 0;
+  const last = text.charCodeAt(text.length - 1);
+  const to = text.length > from && isHigh(last) ? text.length - 1 : text.length;
+  return text.slice(from, to);
+}
 
 /**
  * Read the words a reference points to, if they can be trusted.
@@ -68,11 +90,15 @@ export function excerptFor(
   if (!(ref.start >= 0 && ref.start < ref.end && ref.end <= answer.length)) {
     return undefined;
   }
+  const text = wholeCharacters(answer.slice(ref.start, ref.end));
+  if (text === "") {
+    return undefined;
+  }
   return {
     entryId: entry.id,
     entryDate: entry.entryDate,
     prompt: prompt.label,
-    text: answer.slice(ref.start, ref.end),
+    text,
   };
 }
 

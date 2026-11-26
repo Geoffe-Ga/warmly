@@ -20,6 +20,13 @@ export const SUGGESTED =
 export const UNRESOLVED =
   "The words this rested on can't be shown. The journal entry is not on this device, or it has changed since the card was drafted.";
 
+/** Said while the journal is still being read. */
+export const JOURNAL_LOADING = "Getting your journal to find the words.";
+
+/** Said when the journal could not be opened at all. */
+export const JOURNAL_NOT_OPEN =
+  "Your journal couldn't be opened just now, so the words this rests on can't be shown. Nothing has been removed. Reload the page to try again.";
+
 /** Said of a part with no annotation at all. */
 export const OWN_WORDS = "These are your own words.";
 
@@ -53,6 +60,10 @@ function Source(props: { readonly provenance: Provenance }): JSX.Element {
       return <p>{SUGGESTED}</p>;
     case "unresolved":
       return <p>{UNRESOLVED}</p>;
+    case "loading":
+      return <p>{JOURNAL_LOADING}</p>;
+    case "unknown":
+      return <p>{JOURNAL_NOT_OPEN}</p>;
     case "own":
       return <p>{OWN_WORDS}</p>;
     case "quoted":

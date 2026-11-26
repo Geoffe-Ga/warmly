@@ -7,10 +7,14 @@ import { useServices } from "../../../app/services";
 import {
   CARD_TYPE_LABELS,
   readingText,
+  type CardSegment,
   type ConversationCard,
 } from "../../../domain/cards/types";
 import { deleteCard, editCard } from "../../../domain/cards/cards";
-import { provenanceOf } from "../../../domain/cards/provenance";
+import {
+  provenanceOf,
+  type Provenance,
+} from "../../../domain/cards/provenance";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -90,7 +94,21 @@ function LearningParts(props: {
   const entries = journal.state === "ready" ? journal.entries : [];
   const [open, setOpen] = useState<string>();
   const buttons = useRef(new Map<string, HTMLButtonElement>());
+  // One ID serves every part, because only one panel is open at a time.
   const panelId = useId();
+
+  /**
+   * What a part rests on. A journal that is still loading, or could not
+   * be opened, is not a journal without the entry: for a part that rests
+   * on the journal, that is said instead of "not on this device".
+   */
+  const provenance = (segment: CardSegment): Provenance => {
+    const known = provenanceOf(segment, entries);
+    if (journal.state === "ready" || known.kind !== "unresolved") {
+      return known;
+    }
+    return { kind: journal.state === "loading" ? "loading" : "unknown" };
+  };
 
   const close = (segmentId: string): void => {
     setOpen(undefined);
@@ -123,7 +141,7 @@ function LearningParts(props: {
               <SegmentDetail
                 id={panelId}
                 segment={segment}
-                provenance={provenanceOf(segment, entries)}
+                provenance={provenance(segment)}
                 onClose={() => {
                   close(segment.id);
                 }}

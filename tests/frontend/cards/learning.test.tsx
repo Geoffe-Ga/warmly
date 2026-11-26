@@ -14,6 +14,8 @@ import type { ConversationCard } from "../../../src/domain/cards/types";
 import type { JournalEntry } from "../../../src/domain/journal/types";
 import {
   INFERRED,
+  JOURNAL_LOADING,
+  JOURNAL_NOT_OPEN,
   I_STATEMENT_CAVEAT,
   MORE_OPTIONS_LATER,
   OWN_WORDS,
@@ -188,6 +190,35 @@ describe("where a part comes from, worked out now (CC-004, DEP-004)", () => {
         ENTRY,
       ]),
     ).toBeUndefined();
+  });
+
+  it("never shows half of an emoji at either end of the words", () => {
+    const entry: JournalEntry = {
+      ...ENTRY,
+      responses: { ...ENTRY.responses, good: "Dinner 🍝 was lovely 🌙" },
+    };
+    const text = entry.responses.good;
+    const cut = (start: number, end: number) =>
+      excerptFor(
+        {
+          entryId: entry.id,
+          responseKey: "good",
+          start,
+          end,
+          sourceHash: entry.contentHash,
+        },
+        [entry],
+      )?.text;
+
+    // The range starts in the middle of the first emoji and ends in the
+    // middle of the second: the halves are left out.
+    expect(cut(text.indexOf("🍝") + 1, text.indexOf("🌙") + 1)).toBe(
+      " was lovely ",
+    );
+    // A range that holds whole emoji keeps them.
+    expect(cut(text.indexOf("🍝"), text.length)).toBe("🍝 was lovely 🌙");
+    // Nothing but half an emoji is nothing to show.
+    expect(cut(text.indexOf("🍝") + 1, text.indexOf("🍝") + 2)).toBeUndefined();
   });
 
   it("sorts each kind of part", () => {
@@ -377,6 +408,51 @@ describe("learning mode (CC-005, AC-11)", () => {
     await openPart(/appreciation i loved cooking/i);
 
     expect(screen.getByText(UNRESOLVED)).toBeTruthy();
+  });
+
+  it("does not say the entry is missing when the journal simply could not be opened", async () => {
+    const { services } = await setUp();
+    const list = services.records.list.bind(services.records);
+    services.records.list = ((kind: string) =>
+      kind === "journal-entry"
+        ? Promise.reject(new Error("synthetic failure"))
+        : list(kind as never)) as typeof services.records.list;
+    await renderApp(PATH, services);
+    await learning();
+
+    await openPart(/appreciation i loved cooking/i);
+
+    expect(screen.getByText(JOURNAL_NOT_OPEN)).toBeTruthy();
+    expect(screen.queryByText(UNRESOLVED)).toBeNull();
+    expect(screen.queryByTestId("source-excerpt")).toBeNull();
+    expect(document.body.textContent).not.toContain("synthetic failure");
+  });
+
+  it("says it is still getting the journal, not that the entry is missing, while the journal loads", async () => {
+    const { services } = await setUp();
+    const list = services.records.list.bind(services.records);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await renderApp(PATH, services);
+    // From here on the journal takes a while to come back.
+    services.records.list = ((kind: string) =>
+      kind === "journal-entry"
+        ? held.then(() => list("journal-entry"))
+        : list(kind as never)) as typeof services.records.list;
+    await learning();
+
+    await openPart(/appreciation i loved cooking/i);
+
+    expect(screen.getByText(JOURNAL_LOADING)).toBeTruthy();
+    expect(screen.queryByText(UNRESOLVED)).toBeNull();
+
+    release();
+
+    expect((await screen.findByTestId("source-excerpt")).textContent).toBe(
+      "cooked dinner together",
+    );
   });
 
   it("says what an I-statement is and is not, with every explanation", async () => {
