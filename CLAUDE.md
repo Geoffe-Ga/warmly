@@ -435,7 +435,10 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   PRD PC-001 to PC-004, D-22), changed only through `createAfter`,
   `editAfter` and `deleteAfter`. It is never a journal entry, is never
   turned into one and is never called one on screen. All three answers
-  are optional; only an empty form is refused. Nothing ever asks for one:
+  are optional; only an empty form is refused. A note has no draft: what
+  is typed and not yet saved is saved as the note when the app locks
+  (the form's lock hook), and the page says so. A first save that is on
+  its way is waited for, never repeated. Nothing ever asks for one:
   no prompt, dialog, badge or reminder when presentation closes or at any
   other time (PC-002), and nothing links it to the cards that were used.
   When sent to Reflect it goes under kind `post_conversation` with its own

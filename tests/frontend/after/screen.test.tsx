@@ -8,6 +8,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { FakeProvider } from "../../../src/ai/fake-provider";
+import { isAfterSource } from "../../../src/ai/provider";
 import { AiGateway } from "../../../src/ai/gateway";
 import { pathFor } from "../../../src/app/routes";
 import type { PostConversationReflection } from "../../../src/domain/post-conversation/types";
@@ -182,6 +183,34 @@ describe("the form (PC-001, PC-003)", () => {
 
     const [stored] = await services.records.list("post-conversation");
     expect(stored?.responses.went_well).toBe("Typed, not yet saved.");
+  });
+
+  it("writes one note, not two, when the app locks at the moment a new one is saved", async () => {
+    const services = testServices("unlocked");
+    const put = services.records.put.bind(services.records);
+    let locked: Promise<unknown> | undefined;
+    services.records.put = (kind, record) => {
+      const stored = put(kind, record);
+      if (kind === "post-conversation" && locked === undefined) {
+        // The lock arrives the instant the note is stored, before the
+        // screen has heard that its Save finished.
+        void stored.then(() => {
+          locked = services.lockHooks.flush();
+        });
+      }
+      return stored;
+    };
+    await renderApp(NEW, services);
+    await userEvent.setup().type(box("What went well\\?"), "Written once.");
+
+    await press("Save");
+    await screen.findByRole("button", { name: "Save changes" });
+    await locked;
+
+    const stored = await services.records.list("post-conversation");
+    expect(stored.map((each) => each.responses.went_well)).toEqual([
+      "Written once.",
+    ]);
   });
 
   it("saves a typed change to an existing one when the app locks", async () => {
@@ -411,6 +440,25 @@ describe("the words used for it", () => {
       expect(tooLongNote(count, after)).toBe(text);
     },
   );
+
+  it("counts a source as a note only when it is labelled as one", () => {
+    const journal = {
+      id: "a",
+      contentHash: "1".repeat(64),
+      responses: { good: "a", improve: "b", loved: "c" },
+    };
+
+    expect(isAfterSource(journal)).toBe(false);
+    expect(isAfterSource({ ...journal, kind: "journal_entry" })).toBe(false);
+    expect(
+      isAfterSource({
+        id: "b",
+        contentHash: "2".repeat(64),
+        kind: "post_conversation",
+        responses: { went_well: "a", difficult: "", remember: "" },
+      }),
+    ).toBe(true);
+  });
 
   it("never call it an entry when it is too long to send", () => {
     expect(entryTooLong("20 November 2026", true)).toBe(

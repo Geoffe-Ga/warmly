@@ -36,7 +36,7 @@ export const NOTHING_WRITTEN =
 
 /** Said under the heading of the form. */
 export const AFTER_LEAD =
-  "For after a conversation you have had. It is separate from your journal entries, only you can read it, and every question is optional.";
+  "For after a conversation you have had. It is separate from your journal entries, only you can read it, and every question is optional. If Warmly locks while you are writing, what you have typed is saved as it is, so nothing is lost; you can change or delete it afterwards.";
 
 /** Said when the copy on screen is older than the stored one. */
 export const AFTER_OUT_OF_DATE =
@@ -103,6 +103,18 @@ function AfterForm(props: {
   const [outOfDate, setOutOfDate] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const empty = !canSaveAfter(responses);
+  // What is typed here needs the keys to be saved, so it is saved before
+  // they are dropped when the app locks (ADR-0004). An empty or unchanged
+  // form has nothing to save. What is saved this way is an ordinary note,
+  // which the person can change or delete: there is no draft of a note,
+  // and the other choice would be to lose what they typed. The page says
+  // so (`AFTER_LEAD`).
+  const latest = useRef<{
+    record: PostConversationReflection | undefined;
+    responses: AfterResponses;
+    changed: boolean;
+    empty: boolean;
+  }>({ record: props.record, responses, changed: false, empty });
   const changed =
     record === undefined
       ? !empty
@@ -110,10 +122,21 @@ function AfterForm(props: {
           (prompt) => responses[prompt.key] !== record.responses[prompt.key],
         );
 
+  // A first save that is on its way. The lock hook waits for it instead of
+  // writing the same words a second time.
+  const creating = useRef<Promise<PostConversationReflection> | undefined>(
+    undefined,
+  );
+
   const save = async (): Promise<void> => {
     try {
       if (record === undefined) {
-        const made = await createAfter(records, responses);
+        creating.current = createAfter(records, responses);
+        const made = await creating.current;
+        // From here on these words are stored: there is nothing left for
+        // the lock hook to save, even before this screen is shown again.
+        latest.current = { record: made, responses, changed: false, empty };
+        setRecord(made);
         navigate(pathFor("after-conversation", { id: made.id }));
       } else {
         setRecord(await editAfter(records, record.id, responses));
@@ -124,19 +147,21 @@ function AfterForm(props: {
         throw error;
       }
       setOutOfDate(true);
+    } finally {
+      creating.current = undefined;
     }
   };
 
-  // What is typed here needs the keys to be saved, so it is saved before
-  // they are dropped when the app locks (ADR-0004). An empty or unchanged
-  // form has nothing to save.
-  const latest = useRef({ record, responses, changed, empty });
   useEffect(() => {
     latest.current = { record, responses, changed, empty };
   }, [record, responses, changed, empty]);
   useEffect(
     () =>
       lockHooks.register(async () => {
+        if (creating.current !== undefined) {
+          // Save was pressed and is still storing these words.
+          await creating.current.catch(() => undefined);
+        }
         const now = latest.current;
         if (!now.changed || now.empty) {
           return;

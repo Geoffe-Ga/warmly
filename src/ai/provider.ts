@@ -117,7 +117,7 @@ export interface ReflectRequest {
  * @returns Whether it is labelled `post_conversation`.
  */
 export function isAfterSource(source: SourceEntry): source is AfterSource {
-  return "kind" in source;
+  return source.kind === "post_conversation";
 }
 
 /** A request for conversation cards built from chosen entries. */

@@ -402,6 +402,26 @@ describe("it is sent to Reflect labelled as what it is (PC-004)", () => {
     expect(plain.coverage.omittedEntryCount).toBe(7);
   });
 
+  it("leaves out anything whose status is not 'complete', whatever the status is", async () => {
+    const note = await newAfter(WORDS, AT);
+    const entry = await newEntry({ good: "a", improve: "b", loved: "c" }, AT);
+    const input = { question: "q", budget: 100, estimate: () => 1 };
+
+    const chosen = selectContext({
+      ...input,
+      entries: [
+        note,
+        { ...entry, id: "complete", status: "complete" },
+        { ...entry, id: "draft", status: "draft" },
+        { ...entry, id: "something-new", status: "archived" },
+      ],
+    });
+
+    expect(chosen.entries.map((each) => each.id).sort()).toEqual(
+      [note.id, "complete"].sort(),
+    );
+  });
+
   it("is told from a journal entry by one rule, which the stored form enforces", async () => {
     const entry = await newEntry({ good: "a", improve: "b", loved: "c" });
     const note = await newAfter(WORDS, AT);

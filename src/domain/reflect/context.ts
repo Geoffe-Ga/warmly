@@ -34,7 +34,7 @@ export interface ContextDocument {
   readonly createdAt: string;
   readonly entryDate: EntryDate;
   /** Only journal entries have one; a draft is left out. */
-  readonly status?: "draft" | "complete";
+  readonly status?: string;
   /** Its answers, under whatever names its kind uses. */
   readonly responses: Readonly<Record<string, string>>;
 }
@@ -92,14 +92,20 @@ function sizeOf(estimate: number): number {
 }
 
 function inOrder<T extends ContextDocument>(entries: readonly T[]): T[] {
-  return entries
-    .filter((entry) => entry.status !== "draft")
-    .sort(
-      (a, b) =>
-        a.entryDate.date.localeCompare(b.entryDate.date) ||
-        a.createdAt.localeCompare(b.createdAt) ||
-        a.id.localeCompare(b.id),
-    );
+  return (
+    entries
+      // Sent only if finished: a note, which has no status, or an entry
+      // marked complete. Any other status is left out, whatever it is.
+      .filter(
+        (entry) => entry.status === undefined || entry.status === "complete",
+      )
+      .sort(
+        (a, b) =>
+          a.entryDate.date.localeCompare(b.entryDate.date) ||
+          a.createdAt.localeCompare(b.createdAt) ||
+          a.id.localeCompare(b.id),
+      )
+  );
 }
 
 function wordsOf(text: string): Set<string> {
