@@ -7,7 +7,7 @@ import { useServices } from "../../../app/services";
 import { Button } from "../../components/Button";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, useAction } from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
 
 /**
  * Wait for the user to follow the emailed link, then create their keys and
@@ -26,7 +26,7 @@ export function VerifyEmail(): JSX.Element {
       title="Check your email"
       lead="We sent a link to the address you gave. Open it, then come back here."
     >
-      <AccountForm
+      <ActionForm
         action={action}
         validate={() => true}
         onValid={async () => {
@@ -61,7 +61,7 @@ export function VerifyEmail(): JSX.Element {
             I've opened the link
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
       <p>
         Wrong address? <Link href={pathFor("onboarding")}>Start again</Link>
       </p>

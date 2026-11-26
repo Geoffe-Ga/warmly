@@ -11,8 +11,7 @@ import {
   BLANK,
   completedFrom,
   currentDraft,
-  draftFrom,
-  isBlank,
+  draftSaver,
   type EntryContent,
   type SaveState,
 } from "../../../domain/journal/drafts";
@@ -96,29 +95,23 @@ export function useDraft(): DraftForm {
   useEffect(() => {
     let mounted = true;
     const saver = new Autosave<EntryContent>(
-      async (latest) => {
-        // A blank form that has no draft yet is not worth one.
-        if (
-          finishing.current ||
-          (draft.current === undefined && isBlank(latest))
-        ) {
-          return;
-        }
-        const next = await draftFrom(latest, draft.current);
-        try {
-          await records.put("journal-entry", next);
-        } catch (error) {
+      draftSaver({
+        put: (next) => records.put("journal-entry", next),
+        current: () => draft.current,
+        finishing: () => finishing.current,
+        stored: (next) => {
+          draft.current = next;
+          if (mounted) {
+            setHasDraft(true);
+          }
+        },
+        refused: (error) => {
           if (mounted) {
             setOutOfDate(error instanceof StaleRecordError);
             setSaveError(error);
           }
-          throw error;
-        }
-        draft.current = next;
-        if (mounted) {
-          setHasDraft(true);
-        }
-      },
+        },
+      }),
       (state) => {
         if (mounted) {
           // "Saved" is only said when something is stored.
@@ -177,6 +170,23 @@ export function useDraft(): DraftForm {
       void flush();
     };
   }, [records, lockHooks]);
+
+  /**
+   * Read a draft again from the store, after deleting it failed.
+   *
+   * @param id - The draft's ID.
+   * @returns The draft if the store still holds it as one. `undefined` if
+   *   it is gone, was finished, or cannot be read: nothing is ever saved
+   *   onto an ID that might have been deleted.
+   */
+  const stillADraft = async (id: string): Promise<JournalEntry | undefined> => {
+    try {
+      const latest = await records.reload("journal-entry", id);
+      return latest?.status === "draft" ? latest : undefined;
+    } catch {
+      return undefined;
+    }
+  };
 
   /** Stop any waiting save and wait for one that is already running. */
   const settle = async (): Promise<void> => {
@@ -247,7 +257,17 @@ export function useDraft(): DraftForm {
         // Forgotten first: whatever happens next, nothing may be saved onto
         // the deleted draft's ID.
         draft.current = undefined;
-        await deleteEntry({ records, events }, discarded.id);
+        try {
+          await deleteEntry({ records, events }, discarded.id);
+        } catch (error) {
+          // The draft was not deleted, as far as this form knows. If the
+          // store still holds it as a draft, it is this form's draft
+          // again: what is typed next goes onto it, and discarding can be
+          // tried again. Otherwise it would sit in storage with no form
+          // offering it. What is on the form is left as it is.
+          draft.current = await stillADraft(discarded.id);
+          throw error;
+        }
       }
       setContent(BLANK);
       setResumed(undefined);

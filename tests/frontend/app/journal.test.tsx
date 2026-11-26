@@ -552,6 +552,10 @@ describe("drafts (JR-004)", () => {
   const first = (): HTMLElement =>
     screen.getByLabelText(PROMPTS[0]?.label ?? "");
 
+  /** What the first answer's box holds. */
+  const typed = (): string =>
+    screen.getByLabelText<HTMLTextAreaElement>(PROMPTS[0]?.label ?? "").value;
+
   /** Make the page look hidden, as when the tab is switched away from. */
   function hidePage(): void {
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
@@ -798,13 +802,62 @@ describe("drafts (JR-004)", () => {
     ).toBe("");
   });
 
-  it("never saves onto a discarded draft's ID, even when deleting it failed", async () => {
+  it("keeps a draft whose deletion failed as this form's draft, so it can be discarded again", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+    const reallyDelete = services.records.delete.bind(services.records);
+    services.records.delete = () => Promise.reject(new Error("synthetic"));
+    const discard = async (): Promise<void> => {
+      await userEvent.click(
+        screen.getByRole("button", { name: "Discard draft" }),
+      );
+      await userEvent.click(
+        within(screen.getByRole("alertdialog")).getByRole("button", {
+          name: "Discard draft",
+        }),
+      );
+    };
+
+    await discard();
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Couldn't continue",
+    );
+    // What was written is still on the form.
+    expect(typed()).toBe("half a thought");
+    await userEvent.type(first(), " and more");
+    hidePage();
+
+    // The draft was never deleted, so what is typed next goes onto it. No
+    // second draft is left behind with nothing offering it.
+    await waitFor(async () => {
+      expect((await drafts(services))[0]?.responses.good).toBe(
+        "half a thought and more",
+      );
+    });
+    const all = await drafts(services);
+    expect(all.map((each) => each.id)).toEqual([stored.id]);
+
+    // Discarding can be tried again, and this time it works.
+    services.records.delete = reallyDelete;
+    await discard();
+    await waitFor(async () => {
+      expect(await drafts(services)).toEqual([]);
+    });
+    expect(typed()).toBe("");
+  });
+
+  it("never saves onto a draft's ID when deleting failed and the draft cannot be read again", async () => {
     const stored = entry(4, "2026-11-10", {
       status: "draft",
       responses: { good: "half a thought", improve: "", loved: "" },
     });
     const services = await openCompose(unlockedWith(stored));
     services.records.delete = () => Promise.reject(new Error("synthetic"));
+    // Whether the draft is still there cannot be found out.
+    services.records.reload = () => Promise.reject(new Error("synthetic"));
 
     await userEvent.click(
       screen.getByRole("button", { name: "Discard draft" }),
@@ -829,6 +882,39 @@ describe("drafts (JR-004)", () => {
     expect(all.find((each) => each.id !== stored.id)?.responses.good).toBe(
       "half a thought and more",
     );
+  });
+
+  it("does not adopt a draft again if it was finished meanwhile", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+    services.records.delete = () => Promise.reject(new Error("synthetic"));
+    // Another tab finishes the draft before this one tries to discard it.
+    await services.records.put("journal-entry", {
+      ...stored,
+      status: "complete",
+    });
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard draft" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Discard draft",
+      }),
+    );
+    await screen.findByRole("alert");
+    await userEvent.type(first(), " and more");
+    hidePage();
+
+    // What is typed starts a new draft; the finished entry is not touched.
+    await waitFor(async () => {
+      expect(
+        (await drafts(services)).some((each) => each.id !== stored.id),
+      ).toBe(true);
+    });
   });
 
   it("does not bring back text that was typed just before discarding", async () => {

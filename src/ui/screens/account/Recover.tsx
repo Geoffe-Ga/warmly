@@ -7,7 +7,8 @@ import { useServices } from "../../../app/services";
 import { Button } from "../../components/Button";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
-import { AccountForm, afterRecoveryKey, useAction } from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { afterRecoveryKey } from "./shared";
 
 /**
  * Unlock on a device that has no stored key, using the recovery key.
@@ -26,7 +27,7 @@ export function Recover(): JSX.Element {
       title="Unlock with your recovery key"
       lead="Enter the key you saved when you created your account."
     >
-      <AccountForm
+      <ActionForm
         action={action}
         validate={() => {
           const missing = recoveryKey.trim() === "";
@@ -60,7 +61,7 @@ export function Recover(): JSX.Element {
             Unlock
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
       <p>
         <Link href={pathFor("add-device")}>
           Approve from another device instead

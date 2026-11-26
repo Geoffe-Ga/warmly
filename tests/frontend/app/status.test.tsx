@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FakeProvider } from "../../../src/ai/fake-provider";
 import { AiGateway } from "../../../src/ai/gateway";
-import { DELETE_WARNING } from "../../../src/ui/screens/journal/Entry";
+import { DELETE_WARNING } from "../../../src/ui/screens/journal/shared";
 import {
   DELETING_STATUS,
   STATUS_ITEMS,

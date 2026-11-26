@@ -9,7 +9,8 @@ import { Card } from "../../components/Card";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, sameLastGroup, useAction } from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { sameLastGroup } from "./shared";
 
 const TITLE = "Replace your recovery key";
 
@@ -57,7 +58,7 @@ export function RotateRecoveryKey(): JSX.Element {
           Your current key keeps working until you finish. If you stop part-way,
           nothing changes.
         </StatusBanner>
-        <AccountForm
+        <ActionForm
           action={action}
           validate={() => {
             const missing = current.trim() === "";
@@ -85,7 +86,7 @@ export function RotateRecoveryKey(): JSX.Element {
               Continue
             </Button>
           </div>
-        </AccountForm>
+        </ActionForm>
         <p>
           <Link href={pathFor("settings")}>Cancel</Link>
         </p>
@@ -107,7 +108,7 @@ export function RotateRecoveryKey(): JSX.Element {
           old one, and the old one stops working.
         </p>
       </Card>
-      <AccountForm
+      <ActionForm
         action={action}
         validate={() => {
           const matches = sameLastGroup(typed, newKey);
@@ -140,7 +141,7 @@ export function RotateRecoveryKey(): JSX.Element {
             Replace my recovery key
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
       <p>
         <Link href={pathFor("settings")}>Cancel and keep my current key</Link>
       </p>

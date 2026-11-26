@@ -8,13 +8,8 @@ import { Button } from "../../components/Button";
 import { TextField } from "../../components/Field";
 import { BoundaryNotice } from "../help/boundaries";
 import { PageLayout } from "../../components/PageLayout";
-import {
-  AccountForm,
-  MIN_PASSWORD_LENGTH,
-  emailError,
-  newPasswordError,
-  useAction,
-} from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { MIN_PASSWORD_LENGTH, emailError, newPasswordError } from "./shared";
 
 interface FieldErrors {
   readonly email?: string | undefined;
@@ -49,7 +44,7 @@ export function Register(): JSX.Element {
       title="Create your account"
       lead="Your journal is private to you. Accounts are never linked to anyone else's."
     >
-      <AccountForm
+      <ActionForm
         action={action}
         validate={validate}
         onValid={async () => {
@@ -83,7 +78,7 @@ export function Register(): JSX.Element {
             Create account
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
       <BoundaryNotice />
       <p>
         Already have an account? <Link href={pathFor("sign-in")}>Sign in</Link>

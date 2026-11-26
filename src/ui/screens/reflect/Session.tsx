@@ -41,7 +41,7 @@ import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { describeStorageError } from "../../storage-messages";
-import { DELETE_WARNING } from "../journal/Entry";
+import { DELETE_WARNING } from "../journal/shared";
 import {
   formatEntryDate,
   useAfterReflections,

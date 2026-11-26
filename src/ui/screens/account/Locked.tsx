@@ -10,7 +10,8 @@ import { Button } from "../../components/Button";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, describeError, useAction } from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { describeError } from "../../error-messages";
 
 /** Failures after which this device has no stored key any more. */
 const NO_LONGER_TRUSTED: ReadonlySet<VaultErrorCode> = new Set([
@@ -61,7 +62,7 @@ export function Locked(): JSX.Element {
       lead="Your journal is closed. Unlock it to continue."
     >
       {trusted === true && (
-        <AccountForm
+        <ActionForm
           action={action}
           validate={() => {
             const missing = passphrase === "";
@@ -112,7 +113,7 @@ export function Locked(): JSX.Element {
               Unlock
             </Button>
           </div>
-        </AccountForm>
+        </ActionForm>
       )}
       {trusted === false && notice !== undefined && (
         <StatusBanner tone="error" label="This device is no longer trusted">

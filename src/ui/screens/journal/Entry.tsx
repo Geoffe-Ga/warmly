@@ -17,10 +17,10 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { useAction } from "../account/shared";
+import { useAction } from "../../components/ActionForm";
 import { describeOpenFailure } from "../../storage-messages";
 import { DependentsWarning } from "./dependents";
-import { CANNOT_OPEN, formatEntryDate } from "./shared";
+import { CANNOT_OPEN, DELETE_WARNING, formatEntryDate } from "./shared";
 
 /** What the screen has found out about the entry. */
 type Found =
@@ -61,16 +61,6 @@ const NOTICES = {
     text: "It has been removed from this device.",
   },
 } as const;
-
-/**
- * What deleting does, said before the person confirms (JR-007, OPS-003).
- *
- * This text must be true. It describes sync and backups: check it against
- * what they really do when sync ships (#32) and when backup retention is
- * verified (#65), and change it and its tests if they differ.
- */
-export const DELETE_WARNING =
-  "This deletes it from this device now, and from your other devices the next time they sync. There is no trash and no undo. Encrypted copies held in backups cannot be read by anyone but you, and are removed as those backups expire, within 30 days.";
 
 /** Said above an entry opened from a citation, when the words are marked. */
 export const PASSAGE_MARKED =

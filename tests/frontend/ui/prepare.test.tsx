@@ -19,7 +19,7 @@ import type { CardsStore } from "../../../src/domain/cards/store";
 import { readingText } from "../../../src/domain/cards/types";
 import { StaleRecordError } from "../../../src/storage/record-store";
 import { StorageError } from "../../../src/storage/errors";
-import { DELETE_WARNING } from "../../../src/ui/screens/journal/Entry";
+import { DELETE_WARNING } from "../../../src/ui/screens/journal/shared";
 import { STRAYS_EXPLAINED } from "../../../src/ui/screens/prepare/Collections";
 import {
   NAME_NEEDED,

@@ -8,12 +8,8 @@ import { Card } from "../../components/Card";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import {
-  AccountForm,
-  afterRecoveryKey,
-  sameLastGroup,
-  useAction,
-} from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { afterRecoveryKey, sameLastGroup } from "./shared";
 
 /**
  * Show the recovery key once and make the user confirm they stored it (PRD
@@ -67,7 +63,7 @@ export function RecoveryKey(): JSX.Element {
         </p>
         <p>Resetting your password does not replace this key.</p>
       </Card>
-      <AccountForm
+      <ActionForm
         action={action}
         validate={validate}
         onValid={async () => {
@@ -95,7 +91,7 @@ export function RecoveryKey(): JSX.Element {
             I've saved my key
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
     </PageLayout>
   );
 }

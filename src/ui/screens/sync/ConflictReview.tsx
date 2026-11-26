@@ -30,7 +30,7 @@ import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { describeOpenFailure } from "../../storage-messages";
-import { AccountForm, useAction } from "../account/shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
 import { EntryFields } from "../journal/EntryFields";
 import { formatEntryDate } from "../journal/shared";
 import {
@@ -235,7 +235,7 @@ export function ConflictReview(): JSX.Element {
             {action.error}
           </StatusBanner>
         )}
-        <AccountForm
+        <ActionForm
           action={action}
           validate={() => {
             setTried(true);
@@ -273,7 +273,7 @@ export function ConflictReview(): JSX.Element {
               Go back without saving
             </Button>
           </div>
-        </AccountForm>
+        </ActionForm>
         <Version heading="On your other device" entry={merging.theirs} />
       </PageLayout>
     );

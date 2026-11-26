@@ -9,7 +9,7 @@ import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, useAction } from "../account/shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
 import { EntryFields, OutOfDate } from "./EntryFields";
 import { describeStorageError } from "../../storage-messages";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
@@ -122,7 +122,7 @@ export function Compose(): JSX.Element {
           }}
         />
       )}
-      <AccountForm
+      <ActionForm
         action={action}
         validate={() => {
           setTried(true);
@@ -164,7 +164,7 @@ export function Compose(): JSX.Element {
             </Button>
           )}
         </div>
-      </AccountForm>
+      </ActionForm>
       <ConfirmDialog
         open={discarding}
         title="Discard this draft?"

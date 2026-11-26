@@ -9,7 +9,7 @@ import { Button } from "../../components/Button";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, useAction } from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
 
 interface FieldErrors {
   readonly passphrase?: string | undefined;
@@ -69,7 +69,7 @@ export function TrustDevice(): JSX.Element {
         password, and it is never sent anywhere. If you forget it, your recovery
         key still opens your journal.
       </StatusBanner>
-      <AccountForm
+      <ActionForm
         action={action}
         validate={validate}
         onValid={async () => {
@@ -113,7 +113,7 @@ export function TrustDevice(): JSX.Element {
             Not now
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
       <p>
         If you choose Not now, this device will ask for your recovery key each
         time it is unlocked.
