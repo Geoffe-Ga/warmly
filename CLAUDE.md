@@ -438,7 +438,9 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   are optional; only an empty form is refused. A note has no draft: what
   is typed and not yet saved is saved as the note when the app locks
   (the form's lock hook), and the page says so. A first save that is on
-  its way is waited for, never repeated. Nothing ever asks for one:
+  its way is waited for, never repeated. If the note was changed
+  elsewhere meanwhile, the typed words are kept as a new note on lock,
+  never written over the other version and never dropped. Nothing ever asks for one:
   no prompt, dialog, badge or reminder when presentation closes or at any
   other time (PC-002), and nothing links it to the cards that were used.
   When sent to Reflect it goes under kind `post_conversation` with its own

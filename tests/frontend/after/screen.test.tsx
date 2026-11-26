@@ -12,6 +12,7 @@ import { isAfterSource } from "../../../src/ai/provider";
 import { AiGateway } from "../../../src/ai/gateway";
 import { pathFor } from "../../../src/app/routes";
 import type { PostConversationReflection } from "../../../src/domain/post-conversation/types";
+import { StaleRecordError } from "../../../src/storage/record-store";
 import {
   AFTER_LEAD,
   NEW_AFTER,
@@ -211,6 +212,63 @@ describe("the form (PC-001, PC-003)", () => {
     expect(stored.map((each) => each.responses.went_well)).toEqual([
       "Written once.",
     ]);
+  });
+
+  it("keeps what was typed as a new note when the app locks and the note was changed elsewhere meanwhile", async () => {
+    const services = testServices("unlocked");
+    await services.records.put("post-conversation", AFTER);
+    await renderApp(HERE, services);
+    await userEvent
+      .setup()
+      .type(await screen.findByLabelText(/What felt difficult/), "Typed here.");
+    // Another tab changed this note since it was opened here, so a save
+    // over it is refused.
+    const put = services.records.put.bind(services.records);
+    services.records.put = (kind, record) =>
+      kind === "post-conversation" && record.id === AFTER.id
+        ? Promise.reject(new StaleRecordError())
+        : put(kind, record);
+
+    const failed = await services.lockHooks.flush();
+
+    expect(failed).toBe(0);
+    const notes = await services.records.list("post-conversation");
+    // The other version is untouched, and the typed words are not lost.
+    expect(notes).toHaveLength(2);
+    expect(notes.find((each) => each.id === AFTER.id)).toEqual(AFTER);
+    expect(
+      notes.find((each) => each.id !== AFTER.id)?.responses.difficult,
+    ).toBe("Typed here.");
+  });
+
+  it("stores a change once when the app locks while Save changes is still storing it", async () => {
+    const services = testServices("unlocked");
+    await services.records.put("post-conversation", AFTER);
+    const put = services.records.put.bind(services.records);
+    let puts = 0;
+    let locked: Promise<unknown> | undefined;
+    services.records.put = (kind, record) => {
+      const stored = put(kind, record);
+      if (kind === "post-conversation") {
+        puts += 1;
+        if (locked === undefined) {
+          void stored.then(() => {
+            locked = services.lockHooks.flush();
+          });
+        }
+      }
+      return stored;
+    };
+    await renderApp(HERE, services);
+    await userEvent
+      .setup()
+      .type(await screen.findByLabelText(/What felt difficult/), "Once.");
+
+    await press("Save changes");
+    await screen.findByText("Saved on this device.");
+    await locked;
+
+    expect(puts).toBe(1);
   });
 
   it("saves a typed change to an existing one when the app locks", async () => {

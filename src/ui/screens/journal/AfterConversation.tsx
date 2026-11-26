@@ -122,24 +122,27 @@ function AfterForm(props: {
           (prompt) => responses[prompt.key] !== record.responses[prompt.key],
         );
 
-  // A first save that is on its way. The lock hook waits for it instead of
-  // writing the same words a second time.
-  const creating = useRef<Promise<PostConversationReflection> | undefined>(
+  // A save that is on its way, first or later. The lock hook waits for it
+  // instead of writing the same words a second time.
+  const saving = useRef<Promise<PostConversationReflection> | undefined>(
     undefined,
   );
 
   const save = async (): Promise<void> => {
+    const stored =
+      record === undefined
+        ? createAfter(records, responses)
+        : editAfter(records, record.id, responses);
+    saving.current = stored;
     try {
+      const now = await stored;
+      // From here on these words are stored: there is nothing left for
+      // the lock hook to save, even before this screen is shown again.
+      latest.current = { record: now, responses, changed: false, empty };
+      setRecord(now);
       if (record === undefined) {
-        creating.current = createAfter(records, responses);
-        const made = await creating.current;
-        // From here on these words are stored: there is nothing left for
-        // the lock hook to save, even before this screen is shown again.
-        latest.current = { record: made, responses, changed: false, empty };
-        setRecord(made);
-        navigate(pathFor("after-conversation", { id: made.id }));
+        navigate(pathFor("after-conversation", { id: now.id }));
       } else {
-        setRecord(await editAfter(records, record.id, responses));
         setSaved(true);
       }
     } catch (error) {
@@ -148,7 +151,10 @@ function AfterForm(props: {
       }
       setOutOfDate(true);
     } finally {
-      creating.current = undefined;
+      // Only if no later save has started meanwhile.
+      if (saving.current === stored) {
+        saving.current = undefined;
+      }
     }
   };
 
@@ -158,9 +164,9 @@ function AfterForm(props: {
   useEffect(
     () =>
       lockHooks.register(async () => {
-        if (creating.current !== undefined) {
+        if (saving.current !== undefined) {
           // Save was pressed and is still storing these words.
-          await creating.current.catch(() => undefined);
+          await saving.current.catch(() => undefined);
         }
         const now = latest.current;
         if (!now.changed || now.empty) {
@@ -168,8 +174,18 @@ function AfterForm(props: {
         }
         if (now.record === undefined) {
           await createAfter(records, now.responses);
-        } else {
+          return;
+        }
+        try {
           await editAfter(records, now.record.id, now.responses);
+        } catch (error) {
+          if (!(error instanceof StaleRecordError)) {
+            throw error;
+          }
+          // The note was changed somewhere else, so nothing is written
+          // over it. The keys are about to go and this screen with them,
+          // so what was typed is kept as a note of its own, never lost.
+          await createAfter(records, now.responses);
         }
       }),
     [lockHooks, records],
