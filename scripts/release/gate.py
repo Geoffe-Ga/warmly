@@ -36,6 +36,9 @@ SUCCESS = "success"
 MISSING = "missing"
 # The state of a check that has not finished.
 PENDING = "pending"
+# The app whose check runs count. Any app can post a check run under any
+# name, so a run from another app never satisfies a required check.
+ACTIONS_APP = "github-actions"
 # The manifest format this script reads.
 MANIFEST_VERSION = 1
 # The two directions a protected number may be held in.
@@ -240,11 +243,21 @@ def _state_of(run: Mapping[str, Any]) -> str:
     return conclusion if isinstance(conclusion, str) and conclusion else "unknown"
 
 
+def _from_actions(run: Mapping[str, Any]) -> bool:
+    """Say whether a check run was posted by GitHub Actions itself."""
+    app = run.get("app")
+    return isinstance(app, dict) and app.get("slug") == ACTIONS_APP
+
+
 def job_states(check_runs: Any) -> dict[str, str]:
     """Work out the state of each CI job from GitHub's check runs.
 
     A job that appears more than once (it was run again) is successful only
     if every one of its runs is: the worst state is kept.
+
+    Only runs posted by GitHub Actions count. A run from any other app is
+    left out, whatever it is called and whatever it says, so it can neither
+    satisfy a required check nor fail one.
 
     Args:
         check_runs: The decoded JSON of the check-runs response, or a list
@@ -267,6 +280,8 @@ def job_states(check_runs: Any) -> dict[str, str]:
             if not isinstance(run, dict) or not isinstance(run.get("name"), str):
                 message = "a check run has no name"
                 raise ResultsError(message)
+            if not _from_actions(run):
+                continue
             name = run["name"]
             state = _state_of(run)
             if states.get(name, SUCCESS) == SUCCESS:

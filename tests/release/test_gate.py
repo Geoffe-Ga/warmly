@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 
 from scripts.release.gate import (
+    ACTIONS_APP,
     MISSING,
     PENDING,
     SUCCESS,
@@ -60,7 +61,12 @@ def check_run(
     name: str, conclusion: str | None, status: str | None = "completed"
 ) -> dict[str, object]:
     """One check run, shaped as GitHub reports it."""
-    return {"name": name, "status": status, "conclusion": conclusion}
+    return {
+        "name": name,
+        "status": status,
+        "conclusion": conclusion,
+        "app": {"slug": ACTIONS_APP},
+    }
 
 
 def green_runs() -> dict[str, object]:
@@ -172,7 +178,7 @@ class TestJobStates:
         self, conclusion: object
     ) -> None:
         """A finished run with no conclusion is unknown."""
-        finished = {"name": "E2E", "status": "completed", "conclusion": conclusion}
+        finished = check_run("E2E", "success") | {"conclusion": conclusion}
 
         assert job_states({"check_runs": [finished]}) == {"E2E": "unknown"}
 
@@ -188,6 +194,48 @@ class TestJobStates:
     ) -> None:
         """A job run twice passes only if both runs did."""
         assert job_states({"check_runs": runs}) == {"E2E": "failure"}
+
+    @pytest.mark.parametrize(
+        "app",
+        [
+            {"slug": "some-other-app"},
+            {"slug": "GitHub-Actions"},
+            {"slug": None},
+            {},
+            None,
+            "github-actions",
+        ],
+    )
+    def test_a_run_another_app_posted_under_the_same_name_does_not_count(
+        self, app: object
+    ) -> None:
+        """Any app can post a check run called anything; only Actions' count."""
+        forged = check_run("E2E", "success") | {"app": app}
+
+        assert not job_states({"check_runs": [forged]})
+
+    def test_a_run_with_no_app_at_all_does_not_count(self) -> None:
+        """A run that does not say who posted it cannot be trusted."""
+        unsigned = check_run("E2E", "success")
+        del unsigned["app"]
+
+        assert not job_states({"check_runs": [unsigned]})
+
+    def test_another_apps_run_neither_passes_nor_fails_the_real_one(self) -> None:
+        """The real job's own result stands, whatever a namesake says."""
+        forged_pass = check_run("E2E", "success") | {"app": {"slug": "x"}}
+        forged_fail = check_run("Lint", "failure") | {"app": {"slug": "x"}}
+        runs = [
+            forged_pass,
+            check_run("E2E", "failure"),
+            forged_fail,
+            check_run("Lint", "success"),
+        ]
+
+        assert job_states({"check_runs": runs}) == {
+            "E2E": "failure",
+            "Lint": "success",
+        }
 
     def test_pages_of_results_are_read_together(self) -> None:
         """Pages of results are read together."""
@@ -368,6 +416,7 @@ class TestRun:
         Each has GitHub's other fields too; only name, status and
         conclusion are read.
         """
+        actions = {"id": 15368, "slug": "github-actions", "name": "GitHub Actions"}
         pages = [
             {
                 "total_count": 3,
@@ -377,6 +426,7 @@ class TestRun:
                         "name": "Quality (3.12)",
                         "status": "completed",
                         "conclusion": "success",
+                        "app": actions,
                         "html_url": "https://example.invalid/1",
                         "started_at": "2026-11-26T14:16:42Z",
                         "completed_at": "2026-11-26T14:18:36Z",
@@ -386,6 +436,7 @@ class TestRun:
                         "name": "Release Gate",
                         "status": "in_progress",
                         "conclusion": None,
+                        "app": actions,
                     },
                 ],
             },
@@ -397,6 +448,7 @@ class TestRun:
                         "name": "E2E",
                         "status": "completed",
                         "conclusion": "success",
+                        "app": actions,
                     }
                 ],
             },

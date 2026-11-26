@@ -180,6 +180,35 @@ def test_every_path_of_a_required_check_holds_files(manifest: Manifest) -> None:
     assert not empty
 
 
+def runner_of(path: str) -> str | None:
+    """Which CI job runs the tests at a path; None for a shared fixture."""
+    if path.startswith("tests/fixtures/"):
+        return None
+    if path.startswith("tests/frontend"):
+        return "Frontend Quality (TypeScript)"
+    if path.startswith("e2e/"):
+        return "E2E + Accessibility (Playwright, axe-core)"
+    if path.startswith("tests/"):
+        return "Quality Checks (Python 3.12)"
+    return "nothing this test knows"
+
+
+def test_every_check_lists_only_files_its_own_job_runs(manifest: Manifest) -> None:
+    """A check's job passing must mean that check's own files ran.
+
+    Otherwise a failure in one of its files would show up against another
+    job, and "the job passed, so the check passed" would be false.
+    """
+    misplaced = [
+        (check.id, path, check.job)
+        for check in manifest.checks
+        for path in check.paths
+        if runner_of(path) not in (None, check.job)
+    ]
+
+    assert not misplaced
+
+
 def test_every_threshold_can_be_read_and_is_a_real_number(manifest: Manifest) -> None:
     """Every threshold can be read and is a real number."""
     values = {each.id: read_number(ROOT, each) for each in manifest.thresholds}

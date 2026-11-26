@@ -10,8 +10,9 @@ change that weakens what `release/required-checks.yml` requires:
 - a file that is gone from under a required check's paths (a file that
   only moved, with the same contents, to somewhere still required is not
   counted);
-- a protected number that is gone, cannot be found any more, or has moved
-  the unsafe way (a coverage floor lowered, a size budget raised).
+- a protected number that is gone, cannot be read, is read from somewhere
+  else than before, or has moved the unsafe way (a coverage floor lowered,
+  a size budget raised).
 
 Any of these fails the pull request unless a person has put the
 `release-policy-change` label on it. A label put on by a bot does not
@@ -217,10 +218,52 @@ def _moved_unsafely(keep: str, before: int, now: int) -> bool:
     return now < before if keep == "at-least" else now > before
 
 
+def _threshold_changes(
+    before: Threshold, now: Threshold, old: int | None, new: int | None
+) -> list[Violation]:
+    """Find the ways one threshold is weaker, or can no longer be judged.
+
+    Args:
+        before: The threshold as the base's manifest has it.
+        now: The same threshold as the head's manifest has it.
+        old: Its number in the base, read the base's way.
+        new: Its number in the head, read the head's way.
+
+    Returns:
+        The violations for this threshold.
+    """
+    found: list[Violation] = []
+    if (now.file, now.pattern) != (before.file, before.pattern):
+        # Otherwise a pull request could lower the real number and point
+        # the manifest at some other, higher one.
+        found.append(Violation(before.id, "where its number is read from was changed"))
+    if now.keep != before.keep:
+        found.append(Violation(before.id, "its direction was changed"))
+    if old is None:
+        found.append(
+            Violation(
+                before.id,
+                f"its number could not be read from `{before.file}` before "
+                "this change, so it cannot be compared",
+            )
+        )
+    if new is None:
+        found.append(
+            Violation(
+                before.id,
+                f"its number cannot be read from `{now.file}`: it is "
+                "missing, or given more than once with different values",
+            )
+        )
+    if old is not None and new is not None and _moved_unsafely(before.keep, old, new):
+        found.append(Violation(before.id, f"it was weakened from {old} to {new}"))
+    return found
+
+
 def threshold_violations(
     base_root: Path, head_root: Path, base: Manifest, head: Manifest
 ) -> list[Violation]:
-    """Find protected numbers that were removed, lost or weakened.
+    """Find protected numbers that were removed, lost, repointed or weakened.
 
     Args:
         base_root: The copy before the pull request.
@@ -229,8 +272,9 @@ def threshold_violations(
         head: The manifest after.
 
     Returns:
-        One violation for each threshold that is gone from the manifest,
-        can no longer be read, or moved the unsafe way.
+        One violation for each threshold that is gone from the manifest, is
+        read from somewhere else than before, cannot be read on either
+        side, or moved the unsafe way.
     """
     after = {each.id: each for each in head.thresholds}
     found: list[Violation] = []
@@ -239,20 +283,14 @@ def threshold_violations(
         if now is None:
             found.append(Violation(before.id, "this threshold was removed"))
             continue
-        old = read_number(base_root, before)
-        new = read_number(head_root, now)
-        if new is None:
-            found.append(
-                Violation(
-                    before.id,
-                    f"its number cannot be read from `{now.file}`: it is "
-                    "missing, or given more than once with different values",
-                )
+        found.extend(
+            _threshold_changes(
+                before,
+                now,
+                read_number(base_root, before),
+                read_number(head_root, now),
             )
-        elif old is not None and _moved_unsafely(before.keep, old, new):
-            found.append(Violation(before.id, f"it was weakened from {old} to {new}"))
-        if now.keep != before.keep:
-            found.append(Violation(before.id, "its direction was changed"))
+        )
     return found
 
 

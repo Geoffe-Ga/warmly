@@ -46,7 +46,7 @@ jobs:
           python-version: '3.12'
 
       - name: Install the guard's one dependency
-        run: python -m pip install "PyYAML>=6.0.0"
+        run: python -m pip install PyYAML==6.0.4
 
       - name: Fetch who labelled the pull request
         run: |

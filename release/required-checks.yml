@@ -8,7 +8,11 @@
 #
 # Each check names the CI job that runs it (`job`, exactly as the job's
 # name appears on a pull request) and, where it is a suite of tests, the
-# files or folders that make it up (`paths`).
+# files or folders that make it up (`paths`). A check lists only files its
+# own job runs: pytest files under a Quality Checks job, Vitest files
+# under Frontend Quality, Playwright specs under E2E. Shared fixtures
+# (`tests/fixtures/`) may be listed by any job that reads them. A test
+# holds this.
 #
 # Removing a check, deleting a test file under a `paths` entry, or
 # lowering a threshold fails `scripts/release/policy.py` on the pull
@@ -61,6 +65,11 @@ checks:
       - tests/db/test_sync_store.py
       - tests/db/test_deletion_ledger.py
       - tests/fixtures/sync/scenarios-v1.json
+  - id: recovery-backend
+    title: The recovery envelope is stored once and replaced only in turn
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001, AC-18]
+    paths: [tests/api/test_recovery.py, tests/db/test_recovery_store.py]
   - id: database-migrations
     title: Database migrations apply forward from nothing
     job: Quality Checks (Python 3.12)
@@ -102,11 +111,21 @@ checks:
     job: Frontend Quality (TypeScript)
     prd: [REL-001, REL-004]
     paths: [tests/frontend/storage, tests/fixtures/idb]
+  - id: sync-conflict-and-deletion-frontend
+    title: The sync engine keeps both versions and every deletion
+    job: Frontend Quality (TypeScript)
+    prd: [REL-001, AC-16, AC-17]
+    paths: [tests/frontend/sync]
+  - id: source-invalidation-frontend
+    title: The rules for what goes when an entry changes
+    job: Frontend Quality (TypeScript)
+    prd: [REL-001, AC-12]
+    paths: [tests/frontend/deps]
   - id: recovery
     title: A new device opens the journal with the recovery key
     job: E2E + Accessibility (Playwright, axe-core)
     prd: [REL-001, AC-18]
-    paths: [e2e/app/recovery.spec.ts, tests/api/test_recovery.py]
+    paths: [e2e/app/recovery.spec.ts]
   - id: revocation
     title: A removed device loses its keys and keeps its records
     job: E2E + Accessibility (Playwright, axe-core)
@@ -119,12 +138,11 @@ checks:
     paths:
       - e2e/app/sync.spec.ts
       - e2e/app/conflicts.spec.ts
-      - tests/frontend/sync
   - id: source-invalidation
     title: What was built from an entry goes when the entry changes
     job: E2E + Accessibility (Playwright, axe-core)
     prd: [REL-001, AC-12]
-    paths: [e2e/app/invalidation.spec.ts, tests/frontend/deps]
+    paths: [e2e/app/invalidation.spec.ts]
   - id: e2e-and-accessibility
     title: Every flow in two browsers, with axe on every screen
     job: E2E + Accessibility (Playwright, axe-core)

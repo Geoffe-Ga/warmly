@@ -316,7 +316,8 @@ class TestViolations:
         base, head = pair(tmp_path, FILES | {"release/required-checks.yml": broken})
 
         assert violations(base, head) == [
-            Violation("coverage", unreadable("pyproject.toml"))
+            Violation("coverage", "where its number is read from was changed"),
+            Violation("coverage", unreadable("pyproject.toml")),
         ]
 
     def test_a_removed_threshold_is_a_violation(self, tmp_path: Path) -> None:
@@ -332,10 +333,10 @@ class TestViolations:
             Violation("download-kb", "this threshold was removed")
         ]
 
-    def test_a_threshold_pointed_at_a_different_number_is_compared(
+    def test_a_threshold_pointed_at_a_lower_number_is_caught_twice(
         self, tmp_path: Path
     ) -> None:
-        """A threshold pointed at a different number is compared."""
+        """Repointing is a violation, and so is the lower number it reads."""
         repointed = MANIFEST.replace("fail_under = (\\d+)", "other = (\\d+)")
         head = FILES | {
             "release/required-checks.yml": repointed,
@@ -344,7 +345,53 @@ class TestViolations:
         base, head_root = pair(tmp_path, head)
 
         assert [each.problem for each in violations(base, head_root)] == [
-            "it was weakened from 90 to 5"
+            "where its number is read from was changed",
+            "it was weakened from 90 to 5",
+        ]
+
+    def test_lowering_a_number_and_pointing_at_a_higher_one_is_a_violation(
+        self, tmp_path: Path
+    ) -> None:
+        """The real floor drops while the manifest reads a decoy that rose."""
+        repointed = MANIFEST.replace("fail_under = (\\d+)", "decoy = (\\d+)")
+        head = FILES | {
+            "release/required-checks.yml": repointed,
+            "pyproject.toml": "fail_under = 10\ndecoy = 99\n",
+        }
+        base, head_root = pair(tmp_path, head)
+
+        assert violations(base, head_root) == [
+            Violation("coverage", "where its number is read from was changed")
+        ]
+
+    def test_reading_a_number_from_another_file_is_a_violation(
+        self, tmp_path: Path
+    ) -> None:
+        """The same pattern in a different file is a different number."""
+        moved = MANIFEST.replace("file: pyproject.toml", "file: other.toml")
+        head = FILES | {
+            "release/required-checks.yml": moved,
+            "other.toml": "fail_under = 95\n",
+        }
+        base, head_root = pair(tmp_path, head)
+
+        assert violations(base, head_root) == [
+            Violation("coverage", "where its number is read from was changed")
+        ]
+
+    def test_a_number_that_could_not_be_read_before_is_a_violation(
+        self, tmp_path: Path
+    ) -> None:
+        """With nothing to compare against, the change cannot be called safe."""
+        base = copy(tmp_path / "base", FILES | {"pyproject.toml": "[tool]\n"})
+        head = copy(tmp_path / "head", FILES)
+
+        assert violations(base, head) == [
+            Violation(
+                "coverage",
+                "its number could not be read from `pyproject.toml` before "
+                "this change, so it cannot be compared",
+            )
         ]
 
     def test_a_threshold_whose_direction_was_flipped_is_a_violation(

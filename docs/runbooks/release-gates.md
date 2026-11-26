@@ -54,6 +54,10 @@ Each entry in the manifest has:
 - `paths` (optional): the test files and folders that make it up.
 - `prd`: the PRD IDs it serves.
 
+The gate counts only check runs posted by GitHub Actions itself. Any app
+can post a check run under any name, so a run from another app can
+neither satisfy a required check nor fail one.
+
 Several checks share one job. That is deliberate: the gate needs the job
 to succeed, and the policy guard protects each check's files separately,
 so nobody can keep a job green by deleting the suite inside it.
@@ -73,7 +77,13 @@ threshold can be read.
 | Backend static analysis | Bandit | Quality Checks | High severity |
 | Static analysis, all code | Semgrep 1.187.0 with the security rules of `semgrep/semgrep-rules` at a pinned commit | SAST | Semgrep's highest severity (`ERROR`) |
 
-Lower-severity Semgrep findings are printed and do not block. The rules
+Of the 442 security rules for Python, JavaScript and TypeScript at the
+pinned commit, 122 are `ERROR` and can block; 303 are `WARNING` and 17 are
+`INFO`, and are only printed. So a clean SAST job means "none of the 122
+most serious patterns", not "no finding". Today the non-blocking pass
+prints seven warnings: six about links built from variables (they are the
+app's own route paths) and one about `HTTPSConnection` in the backend's
+key fetcher (it is given a verified TLS context). The rules
 are read from a checkout on disk: nothing is fetched while scanning, and
 no code or metrics are sent anywhere.
 
@@ -120,7 +130,10 @@ These need the `release-policy-change` label, put on by a person:
 - deleting a file under a required path (a file that only moves, with
   the same contents, to a place that is still required does not count);
 - removing a threshold, or moving its number the unsafe way: a coverage
-  floor down, the download budget up.
+  floor down, the download budget up;
+- changing where a threshold's number is read from (its `file` or
+  `pattern`), in either direction. Otherwise a pull request could lower
+  the real number and point the manifest at a different, higher one.
 
 A label put on by a bot does not count. The guard reads who added the
 label from the pull request's history. The guard runs again when a label
