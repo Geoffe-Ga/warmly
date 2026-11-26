@@ -134,7 +134,7 @@ export class FakeProvider implements AIProvider {
     const marks = found.map((_, index) => `[c${String(index + 1)}]`).join(" ");
     return {
       markdown:
-        `A test answer about ${String(prompt.sources.length)} entries${prompt.partial ? ", which are part of the journal" : ""}. ${marks}`.trim(),
+        `A test answer about ${String(prompt.sources.length)} entries${prompt.partial ? ", which are part of the journal" : ""}${prompt.history.length > 0 ? `, after ${String(prompt.history.length)} earlier in this reflection` : ""}. ${marks}`.trim(),
       citations: found.map((quote, index) => ({
         claimId: `c${String(index + 1)}`,
         evidence: [quote],

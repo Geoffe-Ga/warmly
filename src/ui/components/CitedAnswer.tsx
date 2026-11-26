@@ -72,6 +72,7 @@ function sourceLabel(number: number, entry: JournalEntry | undefined): string {
 function Marks(props: {
   readonly cited: readonly Source[];
   readonly entries: readonly JournalEntry[];
+  readonly onFollow: (ref: SourceRef) => void;
 }): JSX.Element {
   return (
     <>
@@ -88,6 +89,9 @@ function Marks(props: {
             href={pathFor("journal-entry", { id: entry.id })}
             class="citation"
             label={sourceLabel(source.number, entry)}
+            onFollow={() => {
+              props.onFollow(source.ref);
+            }}
           >
             {shown}
           </Link>
@@ -102,6 +106,7 @@ function Paragraph(props: {
   readonly text: string;
   readonly byClaim: ReadonlyMap<string, readonly Source[]>;
   readonly entries: readonly JournalEntry[];
+  readonly onFollow: (ref: SourceRef) => void;
 }): JSX.Element {
   // Splitting on a pattern with one group gives text and claim IDs in turn.
   const parts = props.text.split(MARKER);
@@ -115,6 +120,7 @@ function Paragraph(props: {
             key={index}
             cited={props.byClaim.get(part) ?? []}
             entries={props.entries}
+            onFollow={props.onFollow}
           />
         ),
       )}
@@ -177,6 +183,12 @@ export function coverageNote(answer: ReflectionAnswer): string | undefined {
 export function CitedAnswer(props: {
   readonly answer: ReflectionAnswer;
   readonly entries: readonly JournalEntry[];
+  /**
+   * Told which passage a citation points to, just before its link is
+   * followed, so the entry screen can mark those words. The passage is
+   * handed over in memory: it never goes in the address.
+   */
+  readonly onFollow?: (ref: SourceRef) => void;
 }): JSX.Element {
   const { answer, entries } = props;
   const { sources, byClaim } = numberSources(answer);
@@ -185,6 +197,9 @@ export function CitedAnswer(props: {
     .filter((text) => text.trim() !== "");
 
   const partial = coverageNote(answer);
+  const follow = (ref: SourceRef): void => {
+    props.onFollow?.(ref);
+  };
 
   return (
     <div class="cited-answer">
@@ -195,6 +210,7 @@ export function CitedAnswer(props: {
           text={text}
           byClaim={byClaim}
           entries={entries}
+          onFollow={follow}
         />
       ))}
       {sources.length > 0 && (
@@ -207,7 +223,12 @@ export function CitedAnswer(props: {
                 <li key={source.number}>
                   {entry !== undefined && (
                     <>
-                      <Link href={pathFor("journal-entry", { id: entry.id })}>
+                      <Link
+                        href={pathFor("journal-entry", { id: entry.id })}
+                        onFollow={() => {
+                          follow(source.ref);
+                        }}
+                      >
                         Your entry from {formatEntryDate(entry.entryDate)}
                       </Link>
                       {": "}

@@ -52,6 +52,7 @@ const DISCLOSURE: Disclosure = {
   entries: 14,
   omitted: 0,
   tooLong: 0,
+  earlierTurns: 0,
   also: "your question",
   estimatedTokens: 900,
   large: false,
@@ -112,6 +113,17 @@ describe("what a request sends, in words (AI-015)", () => {
     [3, "the wording you chose", "3 journal entries and the wording you chose"],
   ] as const)("%i entries with %s", (entries, also, text) => {
     expect(describeSent({ ...DISCLOSURE, entries, also })).toBe(text);
+  });
+
+  it("says that a follow-up sends the reflection's earlier turns too (RF-006)", () => {
+    expect(describeSent({ ...DISCLOSURE, earlierTurns: 2 })).toBe(
+      "14 journal entries, your question, and the earlier questions and answers in this reflection",
+    );
+    expect(
+      describeSent({ ...DISCLOSURE, entries: 3, omitted: 7, earlierTurns: 1 }),
+    ).toBe(
+      "3 of your 10 journal entries, your question, and the earlier questions and answers in this reflection",
+    );
   });
 
   it("says how many of how many when some entries do not fit (RF-004)", () => {
@@ -411,6 +423,7 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
           alias: `E${String(index + 1)}`,
           responses: entry.responses,
         })),
+        history: [],
         partial: false,
       },
     ]);

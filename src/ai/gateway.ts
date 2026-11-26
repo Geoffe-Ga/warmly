@@ -82,6 +82,11 @@ export interface Disclosure {
   readonly tooLong: number;
   /** What else is included, in the person's own words elsewhere on screen. */
   readonly also: "your question" | "your topic" | "the wording you chose";
+  /**
+   * How many earlier turns of the same Reflect session go with the
+   * question (PRD RF-006). Zero for a first question and for other kinds.
+   */
+  readonly earlierTurns: number;
   /** About how many tokens the request carries. */
   readonly estimatedTokens: number;
   /** Whether the request is a large one, worth pointing out (AI-016). */
@@ -184,6 +189,8 @@ export class AiGateway {
       tooLong:
         request.kind === "reflect" ? (request.coverage?.tooLong ?? 0) : 0,
       also: ALSO[request.kind],
+      earlierTurns:
+        request.kind === "reflect" ? (request.history ?? []).length : 0,
       estimatedTokens,
       large: estimatedTokens >= LARGE_REQUEST_TOKENS,
     };

@@ -18,6 +18,7 @@ import { SyncScheduler } from "../../../src/sync/scheduler";
 import type { SyncSource } from "../../../src/sync/source";
 import { UNAVAILABLE_TRANSPORT } from "../../../src/sync/transport";
 import { RecordCardsStore } from "../../../src/domain/cards/store";
+import { CitedPassage } from "../../../src/domain/reflect/passage";
 import { RecordReflectSessions } from "../../../src/domain/reflect/sessions";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import { FakeDeviceDirectory } from "../../../src/testing/fake-device-directory";
@@ -93,6 +94,7 @@ export function testServices(state: SessionState = "signed_out"): TestServices {
     ai: createGateway(),
     cards: new RecordCardsStore(records),
     reflect: new RecordReflectSessions(records),
+    passage: new CitedPassage(),
     sync: new SyncScheduler(
       new SyncEngine(NOTHING_TO_SYNC, UNAVAILABLE_TRANSPORT),
     ),

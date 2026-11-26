@@ -113,6 +113,17 @@ test.describe("Reflect", () => {
     await expect(
       page.getByText("We cooked dinner together on Sunday."),
     ).toBeVisible();
+    // The cited words are marked, and nothing about them is in the address.
+    await expect(
+      page.getByText("The words it pointed to are marked below."),
+    ).toBeVisible();
+    const mark = page.locator("mark.cited-passage");
+    await expect(mark).toHaveCount(1);
+    await expect(mark).toContainText("We cooked dinner together on Sunday.");
+    await expect(mark).toBeInViewport();
+    expect(new URL(page.url()).search).toBe("");
+    expect(new URL(page.url()).hash).toBe("");
+    await expectNoViolations(page);
 
     // Back on the landing page the reflection is listed, and opening it
     // shows the saved answer without asking anything again.
@@ -129,6 +140,22 @@ test.describe("Reflect", () => {
     await saved.click();
     await expect(page.getByRole("heading", { name: "Answer" })).toBeVisible();
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    expect(requests).toEqual([]);
+
+    // A follow-up says that this reflection's earlier turns go with it,
+    // and is answered in the same reflection.
+    await page
+      .getByLabel("What would you like to ask about your journal?")
+      .fill("And what was hard?");
+    await page.getByRole("button", { name: "Ask" }).click();
+    await expect(dialog).toContainText(
+      "1 journal entry, your question, and the earlier questions and answers in this reflection",
+    );
+    await dialog.getByRole("button", { name: "Send to Test provider" }).click();
+    await expect(page.getByRole("heading", { name: "Answer" })).toHaveCount(2);
+    await expect(
+      page.locator(".card", { hasText: "Answer" }).last(),
+    ).toContainText("after 1 earlier in this reflection");
     expect(requests).toEqual([]);
   });
 });

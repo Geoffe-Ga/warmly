@@ -263,6 +263,7 @@ describe("asking a question (RF-002, RF-003, SEC-009)", () => {
           { alias: "E1", responses: FIRST.responses },
           { alias: "E2", responses: SECOND.responses },
         ],
+        history: [],
         partial: false,
       },
     ]);
@@ -1021,6 +1022,85 @@ describe("the life of a session (RF-007, RF-008, AC-08)", () => {
             at: "t",
             answer: { ...SAVED_ANSWER, sources: [{ entryId: "e" }] },
           },
+        ],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "a reference that points at no words",
+      {
+        id: "s",
+        status: "active",
+        messages: [
+          {
+            id: "m",
+            role: "answer",
+            at: "t",
+            answer: {
+              ...SAVED_ANSWER,
+              citations: [
+                {
+                  claimId: "c1",
+                  evidence: [
+                    {
+                      entryId: "e",
+                      responseKey: "good",
+                      start: 4,
+                      end: 4,
+                      sourceHash: "h",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "a reference that runs backwards",
+      {
+        id: "s",
+        status: "active",
+        messages: [
+          {
+            id: "m",
+            role: "answer",
+            at: "t",
+            answer: {
+              ...SAVED_ANSWER,
+              citations: [
+                {
+                  claimId: "c1",
+                  evidence: [
+                    {
+                      entryId: "e",
+                      responseKey: "good",
+                      start: 9,
+                      end: 4,
+                      sourceHash: "h",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "two turns with the same ID",
+      {
+        id: "s",
+        status: "active",
+        messages: [
+          { id: "m", role: "question", text: "x", at: "t" },
+          { id: "m", role: "question", text: "y", at: "t" },
         ],
         createdAt: "a",
         updatedAt: "b",

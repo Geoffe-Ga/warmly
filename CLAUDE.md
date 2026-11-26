@@ -384,6 +384,18 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   your M", and `CitedAnswer` says so above the answer from what the app
   sent, whatever the model wrote. Changing `SHARES` or `ESTIMATE_MARGIN`
   needs a new decision.
+- A follow-up question sends the earlier turns of its own session and of
+  no other (`historyOf`, `askRequest` in `src/domain/reflect/ask.ts`; PRD
+  RF-006): prose only, never an answer's citations, IDs or hashes. The
+  words a real provider is given are `reflectTexts`
+  (`src/ai/prompts/reflect.ts`): fixed instructions that hold nothing the
+  person wrote, and one JSON document for everything they did write, so
+  journal text cannot pass for instructions. Never put journal text in the
+  instructions, and never change `REFLECT_POLICY` without its test.
+- Following a citation marks the cited words in the entry. Where they are
+  travels in memory through `services.passage` (`CitedPassage`), once:
+  never in the address, storage or history. The entry screen marks them
+  only if the entry's content hash still matches (`passageIn`).
 - A Reflect session and all its questions and answers are one private
   record (kind `reflect-session`, envelope type 4), changed only through
   `ReflectSessions` (`src/domain/reflect/sessions.ts`), reached as

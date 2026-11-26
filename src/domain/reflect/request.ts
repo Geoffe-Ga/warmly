@@ -12,9 +12,13 @@
  * answer. Nothing is cut down quietly.
  */
 import { contextBudget, type Budget } from "../../ai/budget";
-import type { ReflectRequest, SourceEntry } from "../../ai/provider";
+import type {
+  EarlierTurn,
+  ReflectRequest,
+  SourceEntry,
+} from "../../ai/provider";
 import type { JournalEntry } from "../journal/types";
-import { selectContext } from "./context";
+import { EntryTooLargeError, selectContext } from "./context";
 
 /**
  * The limits on a request and a way to size one, from the gateway
@@ -36,6 +40,48 @@ export class InvalidQuestionError extends Error {
   }
 }
 
+/**
+ * The session's earlier turns leave no room for any journal entry, so a
+ * new question cannot be asked in it. Nothing was sent.
+ */
+export class SessionTooLongError extends Error {
+  constructor() {
+    super("The reflection is too long to send with another question");
+    this.name = "SessionTooLongError";
+  }
+}
+
+/**
+ * Choose the entries for a follow-up, and say truly why none fits.
+ *
+ * With earlier turns in the request there is less room. If no entry fits
+ * in what is left, but one would fit a first question, the reflection is
+ * what is too long, not the entry.
+ *
+ * @param select - Chooses the entries for the follow-up.
+ * @param asFirstQuestion - Builds the same request with no earlier turns;
+ *   it throws if no entry fits even then.
+ * @returns What `select` chose.
+ * @throws SessionTooLongError if only the earlier turns stop every entry.
+ * @throws EntryTooLargeError if no entry would fit a first question either.
+ */
+function blamingTheSession<T>(select: () => T, asFirstQuestion: () => void): T {
+  try {
+    return select();
+  } catch (error) {
+    if (!(error instanceof EntryTooLargeError)) {
+      throw error;
+    }
+    try {
+      asFirstQuestion();
+    } catch {
+      // No entry fits a first question either: the entry is the cause.
+      throw error;
+    }
+    throw new SessionTooLongError();
+  }
+}
+
 function sourceOf(entry: JournalEntry): SourceEntry {
   return {
     id: entry.id,
@@ -52,11 +98,11 @@ function sourceOf(entry: JournalEntry): SourceEntry {
  * Make the request for a question.
  *
  * The entries that fit are chosen by `selectContext`. The room for them
- * is what is left of the budget after the question and the request's own
- * framing (the size of the same request with no entries), the app's
- * instructions, the answer and a margin (`contextBudget`). Each entry's
- * size is what it adds to that empty request, plus one token, because
- * rounding can hide up to one.
+ * is what is left of the budget after the question, the session's earlier
+ * turns and the request's own framing (the size of the same request with
+ * no entries), the app's instructions, the answer and a margin
+ * (`contextBudget`). Each entry's size is what it adds to that empty
+ * request, plus one token, because rounding can hide up to one.
  *
  * @param question - The person's own question.
  * @param entries - The journal. Drafts are left out: an unfinished entry
@@ -64,15 +110,19 @@ function sourceOf(entry: JournalEntry): SourceEntry {
  * @param sizing - The limits and a way to size a request. Without it (no
  *   provider is connected, so nothing can be sent anyway) every finished
  *   entry is included.
+ * @param history - The earlier turns of the session the question is asked
+ *   in, and of no other. They are sent with it, as fresh copies.
  * @returns The request, oldest entry first, saying what was left out if
  *   anything was.
  * @throws InvalidQuestionError if the question is empty or too long.
+ * @throws SessionTooLongError if the earlier turns leave no room at all.
  * @throws EntryTooLargeError if there are entries and none of them fits.
  */
 export function reflectRequest(
   question: string,
   entries: readonly JournalEntry[],
   sizing?: RequestSizing,
+  history: readonly EarlierTurn[] = [],
 ): ReflectRequest {
   const asked = question.trim();
   if (asked === "" || [...asked].length > MAX_QUESTION) {
@@ -82,25 +132,43 @@ export function reflectRequest(
     kind: "reflect",
     question: asked,
     entries: [],
+    ...(history.length > 0
+      ? {
+          history: history.map((turn) => ({
+            question: turn.question,
+            answer: turn.answer,
+          })),
+        }
+      : {}),
   };
   const framing = sizing?.estimate(empty) ?? 0;
-  const selection = selectContext({
-    entries,
-    question: asked,
-    budget:
-      sizing === undefined
-        ? Number.POSITIVE_INFINITY
-        : contextBudget(sizing.budget, framing),
-    estimate: (entry) =>
-      sizing === undefined
-        ? 1
-        : sizing.estimate({ ...empty, entries: [sourceOf(entry)] }) -
-          framing +
-          1,
-  });
+  const room =
+    sizing === undefined
+      ? Number.POSITIVE_INFINITY
+      : contextBudget(sizing.budget, framing);
+  if (room <= 0 && history.length > 0) {
+    throw new SessionTooLongError();
+  }
+  const select = (): ReturnType<typeof selectContext> =>
+    selectContext({
+      entries,
+      question: asked,
+      budget: room,
+      estimate: (entry) =>
+        sizing === undefined
+          ? 1
+          : sizing.estimate({ ...empty, entries: [sourceOf(entry)] }) -
+            framing +
+            1,
+    });
+  const selection =
+    history.length === 0
+      ? select()
+      : blamingTheSession(select, () => {
+          reflectRequest(question, entries, sizing);
+        });
   return {
-    kind: "reflect",
-    question: asked,
+    ...empty,
     entries: selection.entries.map(sourceOf),
     ...(selection.coverage.truncated
       ? {
