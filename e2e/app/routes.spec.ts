@@ -1,7 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 
 import { ROUTES, pathFor } from "../../src/app/routes";
-import { expect, test } from "../fixtures/test";
+import { expect, test, type Page } from "../fixtures/test";
 
 import { onboard, openInApp } from "./account";
 
@@ -76,6 +76,38 @@ test.describe("every private screen while unlocked (UX-001, AC-23)", () => {
   });
 });
 
+/**
+ * Wait until the page has stopped changing: nothing added, removed or
+ * reworded for a short while. Gives up waiting after a few seconds, and
+ * the measurement is then taken of whatever is there.
+ */
+async function settled(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        const QUIET_MS = 300;
+        const LIMIT_MS = 5000;
+        let quiet = window.setTimeout(done, QUIET_MS);
+        const limit = window.setTimeout(done, LIMIT_MS);
+        const observer = new MutationObserver(() => {
+          window.clearTimeout(quiet);
+          quiet = window.setTimeout(done, QUIET_MS);
+        });
+        function done(): void {
+          window.clearTimeout(quiet);
+          window.clearTimeout(limit);
+          observer.disconnect();
+          resolve();
+        }
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          characterData: true,
+        });
+      }),
+  );
+}
+
 test.describe("large text (UI-003)", () => {
   test("no private screen scrolls sideways at double text size", async ({
     page,
@@ -85,6 +117,9 @@ test.describe("large text (UI-003)", () => {
     for (const route of PRIVATE_ROUTES) {
       await openInApp(page, pathFor(route.id, SAMPLE_PARAMS));
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      // A screen fills in after its heading (a list loads, a status
+      // arrives). Measure what it settles into, not a moment on the way.
+      await settled(page);
       // Fonts differ between machines, and a wider one must not break a
       // screen that a narrower one fits. Much wider letter spacing stands
       // in for any wider font, so the answer is the same everywhere.

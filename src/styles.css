@@ -487,7 +487,8 @@ textarea.field__control {
 
 .detail-list {
   display: grid;
-  grid-template-columns: max-content 1fr;
+  /* The label takes what it needs, up to half; the value can shrink */
+  grid-template-columns: fit-content(50%) minmax(0, 1fr);
   gap: var(--space-1) var(--space-3);
   margin: var(--space-3) 0;
 }
