@@ -226,6 +226,43 @@ describe("what makes a reflection stale (DEP-002, DEP-003, AC-12)", () => {
     expect(writes).not.toHaveBeenCalled();
   });
 
+  it("one deletion that fails does not stop the others, and is done at the next pass", async () => {
+    const { records, deps, cited, session } = await setUp();
+    const second = await sessionFrom(records, [cited]);
+    await editEntry(deps, cited.id, edited(cited, "Changed."));
+    const remove = records.delete.bind(records);
+    const refused = vi
+      .spyOn(records, "delete")
+      .mockImplementation((kind, id) =>
+        id === session
+          ? Promise.reject(new Error("synthetic refusal"))
+          : remove(kind, id),
+      );
+
+    expect(await invalidate(records, DEPENDENCY_RULES)).toEqual([
+      { kind: "reflect-session", id: second },
+    ]);
+    expect(await records.get("reflect-session", session)).toBeDefined();
+    refused.mockRestore();
+
+    expect(await invalidate(records, DEPENDENCY_RULES)).toEqual([
+      { kind: "reflect-session", id: session },
+    ]);
+    expect(await records.list("reflect-session")).toEqual([]);
+  });
+
+  it("reads nothing more than the derived records when there are none", async () => {
+    const records = new MemoryRecordStore();
+    await records.put("journal-entry", await entryOf("Synthetic."));
+    const tombstones = vi.spyOn(records, "deleted");
+    const conflicts = vi.spyOn(records, "conflicts");
+
+    expect(await invalidate(records, DEPENDENCY_RULES)).toEqual([]);
+
+    expect(tombstones).not.toHaveBeenCalled();
+    expect(conflicts).not.toHaveBeenCalled();
+  });
+
   it("removes only the sessions that depend on the changed entry", async () => {
     const { records, deps, cited, other, session } = await setUp();
     const unrelated = await sessionFrom(records, [other]);
@@ -377,7 +414,9 @@ describe("keeping watch while unlocked", () => {
     const { records, deps, cited, session } = await setUp();
     await editEntry(deps, cited.id, edited(cited, "Changed."));
     const watch = new Invalidator(records, DEPENDENCY_RULES);
-    const listing = vi.spyOn(records, "deleted");
+    const listing = vi.spyOn(records, "list");
+    const passes = (): number =>
+      listing.mock.calls.filter(([kind]) => kind === "reflect-session").length;
 
     // Three requests before the first has finished.
     const first = watch.run();
@@ -389,7 +428,7 @@ describe("keeping watch while unlocked", () => {
     expect(third).toBe(first);
     // Two passes, not three: the one that was running, and one more for
     // everything that was asked for while it ran.
-    expect(listing).toHaveBeenCalledTimes(2);
+    expect(passes()).toBe(2);
     expect(await records.get("reflect-session", session)).toBeUndefined();
     expect(watch.removed).toBe(0);
   });

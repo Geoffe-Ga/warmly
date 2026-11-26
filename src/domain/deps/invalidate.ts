@@ -79,10 +79,14 @@ export async function findStale(
   records: RecordStore,
   rules: readonly DependencyRule[],
 ): Promise<StaleRecord[]> {
-  const [index, journal] = await Promise.all([
-    buildIndex(records, rules),
-    readJournal(records),
-  ]);
+  const index = await buildIndex(records, rules);
+  if (index.dependents.length === 0) {
+    // Nothing was built from anything, so nothing can be stale. This is
+    // the usual case, and it is checked first so that an ordinary change,
+    // such as a draft being saved, costs no more than this.
+    return [];
+  }
+  const journal = await readJournal(records);
   return index.dependents
     .filter((dependent) => isStale(dependent, journal))
     .map(({ kind, id }) => ({ kind, id }));
@@ -92,19 +96,31 @@ export async function findStale(
  * Delete every stale derived record. Each is deleted whole, as an ordinary
  * deletion that syncs. Running it again straight away does nothing.
  *
+ * Each deletion stands alone. One that fails, for example because the
+ * record changed in another tab a moment ago, does not stop the others,
+ * and is tried again at the next pass because the record is still stale.
+ *
  * @param records - The record store.
  * @param rules - One rule for each kind of derived record.
- * @returns What was deleted.
+ * @returns What was deleted. A record that could not be deleted is not
+ *   among them.
  */
 export async function invalidate(
   records: RecordStore,
   rules: readonly DependencyRule[],
 ): Promise<StaleRecord[]> {
   const stale = await findStale(records, rules);
-  for (const { kind, id } of stale) {
-    await records.delete(kind, id);
+  const gone: StaleRecord[] = [];
+  for (const record of stale) {
+    try {
+      await records.delete(record.kind, record.id);
+      gone.push(record);
+    } catch {
+      // Left for the next pass. Nothing is logged: there is nothing here
+      // that may be, and the record is still found stale next time.
+    }
   }
-  return stale;
+  return gone;
 }
 
 /**
