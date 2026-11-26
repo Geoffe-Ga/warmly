@@ -1038,6 +1038,46 @@ describe("drafts (JR-004)", () => {
     expect(await drafts(services)).toEqual([]);
   });
 
+  it("holds what is typed while a discard waits for a save that was already running", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+    // Saving is slow: it goes ahead only when the test says.
+    const put = services.records.put.bind(services.records);
+    let go: () => void = () => undefined;
+    const told = new Promise<void>((resolve) => {
+      go = resolve;
+    });
+    services.records.put = (async (...args: Parameters<typeof put>) => {
+      await told;
+      await put(...args);
+    }) as typeof put;
+
+    // A save starts, and is still running when the draft is discarded.
+    await userEvent.type(first(), " and");
+    hidePage();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard draft" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Discard draft",
+      }),
+    );
+    await userEvent.type(first(), " more");
+
+    go();
+
+    await waitFor(() => {
+      expect(typed()).toBe("");
+    });
+    // Whatever might still be waiting to be saved is saved now: nothing is.
+    await services.lockHooks.flush();
+    expect(await drafts(services)).toEqual([]);
+  });
+
   it("does not bring back text that was typed just before discarding", async () => {
     const services = await openCompose();
     await userEvent.type(first(), "soon gone");
