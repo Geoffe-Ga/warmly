@@ -32,6 +32,8 @@ import { Collection } from "../ui/screens/prepare/Collection";
 import { Collections } from "../ui/screens/prepare/Collections";
 import { Present } from "../ui/screens/prepare/Present";
 import { Print } from "../ui/screens/prepare/Print";
+import { Landing } from "../ui/screens/reflect/Landing";
+import { Session } from "../ui/screens/reflect/Session";
 import { ConflictReview } from "../ui/screens/sync/ConflictReview";
 import { redirectFor } from "./access";
 import { matchRoute } from "./router";
@@ -63,6 +65,8 @@ const SCREENS: Readonly<
   "journal-entry": Entry,
   "journal-edit": EditEntry,
   "sync-conflicts": ConflictReview,
+  reflect: Landing,
+  "reflect-session": Session,
   prepare: Collections,
   collection: Collection,
   card: CardScreen,

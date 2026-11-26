@@ -63,6 +63,27 @@ describe("the AI layer's boundaries (D-17, SEC-009)", () => {
     expect(using("consumeConsent")).toEqual(["src/ai/gateway.ts"]);
   });
 
+  // Invariant 6: a reflection must be deleted when an entry it was built
+  // from changes, and the engine that does it is issue #51. Until it
+  // exists, no real provider may be connected, so that no real reflection
+  // can exist. Issue #51 replaces this test with one for the engine.
+  it("no real provider is connected before dependency invalidation exists (#51)", () => {
+    const paths = Object.keys(SOURCES);
+    const hasEngine = paths.some((path) => path.includes("/src/domain/deps/"));
+    const realProviders = paths.filter((path) =>
+      path.includes("/src/ai/providers/"),
+    );
+    const gateway = SOURCES["../../../src/ai/gateway.ts"] ?? "";
+
+    expect(hasEngine || realProviders.length === 0).toBe(true);
+    if (!hasEngine) {
+      // The only provider the gateway can be made with is the stand-in.
+      expect(gateway.match(/new \w*Provider\(/g)).toEqual([
+        "new FakeProvider(",
+      ]);
+    }
+  });
+
   it("nothing in the AI layer reaches the network or the Warmly API", () => {
     const ai = Object.entries(SOURCES).filter(([path]) =>
       path.includes("/src/ai/"),

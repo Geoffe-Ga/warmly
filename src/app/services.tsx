@@ -64,6 +64,10 @@ import { FakePairingRelay } from "../testing/fake-pairing-relay";
 import { FakeRecoveryEnvelopeStore } from "../testing/fake-recovery-envelope-store";
 import { RecordCardsStore, type CardsStore } from "../domain/cards/store";
 import { createEventBus, type EventBus } from "../domain/events";
+import {
+  MemoryReflectSessions,
+  type ReflectSessions,
+} from "../domain/reflect/sessions";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
@@ -92,6 +96,8 @@ export interface Services {
   readonly sync: SyncControl;
   /** The only way to reach an AI provider (D-17). */
   readonly ai: AiGateway;
+  /** Reflect sessions. In memory only, for now. */
+  readonly reflect: ReflectSessions;
   /** Collections of conversation cards, read from the private records. */
   readonly cards: CardsStore;
   /** A new version of the app waiting to be used. */
@@ -396,6 +402,7 @@ export function createServices(): Services {
     updates: appUpdates,
     ai: createGateway(),
     cards: new RecordCardsStore(records),
+    reflect: new MemoryReflectSessions(),
     persistence,
     session: createSession(),
     onboarding: createOnboarding(),
