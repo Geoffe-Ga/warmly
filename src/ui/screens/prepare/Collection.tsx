@@ -19,6 +19,7 @@ import {
   type ConversationCard,
 } from "../../../domain/cards/types";
 import { Button } from "../../components/Button";
+import { DangerZone } from "../../components/DangerZone";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TextArea, TextField } from "../../components/Field";
@@ -292,6 +293,10 @@ function Manage(props: {
           <Button type="submit" disabled={change.busy}>
             Rename
           </Button>
+        </div>
+      </form>
+      <DangerZone nested>
+        <div class="button-row">
           <Button
             variant="danger"
             disabled={change.busy}
@@ -302,7 +307,7 @@ function Manage(props: {
             Delete this collection
           </Button>
         </div>
-      </form>
+      </DangerZone>
       <ConfirmDialog
         open={confirming}
         title="Delete this collection and its cards?"
@@ -362,7 +367,10 @@ export function Collection(props: {
   }, [deleted]);
 
   return (
-    <PageLayout title={open?.collection.name ?? "Collection"}>
+    <PageLayout
+      back={{ href: pathFor("prepare"), label: "Back to your collections" }}
+      title={open?.collection.name ?? "Collection"}
+    >
       {deleted && (
         <StatusBanner tone="success" label="Deleted">
           The collection and its cards have been removed from this device.
@@ -398,9 +406,6 @@ export function Collection(props: {
           />
         </>
       )}
-      <p>
-        <Link href={pathFor("prepare")}>Back to your collections</Link>
-      </p>
     </PageLayout>
   );
 }

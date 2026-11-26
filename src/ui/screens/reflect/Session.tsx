@@ -33,6 +33,7 @@ import {
   useAiRequest,
 } from "../../components/AiRequestStatus";
 import { Button } from "../../components/Button";
+import { DangerZone } from "../../components/DangerZone";
 import { Card } from "../../components/Card";
 import { CitedAnswer } from "../../components/CitedAnswer";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -408,6 +409,17 @@ function Manage(props: {
     });
   };
 
+  const remove = (
+    <Button
+      variant="danger"
+      onClick={() => {
+        setAsking("delete");
+      }}
+    >
+      Delete this reflection
+    </Button>
+  );
+
   return (
     <Card heading={session.status === "active" ? "Finish or delete" : "Delete"}>
       {problem && (
@@ -425,15 +437,9 @@ function Manage(props: {
             Finish Reflection
           </Button>
         )}
-        <Button
-          variant="danger"
-          onClick={() => {
-            setAsking("delete");
-          }}
-        >
-          Delete this reflection
-        </Button>
+        {session.status !== "active" && remove}
       </div>
+      {session.status === "active" && <DangerZone nested>{remove}</DangerZone>}
       <ConfirmDialog
         open={asking === "finish"}
         title="Finish this reflection?"
@@ -512,7 +518,10 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
   }, [deleted]);
 
   return (
-    <PageLayout title="Reflection">
+    <PageLayout
+      back={{ href: pathFor("reflect"), label: "Back to Reflect" }}
+      title="Reflection"
+    >
       {(found.kind === "loading" ||
         (session !== undefined && journal.state === "loading")) && (
         <StatusBanner tone="info" label="Loading">
@@ -568,9 +577,6 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
           }}
         />
       )}
-      <p>
-        <Link href={pathFor("reflect")}>Back to Reflect</Link>
-      </p>
     </PageLayout>
   );
 }

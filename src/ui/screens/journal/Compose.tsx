@@ -1,7 +1,7 @@
 import type { JSX } from "preact";
 import { useContext, useState } from "preact/hooks";
 
-import { Link, NavigationContext } from "../../../app/navigation";
+import { NavigationContext } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
 import { canComplete, unanswered } from "../../../domain/journal/validation";
 import { Button } from "../../components/Button";
@@ -44,7 +44,10 @@ export function Compose(): JSX.Element {
 
   if (form.status !== "ready") {
     return (
-      <PageLayout title="New journal entry">
+      <PageLayout
+        back={{ href: pathFor("journal"), label: "Back to your journal" }}
+        title="New journal entry"
+      >
         {form.status === "loading" ? (
           <StatusBanner tone="info" label="Loading">
             Looking for a draft.
@@ -54,15 +57,13 @@ export function Compose(): JSX.Element {
             {form.openFailure ?? CANNOT_OPEN}
           </StatusBanner>
         )}
-        <p>
-          <Link href={pathFor("journal")}>Back to your journal</Link>
-        </p>
       </PageLayout>
     );
   }
 
   return (
     <PageLayout
+      back={{ href: pathFor("journal"), label: "Back to your journal" }}
       title="New journal entry"
       lead="Three questions. Answer in your own words; there are no wrong answers."
     >
@@ -154,9 +155,6 @@ export function Compose(): JSX.Element {
         What you have written here will be deleted for good. There is no way to
         get it back.
       </ConfirmDialog>
-      <p>
-        <Link href={pathFor("journal")}>Back to your journal</Link>
-      </p>
     </PageLayout>
   );
 }

@@ -363,7 +363,7 @@ None. Warmly shows the user's own words and nothing else. Do not add stock image
 
 **`app-header`** — One row on `{colors.paper}` with no border or background of its own, shown above every screen. Unlocked, it holds, in order: the app name ("Warmly", weight 700) linking home, where sync stands (`sync-status`), then a `{component.button-secondary}` "Lock" and the `menu` button side by side at the far end. On a screen narrower than 30rem the sync line drops to a row of its own under the bar. Locked, it is the app name and "Sign out". Lock is never inside the menu: it is always one press away.
 
-**`menu`** — A `{component.button-secondary}` "Menu" with `aria-expanded`, and while open a panel under the bar: `{colors.surface}`, the standard border and `{rounded.md}`, `{spacing.md}` of padding, as wide as its contents and never wider than the bar. The panel holds the secondary navigation as a list of `nav-link`s (Collections, Settings, Manage Devices, What Warmly is and is not, Privacy and its limits), then a row with "Sync now" and "Sign out". It is in the page only while open. It closes on Escape (focus returns to the button), on a press outside it and when one of its links is followed. Nothing in it moves or animates.
+**`menu`** — A `{component.button-secondary}` "Menu" with `aria-expanded`, and while open a panel under the bar: `{colors.surface}`, the standard border and `{rounded.md}`, `{spacing.md}` of padding, as wide as its contents and never wider than the bar. The panel holds the secondary navigation as a list of `nav-link`s (Collections, Settings, Manage Devices, What Warmly is and is not, Privacy and its limits), then a row with "Sync now" and "Sign out". It is in the page only while open. It closes on Escape (focus returns to the button), on a press outside it, when keyboard focus moves on out of it, and when one of its links is followed. Nothing in it moves or animates.
 
 **`nav-link`** — Underlined text link in `{colors.coral-text}`, at least 44px tall. **`nav-link-current`** — the current page (`aria-current="page"`) switches to `{colors.ink}`, weight 700 and a thicker underline, so the state is not carried by colour alone.
 
@@ -378,6 +378,12 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 **`button-danger`** — Destructive actions only (delete, revoke). `{colors.danger}` fill, `{colors.on-strong}` text. Always confirmed with `{component.dialog}`.
 
 **`button-disabled`** — `{colors.paper}` fill, `{colors.ink-muted}` text and a **dashed** border. It uses `aria-disabled`, not `disabled`, so it stays focusable and is announced as unavailable. The dashed border signals the state without relying on a faded colour.
+
+**`button-link`** — A link that is a screen's main action wears the button's look: `{component.button-primary}` for the one thing most people came to do ("Write a new entry", "Ask a question", "Carry on with your draft"), `{component.button-secondary}` for the next ("Write about a conversation you had", "Edit this entry"). It is still an `<a>`, with no underline: it goes somewhere. Home's three tiles are not buttons and do not change.
+
+**`back-link`** — The way back from a screen to the one it belongs under ("Back to your journal"), a `nav-link` on a line of its own above the page heading, so it is on screen however long the page is. A screen has at most one, and it is not repeated at the bottom.
+
+**`danger-zone`** — Where a delete button sits: a section at the end of its screen or card, set off by `{spacing.lg}` above and a `{colors.soft-pink}` line, under the short heading "Delete" in body size. It holds the `{component.button-danger}` alone, never in the row with Save. The button still opens the confirmation dialog.
 
 ### Cards & Containers
 

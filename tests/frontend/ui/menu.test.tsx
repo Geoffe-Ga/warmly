@@ -89,6 +89,27 @@ describe("the menu", () => {
     expect(open().getAttribute("aria-expanded")).toBe("false");
   });
 
+  it("closes when keyboard focus moves on out of it", async () => {
+    render(
+      <div>
+        <Menu label="Menu">
+          <button type="button">A button</button>
+        </Menu>
+        <button type="button">After</button>
+      </div>,
+    );
+    await userEvent.click(open());
+    screen.getByRole("button", { name: "A button" }).focus();
+    expect(open().getAttribute("aria-expanded")).toBe("true");
+
+    await userEvent.tab();
+
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "After" }),
+    );
+    expect(open().getAttribute("aria-expanded")).toBe("false");
+  });
+
   it("closes when a link in it is followed", async () => {
     renderMenu();
     await userEvent.click(open());

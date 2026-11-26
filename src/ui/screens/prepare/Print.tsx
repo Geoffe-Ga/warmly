@@ -1,6 +1,5 @@
 import type { JSX } from "preact";
 
-import { Link } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import { readingText } from "../../../domain/cards/types";
@@ -68,22 +67,23 @@ export function Print(props: { readonly params: RouteParams }): JSX.Element {
   const open = loaded.kind === "ready" ? loaded.value : undefined;
 
   return (
-    <PageLayout title="Print">
+    <PageLayout
+      back={
+        open === undefined
+          ? { href: pathFor("prepare"), label: "Back to your collections" }
+          : {
+              href: pathFor("collection", { id: open.collection.id }),
+              label: "Back to the collection",
+            }
+      }
+      title="Print"
+    >
       {loaded.kind === "loading" && <LoadingNotice />}
       {loaded.kind === "failed" && <FailedNotice />}
       {loaded.kind === "ready" && open === undefined && (
         <MissingNotice what="collection" />
       )}
       {open !== undefined && <Sheet {...open} />}
-      <p>
-        {open === undefined ? (
-          <Link href={pathFor("prepare")}>Back to your collections</Link>
-        ) : (
-          <Link href={pathFor("collection", { id: open.collection.id })}>
-            Back to the collection
-          </Link>
-        )}
-      </p>
     </PageLayout>
   );
 }

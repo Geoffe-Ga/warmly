@@ -1,7 +1,7 @@
 import type { JSX } from "preact";
 import { useContext, useState } from "preact/hooks";
 
-import { Link, NavigationContext } from "../../../app/navigation";
+import { NavigationContext } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { canComplete, unanswered } from "../../../domain/journal/validation";
 import { StaleRecordError } from "../../../storage/record-store";
@@ -68,20 +68,15 @@ export function EditEntry(props: {
   const [tried, setTried] = useState(false);
   const [outOfDate, setOutOfDate] = useState(false);
 
-  const back = (
-    <p>
-      <Link href={pathFor("journal")}>Back to your journal</Link>
-    </p>
-  );
+  const back = { href: pathFor("journal"), label: "Back to your journal" };
 
   if (found.kind !== "entry") {
     const notice = NOTICES[found.kind];
     return (
-      <PageLayout title="Edit journal entry">
+      <PageLayout back={back} title="Edit journal entry">
         <StatusBanner tone={notice.tone} label={notice.label}>
           {found.kind === "failed" ? found.message : notice.text}
         </StatusBanner>
-        {back}
       </PageLayout>
     );
   }
@@ -89,6 +84,7 @@ export function EditEntry(props: {
   const entryPath = pathFor("journal-entry", { id });
   return (
     <PageLayout
+      back={back}
       title="Edit journal entry"
       lead={`Your entry from ${formatEntryDate(found.entry.entryDate)}.`}
     >

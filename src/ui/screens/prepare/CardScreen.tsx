@@ -1,7 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useId, useRef, useState } from "preact/hooks";
 
-import { Link } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import {
@@ -21,6 +20,7 @@ import {
   type Provenance,
 } from "../../../domain/cards/provenance";
 import { Button } from "../../components/Button";
+import { DangerZone } from "../../components/DangerZone";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TextArea } from "../../components/Field";
@@ -353,6 +353,10 @@ function EditCard(props: {
               {whole ? "Change the parts one by one" : "Rewrite as one text"}
             </Button>
           )}
+        </div>
+      </form>
+      <DangerZone nested>
+        <div class="button-row">
           <Button
             variant="danger"
             disabled={change.busy}
@@ -363,7 +367,7 @@ function EditCard(props: {
             Delete this card
           </Button>
         </div>
-      </form>
+      </DangerZone>
       <ConfirmDialog
         open={confirming}
         title="Delete this card?"
@@ -426,7 +430,17 @@ export function CardScreen(props: {
   }, [deleted]);
 
   return (
-    <PageLayout title="Card">
+    <PageLayout
+      back={
+        collectionId === undefined
+          ? { href: pathFor("prepare"), label: "Back to your collections" }
+          : {
+              href: pathFor("collection", { id: collectionId }),
+              label: "Back to the collection",
+            }
+      }
+      title="Card"
+    >
       {deleted && (
         <StatusBanner tone="success" label="Deleted">
           The card has been removed from this device.
@@ -450,15 +464,6 @@ export function CardScreen(props: {
           />
         </>
       )}
-      <p>
-        {collectionId === undefined ? (
-          <Link href={pathFor("prepare")}>Back to your collections</Link>
-        ) : (
-          <Link href={pathFor("collection", { id: collectionId })}>
-            Back to the collection
-          </Link>
-        )}
-      </p>
     </PageLayout>
   );
 }
