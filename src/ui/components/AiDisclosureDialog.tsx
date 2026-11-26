@@ -25,6 +25,22 @@ export interface AiDisclosureDialogProps {
   readonly onCancel: () => void;
 }
 
+/** Said when the journal is too long to send whole (PRD RF-004, AC-09). */
+export const NOT_EVERYTHING =
+  "Your whole journal does not fit in one request. Warmly chose your newest entries, the ones that share words with your question, and a spread of older ones. The answer can only be about the entries that are sent.";
+
+/**
+ * Said when entries are left out because each is too long to send at all.
+ *
+ * @param count - How many such entries there are.
+ * @returns The sentence.
+ */
+export function tooLongNote(count: number): string {
+  return count === 1
+    ? "1 entry is too long to send in one request, so it is left out. Warmly sends whole entries only, never part of one."
+    : `${count.toLocaleString("en-US")} entries are too long to send in one request, so they are left out. Warmly sends whole entries only, never part of one.`;
+}
+
 /** Said when a request cannot be described, so cannot be agreed to. */
 export const CANNOT_DESCRIBE =
   "Warmly couldn't prepare this request, so nothing was sent. Check in Settings that an AI provider is connected, then try again.";
@@ -40,9 +56,17 @@ function entriesText(count: number): string {
  * Put what a request would send into words.
  *
  * @param disclosure - What the gateway says the request carries.
- * @returns For example "14 journal entries and your question".
+ * @returns For example "14 journal entries and your question", or, when
+ *   some did not fit, "14 of your 5,000 journal entries and your question".
  */
 export function describeSent(disclosure: Disclosure): string {
+  if (disclosure.omitted > 0) {
+    const all = (disclosure.entries + disclosure.omitted).toLocaleString(
+      "en-US",
+    );
+    const sent = disclosure.entries.toLocaleString("en-US");
+    return `${sent} of your ${all} journal entries and ${disclosure.also}`;
+  }
   return `${entriesText(disclosure.entries)} and ${disclosure.also}`;
 }
 
@@ -132,6 +156,8 @@ export function AiDisclosureDialog(
         This sends <strong>{describeSent(disclosure)}</strong> to{" "}
         {disclosure.provider}, as readable text.
       </p>
+      {disclosure.omitted > disclosure.tooLong && <p>{NOT_EVERYTHING}</p>}
+      {disclosure.tooLong > 0 && <p>{tooLongNote(disclosure.tooLong)}</p>}
       {disclosure.large && (
         <p>
           This is a large request (about{" "}

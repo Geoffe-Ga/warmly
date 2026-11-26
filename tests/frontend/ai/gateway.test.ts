@@ -709,12 +709,51 @@ describe("the stand-in provider (AI-001)", () => {
     ).toEqual({ markdown: "A test answer about 0 entries.", citations: [] });
   });
 
+  it("is told when the entries are only part of the journal, and not otherwise (AC-09)", async () => {
+    const provider = new FakeProvider();
+    const part: ReflectRequest = {
+      ...reflect(),
+      coverage: { omittedEntryCount: 3, truncated: true },
+    };
+
+    expect(sent(part).partial).toBe(true);
+    expect(sent(reflect()).partial).toBe(false);
+    expect(
+      sent({
+        ...reflect(),
+        coverage: { omittedEntryCount: 0, truncated: false },
+      }).partial,
+    ).toBe(false);
+    const answer = (await provider.reflect(
+      sent(part),
+      new AbortController().signal,
+    )) as { markdown: string };
+    expect(answer.markdown).toContain("which are part of the journal");
+  });
+
+  it("carries what was left out through to the checked answer", async () => {
+    const { gateway } = connected();
+    const part: ReflectRequest = {
+      ...reflect(),
+      coverage: { omittedEntryCount: 3, truncated: true },
+    };
+
+    const answer = await gateway.reflect(part, grantConsent(part));
+
+    expect(answer.coverage).toEqual({
+      includedEntryIds: part.entries.map((entry) => entry.id),
+      omittedEntryCount: 3,
+      truncated: true,
+    });
+  });
+
   it("estimates more tokens for more text, and never none", () => {
     const provider = new FakeProvider();
     const small = provider.estimateTokens({
       kind: "reflect",
       question: "",
       sources: [],
+      partial: false,
     });
     const larger = provider.estimateTokens(sent(reflect()));
 

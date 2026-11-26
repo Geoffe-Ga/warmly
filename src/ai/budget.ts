@@ -7,6 +7,8 @@
 import {
   APP_MAX_INPUT_TOKENS,
   APP_MAX_OUTPUT_TOKENS,
+  ESTIMATE_MARGIN,
+  POLICY_RESERVE_TOKENS,
   REQUEST_TIMEOUT_MS,
 } from "./config";
 import type { Capabilities } from "./provider";
@@ -52,4 +54,27 @@ export function withinBudget(estimatedTokens: number, budget: Budget): boolean {
     estimatedTokens >= 0 &&
     estimatedTokens <= budget.maxInputTokens
   );
+}
+
+/**
+ * How many tokens of journal entries one request may carry (PRD RF-004;
+ * decision D-18).
+ *
+ * From the input limit, set aside the app's instructions, the answer's
+ * maximum length, the question and whatever of the current session is
+ * sent with it. Then leave a margin unused, because the sizes are
+ * estimates. What remains is for entries.
+ *
+ * @param budget - The limits on the request.
+ * @param reserved - Tokens the question and the session's earlier turns
+ *   will take.
+ * @returns The tokens available for entries; never less than zero.
+ */
+export function contextBudget(budget: Budget, reserved: number): number {
+  const room =
+    budget.maxInputTokens -
+    POLICY_RESERVE_TOKENS -
+    budget.maxOutputTokens -
+    Math.max(0, Math.ceil(reserved));
+  return Math.max(0, Math.floor(room * (1 - ESTIMATE_MARGIN)));
 }

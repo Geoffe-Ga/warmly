@@ -14,6 +14,7 @@ else was considered, and why. Write one before the code that depends on it.
 | [0005](0005-device-identity-and-pairing.md) | Device identity, request signing and pairing | Accepted (pairing pending #22) |
 | [0006](0006-sync-protocol.md) | The sync protocol: per-record revisions with compare-and-swap, an idempotent operation log and a per-owner change feed | Accepted |
 | [0008](0008-ai-grounding-contract.md) | The AI answer contract: per-request names and exact quotes, checked against what was sent, all or nothing | Accepted |
+| [0009](0009-reflect-context-selection.md) | Which entries a Reflect request sends when the journal is too long: newest, relevant, then an even spread; whole entries; always disclosed | Accepted |
 | [0013](0013-api-contract-from-code.md) | API contract generated from code, with an isolated type generator | Accepted |
 | [0014](0014-local-encrypted-store.md) | The local encrypted record store: a row per record, an outbox in the same transaction, forward-only migrations | Accepted |
 

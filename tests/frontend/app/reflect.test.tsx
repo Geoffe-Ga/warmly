@@ -36,7 +36,13 @@ import {
   NOTHING_TO_ASK_ABOUT,
   QUESTION_NEEDED,
   SAVED_ELSEWHERE,
+  entryTooLong,
 } from "../../../src/ui/screens/reflect/Session";
+import {
+  NOT_EVERYTHING,
+  tooLongNote,
+} from "../../../src/ui/components/AiDisclosureDialog";
+import { formatEntryDate } from "../../../src/ui/screens/journal/shared";
 import {
   heading,
   renderApp,
@@ -257,9 +263,115 @@ describe("asking a question (RF-002, RF-003, SEC-009)", () => {
           { alias: "E1", responses: FIRST.responses },
           { alias: "E2", responses: SECOND.responses },
         ],
+        partial: false,
       },
     ]);
     expect(JSON.stringify(provider.calls)).not.toContain("CANARY");
+  });
+
+  it("says how many entries are sent when the journal is too long, tells the provider, and says so above the answer (RF-004, AC-09)", async () => {
+    const long = Array.from({ length: 400 }, (_unused, index) =>
+      entry(
+        1,
+        new Date(Date.UTC(2020, 0, 1 + index)).toISOString().slice(0, 10),
+        {
+          id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+        },
+      ),
+    );
+    const { services, provider } = await setUp(long);
+    await renderApp(NEW, services);
+
+    await ask("What has gone well?");
+    const dialog = await screen.findByRole("alertdialog");
+    const said =
+      /This sends (\d+) of your 400 journal entries and your question/.exec(
+        dialog.textContent,
+      );
+    expect(said).not.toBeNull();
+    const count = Number(said?.[1]);
+    expect(count).toBeGreaterThan(20);
+    expect(count).toBeLessThan(400);
+    expect(dialog.textContent).toContain(NOT_EVERYTHING);
+    expect(provider.calls).toEqual([]);
+
+    await userEvent.setup().click(screen.getByRole("button", { name: SEND }));
+    await screen.findByRole("heading", { name: "Answer" });
+
+    expect(provider.calls).toHaveLength(1);
+    const call = provider.calls[0];
+    expect(call?.kind === "reflect" && call.partial).toBe(true);
+    expect(call?.sources).toHaveLength(count);
+    expect(
+      screen.getByText(
+        `This answer is about ${String(count)} of the 400 journal entries you had when you asked. The others did not fit in one request, so it does not speak for your whole journal.`,
+      ),
+    ).toBeTruthy();
+    // It is stored with the answer, so it is still said when read later.
+    const stored = await services.reflect.list();
+    expect(stored[0]?.messages[1]).toMatchObject({
+      answer: { coverage: { omittedEntryCount: 400 - count, truncated: true } },
+    });
+  });
+
+  it("leaves out an entry that is too long to send, says so before sending, and sends the rest", async () => {
+    const huge = entry(7, "2026-11-11", {
+      responses: { good: "CANARY ".repeat(8_000), improve: "x", loved: "y" },
+    });
+    const { services, provider } = await setUp([FIRST, SECOND, huge]);
+    await renderApp(NEW, services);
+
+    await ask("What has gone well?");
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog.textContent).toContain(
+      "This sends 2 of your 3 journal entries and your question",
+    );
+    expect(dialog.textContent).toContain(tooLongNote(1));
+    // The others all fit, so nothing is said about choosing among them.
+    expect(dialog.textContent).not.toContain(NOT_EVERYTHING);
+    await userEvent.setup().click(screen.getByRole("button", { name: SEND }));
+    await screen.findByRole("heading", { name: "Answer" });
+
+    expect(provider.calls).toHaveLength(1);
+    expect(JSON.stringify(provider.calls)).not.toContain("CANARY");
+    expect(provider.calls[0]?.sources).toHaveLength(2);
+    expect(
+      screen.getByText(/This answer is about 2 of the 3 journal entries/),
+    ).toBeTruthy();
+  });
+
+  it("sends nothing and names the entry when no entry at all can be sent", async () => {
+    const huge = entry(7, "2026-11-11", {
+      responses: { good: "CANARY ".repeat(8_000), improve: "x", loved: "y" },
+    });
+    const { services, provider } = await setUp([huge]);
+    await renderApp(NEW, services);
+
+    await ask("What has gone well?");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(
+      entryTooLong(formatEntryDate(huge.entryDate)),
+    );
+    expect(alert.textContent).not.toContain("CANARY");
+    expect(
+      within(alert)
+        .getByRole("link", { name: "Open that entry" })
+        .getAttribute("href"),
+    ).toBe(pathFor("journal-entry", { id: huge.id }));
+    expect(screen.queryByRole("alertdialog")).toBeNull();
+    expect(provider.calls).toEqual([]);
+    expect((screen.getByLabelText(BOX) as HTMLTextAreaElement).value).toBe(
+      "What has gone well?",
+    );
+  });
+
+  it("names no day for an entry it cannot find", () => {
+    expect(entryTooLong(undefined)).toMatch(/^One of your entries is too long/);
+    expect(entryTooLong("Tuesday, 3 November 2026")).toMatch(
+      /^Your entry for Tuesday, 3 November 2026 is too long/,
+    );
   });
 
   it("shows the question and the answer, stores the reflection and moves to its own address", async () => {

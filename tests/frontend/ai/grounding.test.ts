@@ -121,8 +121,14 @@ describe("the source manifest (AI-012, D-16)", () => {
       const prompt = promptFor({ ...words, entries: ENTRIES }, MANIFEST);
 
       expect(prompt).toMatchObject({ ...words });
+      // A question also says whether it rests on part of the journal.
       expect(Object.keys(prompt).sort()).toEqual(
-        ["kind", "sources", field].sort(),
+        [
+          "kind",
+          "sources",
+          field,
+          ...(words.kind === "reflect" ? ["partial"] : []),
+        ].sort(),
       );
       expect(prompt.sources).toEqual([
         { alias: "E1", responses: E1.responses },

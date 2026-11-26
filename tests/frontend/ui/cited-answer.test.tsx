@@ -12,6 +12,7 @@ import {
   CitedAnswer,
   SOURCE_CHANGED,
   SOURCE_GONE,
+  coverageNote,
 } from "../../../src/ui/components/CitedAnswer";
 import { formatEntryDate } from "../../../src/ui/screens/journal/shared";
 
@@ -76,6 +77,58 @@ function sources(): HTMLElement {
     name: "Where this comes from in your journal",
   });
 }
+
+describe("an answer about part of the journal (RF-004, AC-09)", () => {
+  const partial: ReflectionAnswer = {
+    ...answer("Synthetic prose that claims to cover everything.", []),
+    sources: [],
+    coverage: {
+      includedEntryIds: Array.from({ length: 1200 }, (_unused, index) =>
+        String(index),
+      ),
+      omittedEntryCount: 3800,
+      truncated: true,
+    },
+  };
+
+  it("says above the prose how many entries it is about, whatever the prose says", () => {
+    const { container } = render(
+      <CitedAnswer answer={partial} entries={[ENTRY]} />,
+    );
+    const note =
+      "This answer is about 1,200 of the 5,000 journal entries you had when you asked. The others did not fit in one request, so it does not speak for your whole journal.";
+
+    expect(coverageNote(partial)).toBe(note);
+    expect(
+      container.querySelector(".cited-answer")?.firstElementChild?.textContent,
+    ).toBe(note);
+  });
+
+  it("says nothing of the kind when every entry was sent", () => {
+    const whole = answer("Synthetic prose.", []);
+    render(<CitedAnswer answer={whole} entries={[ENTRY]} />);
+
+    expect(coverageNote(whole)).toBeUndefined();
+    expect(
+      screen.queryByText(/does not speak for your whole journal/),
+    ).toBeNull();
+  });
+
+  it("goes by the count as well as the flag, so a stored answer with either is marked", () => {
+    expect(
+      coverageNote({
+        ...partial,
+        coverage: { ...partial.coverage, truncated: false },
+      }),
+    ).toContain("1,200 of the 5,000");
+    expect(
+      coverageNote({
+        ...partial,
+        coverage: { ...partial.coverage, omittedEntryCount: 0 },
+      }),
+    ).toContain("1,200 of the 1,200");
+  });
+});
 
 describe("the prose (RF-005)", () => {
   it("is ordinary paragraphs, with each claim's mark turned into numbered links", () => {

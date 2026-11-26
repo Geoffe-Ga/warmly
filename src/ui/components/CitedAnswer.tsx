@@ -154,6 +154,26 @@ function Excerpt(props: {
  *   words from.
  * @returns The prose and its sources.
  */
+/**
+ * What is said above an answer that rests on part of the journal (PRD
+ * AC-09). It comes from what the app sent, never from what the model
+ * wrote, so an answer cannot pass for one about the whole journal.
+ *
+ * @param answer - The checked answer.
+ * @returns The sentence, or `undefined` when every entry was sent.
+ */
+export function coverageNote(answer: ReflectionAnswer): string | undefined {
+  const { includedEntryIds, omittedEntryCount, truncated } = answer.coverage;
+  if (!truncated && omittedEntryCount === 0) {
+    return undefined;
+  }
+  const sent = includedEntryIds.length.toLocaleString("en-US");
+  const all = (includedEntryIds.length + omittedEntryCount).toLocaleString(
+    "en-US",
+  );
+  return `This answer is about ${sent} of the ${all} journal entries you had when you asked. The others did not fit in one request, so it does not speak for your whole journal.`;
+}
+
 export function CitedAnswer(props: {
   readonly answer: ReflectionAnswer;
   readonly entries: readonly JournalEntry[];
@@ -164,8 +184,11 @@ export function CitedAnswer(props: {
     .split(/\n{2,}/)
     .filter((text) => text.trim() !== "");
 
+  const partial = coverageNote(answer);
+
   return (
     <div class="cited-answer">
+      {partial !== undefined && <p class="hint">{partial}</p>}
       {paragraphs.map((text, index) => (
         <Paragraph
           key={index}
