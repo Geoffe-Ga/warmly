@@ -163,6 +163,8 @@ test.describe("a password reset does not open the journal (AC-18)", () => {
 });
 
 test.describe("an account whose onboarding was abandoned", () => {
+  // Sign up, open the emailed link, save and confirm the recovery key,
+  // and the app unlocks (part of PRD AC-01; no journal entry here).
   test("creates its keys at the next sign-in, and nothing was saved before", async ({
     page,
     context,

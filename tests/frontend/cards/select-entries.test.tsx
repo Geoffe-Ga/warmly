@@ -281,6 +281,8 @@ describe("asking for cards (CC-002, AC-10, AC-15)", () => {
     expect(provider.calls).toHaveLength(2);
   });
 
+  // One card quoting words its entry does not hold refuses them all (PRD
+  // AC-26).
   it("refuses the whole answer when one card is not grounded, and adds none of it", async () => {
     const base = new FakeProvider();
     const provider: AIProvider = {

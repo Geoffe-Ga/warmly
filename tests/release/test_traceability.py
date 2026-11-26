@@ -14,7 +14,9 @@ from scripts.release.traceability import (
     Criterion,
     build,
     citations,
+    cited_in,
     criteria,
+    loose,
     main,
     render,
     run,
@@ -43,7 +45,7 @@ Each scenario must be represented in automated tests:
 
 FILES = {
     PRD_PATH: PRD,
-    "tests/api/test_accounts.py": f"def test_sign_up():\n    # {FIRST}\n    pass\n",
+    "tests/api/test_accounts.py": f'def test_sign_up():\n    """{FIRST}."""\n',
     "tests/api/helpers.py": f"# {THIRD} is named in a helper, which is not a test.\n",
     "tests/fixtures/notes.py": f"# {THIRD} in a fixture folder.\n",
     "tests/frontend/app/journal.test.tsx": (
@@ -89,6 +91,119 @@ def test_only_test_files_count_and_each_is_filed_under_its_own_layer(
         },
         SECOND: {"Frontend (Vitest)": ["tests/frontend/app/journal.test.tsx"]},
     }
+
+
+PYTHON_CASES = {
+    "a test's docstring": f'def test_it():\n    """Signs up ({FIRST})."""\n',
+    "an async test's docstring": f'async def test_it():\n    """{FIRST}."""\n',
+    "a test class's docstring": (
+        f'class TestSignUp:\n    """{FIRST}."""\n\n'
+        "    def test_it(self):\n        pass\n"
+    ),
+    "a test method's docstring": (
+        f'class TestSignUp:\n    def test_it(self):\n        """{FIRST}."""\n'
+    ),
+}
+
+PYTHON_NOT_CASES = {
+    "the module's docstring": f'"""{FIRST}."""\n\ndef test_it():\n    pass\n',
+    "a comment at the top": f"# {FIRST}\n\ndef test_it():\n    pass\n",
+    "a comment inside a test": f"def test_it():\n    # {FIRST}\n    pass\n",
+    "a string inside a test": f'def test_it():\n    assert "{FIRST}"\n',
+    "a helper's docstring": (
+        f'def helper():\n    """{FIRST}."""\n\ndef test_it():\n    pass\n'
+    ),
+    "a fixture class's docstring": (
+        f'class Account:\n    """{FIRST}."""\n\ndef test_it():\n    pass\n'
+    ),
+}
+
+TYPESCRIPT_CASES = {
+    "a test's title": f'it("signs up ({FIRST})", () => {{}});\n',
+    "a title in single quotes": f"test('signs up ({FIRST})', () => {{}});\n",
+    "a title in backticks": f"it(`signs up ({FIRST})`, () => {{}});\n",
+    "a group's title": f'describe("signing up ({FIRST})", () => {{}});\n',
+    "a title on the next line": (
+        f'  it(\n    "signs up ({FIRST})",\n    () => {{}},\n  );\n'
+    ),
+    "a skipped or only-run test's title": (
+        f'it.skip("signs up ({FIRST})", () => {{}});\n'
+    ),
+    "a table test's title": (
+        f'it.each([["a"], ["b"]])("signs up as %s ({FIRST})", () => {{}});\n'
+    ),
+    "a group made by describe.each": (
+        'describe.each([\n  ["a", make()],\n])'
+        f'("signing up %s ({FIRST})", () => {{}});\n'
+    ),
+    "a line comment right above a test": (
+        f'// Signing up, {FIRST}.\nit("signs up", () => {{}});\n'
+    ),
+    "a block comment right above a group": (
+        f'/**\n * Signing up ({FIRST}).\n */\ndescribe("signing up", () => {{}});\n'
+    ),
+    "a comment above an indented test": (
+        f'describe("x", () => {{\n  // {FIRST}\n  it("signs up", () => {{}});\n}});\n'
+    ),
+}
+
+TYPESCRIPT_NOT_CASES = {
+    "the comment at the top of the file": (
+        f'/**\n * Signing up ({FIRST}).\n */\nimport {{ it }} from "vitest";\n\n'
+        'it("signs up", () => {});\n'
+    ),
+    "a comment inside a test": f'it("signs up", () => {{\n  // {FIRST}\n}});\n',
+    "a comment above a helper": (
+        f'// {FIRST}\nfunction helper() {{}}\n\nit("signs up", () => {{}});\n'
+    ),
+    "a comment a blank line above a test": (
+        f'// {FIRST}\n\nit("signs up", () => {{}});\n'
+    ),
+    "a string inside a test": f'it("signs up", () => {{\n  expect("{FIRST}");\n}});\n',
+    "a call that only looks like a test": f'submit("{FIRST}");\nit("x", () => {{}});\n',
+}
+
+
+@pytest.mark.parametrize("where", PYTHON_CASES)
+def test_a_criterion_named_by_a_python_test_counts(where: str) -> None:
+    """A test, or a class of tests, says which criterion it serves."""
+    assert cited_in(PYTHON_CASES[where], ".py") == {FIRST}
+
+
+@pytest.mark.parametrize("where", PYTHON_NOT_CASES)
+def test_a_criterion_named_elsewhere_in_a_python_file_does_not_count(
+    where: str,
+) -> None:
+    """Naming a criterion somewhere in the file does not tie a test to it."""
+    assert not cited_in(PYTHON_NOT_CASES[where], ".py")
+
+
+@pytest.mark.parametrize("where", TYPESCRIPT_CASES)
+def test_a_criterion_named_by_a_typescript_test_counts(where: str) -> None:
+    """In the title, or in the comment right above the test or group."""
+    assert cited_in(TYPESCRIPT_CASES[where], ".ts") == {FIRST}
+
+
+@pytest.mark.parametrize("where", TYPESCRIPT_NOT_CASES)
+def test_a_criterion_named_elsewhere_in_a_typescript_file_does_not_count(
+    where: str,
+) -> None:
+    """A file's header, a helper and a test's body name no test."""
+    assert not cited_in(TYPESCRIPT_NOT_CASES[where], ".ts")
+
+
+def test_a_python_file_that_cannot_be_parsed_cites_nothing() -> None:
+    """A broken test file is the test runner's to report, not this table's."""
+    assert not cited_in(f'def test_it(:\n    """{FIRST}."""\n', ".py")
+
+
+def test_every_criterion_a_test_names_is_found() -> None:
+    """One test can serve several criteria."""
+    text = (
+        f'it("signs up ({FIRST}, {SECOND})", () => {{}});\n// {THIRD}\ntest("x", f);\n'
+    )
+
+    assert cited_in(text, ".tsx") == {FIRST, SECOND, THIRD}
 
 
 def test_a_criterion_no_test_file_cites_is_named(tmp_path: Path) -> None:
@@ -218,6 +333,38 @@ def test_the_committed_document_is_up_to_date() -> None:
     code, message = run(ROOT, "check")
 
     assert code == 0, message
+
+
+def test_a_file_that_names_a_criterion_no_test_is_tied_to_is_found(
+    tmp_path: Path,
+) -> None:
+    """A mention in a header or a helper claims nothing, and is reported."""
+    root = repository(
+        tmp_path,
+        {
+            PRD_PATH: PRD,
+            "tests/api/test_accounts.py": (
+                f'"""{FIRST} and {SECOND}."""\n\n'
+                f'def test_sign_up():\n    """{FIRST}."""\n'
+            ),
+            "tests/frontend/app/journal.test.tsx": (
+                f'// {THIRD}\n\nit("writes offline ({SECOND})", () => {{}});\n'
+            ),
+            "e2e/app/onboarding.spec.ts": f'test("signs up ({FIRST})", () => {{}});\n',
+        },
+    )
+
+    assert loose(root) == {
+        "tests/api/test_accounts.py": [SECOND],
+        "tests/frontend/app/journal.test.tsx": [THIRD],
+    }
+
+
+def test_no_test_file_here_names_a_criterion_it_ties_to_no_test() -> None:
+    """Every ID in this repository's test files is on a test that serves it."""
+    untied = loose(ROOT)
+
+    assert not untied, untied
 
 
 def test_the_prd_lists_twenty_eight_criteria() -> None:

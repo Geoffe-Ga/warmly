@@ -7,7 +7,7 @@ Account B attacks account A. Whatever B sends, three things must hold:
 3. Where a request names A's data, the answer is the same as for data that
    does not exist, so B cannot even tell that A's data is there.
 
-PRD SEC-005, SEC-006, SYNC-007; AC-04, AC-05, AC-20.
+PRD SEC-005, SEC-006, SYNC-007; AC-05, AC-20.
 """
 
 import json
@@ -197,7 +197,7 @@ RUNS: dict[str, Run] = {
 def test_an_attack_on_a_route_reveals_nothing_and_changes_nothing(
     world: World, operation: Operation, attack: Attack
 ) -> None:
-    """B attacks A through one route in one way (SEC-006, AC-05)."""
+    """B attacks A through one route in one way (SEC-006, AC-05, AC-20)."""
     before = world.snapshot(world.a)
 
     answers = RUNS[attack.name](world, operation)

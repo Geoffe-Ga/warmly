@@ -1,6 +1,6 @@
 /**
  * Reflect against the stand-in provider and in-memory sessions (PRD
- * RF-001, RF-002, RF-003, RF-005; AC-03, AC-07, AC-23).
+ * RF-001, RF-002, RF-003, RF-005; AC-03, AC-07).
  */
 import { cleanup, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
@@ -205,6 +205,8 @@ describe("the Reflect landing page (RF-001, RF-002)", () => {
   });
 });
 
+// The person's own question, the disclosure, one send of what is allowed,
+// and the answer in prose (PRD AC-07).
 describe("asking a question (RF-002, RF-003, SEC-009)", () => {
   it("a new reflection opens empty, with the person's own question box, and sends nothing", async () => {
     const { services, provider } = await setUp();

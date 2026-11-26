@@ -1,7 +1,7 @@
 /**
  * The screens for what is written after a conversation: a form the person
  * opens themselves, a labelled place in the journal, and a source Reflect
- * can cite (PRD PC-001 to PC-004, SYNC-005; AC-12; D-22).
+ * can cite (PRD PC-001 to PC-004, SYNC-005; D-22).
  */
 import { cleanup, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";

@@ -1,4 +1,4 @@
-"""Per-account and per-device request limits (PRD §8, SEC-005; AC-20).
+"""Per-account and per-device request limits (PRD §8, SEC-005).
 
 These tests run the limiter on in-memory counters. The table that holds the
 counters in production is tested in ``tests/db/test_rate_limit_store.py``.

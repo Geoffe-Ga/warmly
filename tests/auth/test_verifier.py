@@ -226,7 +226,7 @@ def _b64(data: dict[str, Any]) -> str:
 async def test_a_tampered_payload_is_refused(
     verifier: TokenVerifier, signer: Signer
 ) -> None:
-    """Changing the subject after signing breaks the signature."""
+    """Changing the subject after signing breaks the signature (AC-05)."""
     header, payload, signature = signer.token().split(".")
     padded = payload + "=" * (-len(payload) % 4)
     claims = json.loads(base64.urlsafe_b64decode(padded))

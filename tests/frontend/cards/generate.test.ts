@@ -199,6 +199,7 @@ describe("one to three cards come back, or none are accepted (CC-002, AC-10)", (
     ).rejects.toBeInstanceOf(MalformedResponseError);
   });
 
+  // A quote must be in an entry that was sent, or no card is kept (PRD AC-26).
   it("refuses cards that quote words the picked entries do not hold", async () => {
     const { b } = await journal();
     // The stand-in above always quotes "we cooked together", which entry

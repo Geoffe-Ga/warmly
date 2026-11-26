@@ -41,6 +41,8 @@ test.describe("an AI request", () => {
     await expect(sample.getByRole("alert")).toHaveCount(0);
   });
 
+  // After a failure nothing is lost, and nothing is sent again until the
+  // person presses Try again (PRD AC-15).
   test("a failure says what happened and waits for the person; Try again asks again", async ({
     page,
   }) => {

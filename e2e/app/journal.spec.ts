@@ -29,6 +29,7 @@ function entries(page: Page) {
 }
 
 test.describe("the journal", () => {
+  // The journal's screens are each checked with axe (PRD AC-23).
   test("from Home to the journal, a new entry, the timeline, the entry and back", async ({
     page,
   }) => {

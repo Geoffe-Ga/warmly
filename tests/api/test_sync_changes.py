@@ -165,7 +165,7 @@ def test_a_page_that_ends_exactly_at_the_last_change_has_no_more(
 def test_another_account_sees_nothing_of_this_ones_records(
     client: TestClient, other: TestClient
 ) -> None:
-    """The feed is the caller's own, whatever cursor is sent (AC-16)."""
+    """The feed is the caller's own, whatever cursor is sent (AC-05)."""
     _write(client, 1)
     _write(client, 2)
 
@@ -176,7 +176,7 @@ def test_another_account_sees_nothing_of_this_ones_records(
 def test_two_accounts_each_get_their_own_feed(
     client: TestClient, other: TestClient
 ) -> None:
-    """Each account's sequence starts at 1 and counts only its own changes."""
+    """Each account's sequence starts at 1 and counts only its own changes (AC-05)."""
     _write(client, 1)
     _write(client, 2)
     _write(other, 7)
@@ -213,7 +213,7 @@ def test_a_malformed_cursor_is_a_422(client: TestClient, cursor: str) -> None:
 def test_no_field_can_ask_for_another_accounts_feed(
     client: TestClient, other: TestClient
 ) -> None:
-    """An owner ID in the query is ignored: the token decides (AC-16)."""
+    """An owner ID in the query is ignored: the token decides (AC-05)."""
     _write(other, 7)
 
     response = client.get(URL, params={"cursor": "0", "owner_id": OTHER_OWNER_ID})
@@ -290,7 +290,7 @@ def test_only_the_calling_device_is_marked_as_synced(
 def test_a_revoked_device_gets_no_changes(
     client: TestClient, device_store: InMemoryDeviceStore
 ) -> None:
-    """Revocation is checked on every request to the feed (DEV-003, AC-03)."""
+    """Revocation is checked on every request to the feed (DEV-003, AC-20)."""
     _write(client, 1)
     device_store.devices[UUID(DEVICE_ID)].revoked = True
 

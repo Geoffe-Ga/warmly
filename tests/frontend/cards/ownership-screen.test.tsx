@@ -82,6 +82,7 @@ describe("a card AI drafted can be rewritten freely (CC-006, CC-008)", () => {
     expect(screen.getByText(PARTS_HINT)).toBeTruthy();
   });
 
+  // Changing a card AI drafted makes it the person's own (PRD AC-12).
   it("becomes the person's own when one part is changed, and only that part loses its AI notes", async () => {
     const { services, provider } = await setUp();
     await renderApp(AI_CARD, services);
@@ -148,6 +149,7 @@ describe("a card AI drafted can be rewritten freely (CC-006, CC-008)", () => {
     ]);
   });
 
+  // Rewriting it whole makes it theirs too, with no AI notes left (PRD AC-12).
   it("can be rewritten whole as one text, which leaves nothing of the AI's notes", async () => {
     const { services } = await setUp();
     await renderApp(AI_CARD, services);

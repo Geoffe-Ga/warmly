@@ -73,6 +73,8 @@ async function confirm(page: Page, confirmation: string): Promise<void> {
   await page.getByRole("button", { name: "Finish" }).click();
 }
 
+// An unlocked device approves a new one by its code; a wrong code or
+// passphrase shares nothing (PRD AC-19).
 test.describe("approving a new device", () => {
   test("the new device shows a code, the first approves it, and the new one opens the journal", async ({
     page,

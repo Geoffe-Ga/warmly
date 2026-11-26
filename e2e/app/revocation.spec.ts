@@ -53,6 +53,8 @@ async function confirmRemoval(page: Page, password: string): Promise<void> {
 }
 
 test.describe("removing a device", () => {
+  // A removed device is refused on its next request, and the dialog says
+  // it cannot be erased from here (PRD AC-20).
   test("removing another device: it is refused on its next request and told what happened", async ({
     page,
     context,
@@ -117,6 +119,7 @@ test.describe("removing a device", () => {
     ).toHaveCount(1);
   });
 
+  // Removing the device in use shows nothing private (PRD AC-20).
   test("removing the device in use signs it out without showing anything private", async ({
     page,
   }) => {

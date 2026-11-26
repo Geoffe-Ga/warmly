@@ -21,6 +21,7 @@ const FIRST_PROMPT = "What's going well?";
 const WRITING = "Synthetic half-written thought";
 
 test.describe("a new version of the app", () => {
+  // An app update waits for the person and loses no writing (PRD AC-28).
   test("waits while a draft is being written, then updates without losing it", async ({
     page,
   }) => {

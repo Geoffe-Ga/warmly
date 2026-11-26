@@ -15,6 +15,7 @@ import { onboard, openMenu } from "./account";
 const WCAG_22_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
 test.describe("the AI disclosure", () => {
+  // The dialog passes axe and works from the keyboard alone (PRD AC-23).
   test("says what is sent and to whom, defaults to not sending, and is accessible", async ({
     page,
   }) => {

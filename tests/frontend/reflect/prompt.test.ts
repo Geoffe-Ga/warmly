@@ -83,6 +83,8 @@ function sessions(): RecordReflectSessions {
 }
 
 describe("the instructions (AI-013)", () => {
+  // What the provider is told, not what a model does: keep an inferred
+  // feeling apart and offer it as a possibility (PRD AC-26).
   it.each([
     [
       "grounds claims in the writing",

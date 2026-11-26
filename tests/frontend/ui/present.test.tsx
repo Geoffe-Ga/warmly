@@ -182,6 +182,7 @@ describe("nothing about the viewing is kept (CC-012, AC-14)", () => {
     expect(replaced).not.toHaveBeenCalled();
   });
 
+  // Leaving a presentation calls no AI (PRD AC-03).
   it("announces no event and calls no AI, while paging or on closing", async () => {
     const provider = new FakeProvider();
     const services = testServices("unlocked");

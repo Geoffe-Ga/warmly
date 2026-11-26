@@ -1,4 +1,4 @@
-"""Recovery envelope routes (PRD SEC-003, DEV-001 path B; AC-01, AC-18).
+"""Recovery envelope routes (PRD SEC-003, DEV-001 path B; AC-18).
 
 The store here is the in-memory double. The same rules are tested against
 PostgreSQL, including cross-owner access, in tests/db/test_recovery_store.py.
@@ -58,7 +58,7 @@ def test_a_new_account_has_no_envelope(
 def test_creating_stores_version_one_and_reads_back_unchanged(
     client: TestClient, empty: InMemoryRecoveryStore
 ) -> None:
-    """The server stores the opaque value exactly as sent."""
+    """The server stores the opaque value exactly as sent (AC-18)."""
     created = _put(client, 0)
 
     assert created == {

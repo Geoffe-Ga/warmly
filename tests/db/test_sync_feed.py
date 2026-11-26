@@ -1,4 +1,4 @@
-"""The change feed in PostgreSQL (PRD SYNC-002, SYNC-003; AC-05, AC-16).
+"""The change feed in PostgreSQL (PRD SYNC-002, SYNC-003; AC-05).
 
 The feed's promise is that a device which follows its cursor sees every
 change. That depends on how the database commits concurrent writes, so it is
@@ -224,7 +224,7 @@ async def test_a_cursor_past_anything_the_account_was_given_is_refused(
 async def test_another_account_sees_none_of_these_records(
     store: PostgresSyncStore,
 ) -> None:
-    """Each account has its own feed and its own sequence (AC-16)."""
+    """Each account has its own feed and its own sequence (AC-05)."""
     await _create(store, 3)
     (theirs,) = await _create(store, 1, OWNER_B)
 

@@ -98,6 +98,8 @@ describe("collections and cards sync between a person's devices (SYNC-001, AC-05
     ]);
   });
 
+  // A collection's name and order are the same on the person's other device
+  // (PRD AC-13).
   it("a rename, a reorder, an edit and a deletion made on one device reach the other", async () => {
     const { a, b, id, first, second } = await shared();
 
@@ -152,6 +154,8 @@ describe("collections and cards sync between a person's devices (SYNC-001, AC-05
     ).rejects.toThrow(RecordDeletedError);
   });
 
+  // A collection is private: its name and cards leave only as ciphertext
+  // (PRD AC-13).
   it("stores names and card text only as ciphertext, and sends only ciphertext", async () => {
     const { server, a } = await shared();
     await createCard(

@@ -41,7 +41,7 @@ def test_low_and_medium_findings_do_not_block() -> None:
 
 @pytest.mark.parametrize("severity", ["HIGH", "CRITICAL"])
 def test_a_serious_finding_blocks_and_is_named(severity: str) -> None:
-    """A serious finding blocks and is named."""
+    """A serious finding blocks and is named (AC-24)."""
     code, message = judge(report("LOW", severity))
 
     assert code == 1
@@ -52,7 +52,7 @@ def test_a_serious_finding_blocks_and_is_named(severity: str) -> None:
 
 
 def test_a_file_bandit_could_not_read_blocks() -> None:
-    """A file bandit could not read blocks."""
+    """A file bandit could not read blocks (AC-24)."""
     code, message = judge(report(errors=2))
 
     assert code == 1
@@ -86,7 +86,7 @@ def test_a_finding_of_an_unknown_shape_blocks() -> None:
 
 
 def test_a_missing_report_blocks(tmp_path: Path) -> None:
-    """A missing report blocks."""
+    """A missing report blocks (AC-24)."""
     assert run(tmp_path / "none.json") == (
         1,
         "Bandit: BLOCKED. There is no report that can be read.",

@@ -1,6 +1,6 @@
 /**
  * The status of everything that protects the person's writing, in one
- * place and in plain words (PRD UI-008; AC-23).
+ * place and in plain words (PRD UI-008).
  */
 import { act, cleanup, screen, waitFor, within } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

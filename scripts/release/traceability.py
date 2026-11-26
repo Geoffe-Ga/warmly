@@ -1,12 +1,19 @@
 """Which tests stand behind each acceptance criterion (PRD §11).
 
 The PRD lists 28 acceptance criteria, `AC-01` to `AC-28`, and says each
-must be represented in automated tests. Tests in this repository cite the
-criteria they serve by ID, in a name, a docstring or a comment. This
-script reads the PRD for the criteria and the test files for those IDs,
-and writes the table that joins them: `docs/traceability.md`.
+must be represented in automated tests. A test in this repository says
+which criteria it serves by ID. This script reads the PRD for the
+criteria and the test files for those IDs, and writes the table that
+joins them: `docs/traceability.md`.
 
-It proves less than it might seem to. It shows that a test file cites a
+An ID counts only where it is tied to a test. In Python that is the
+docstring of a test function or of a `Test` class. In TypeScript it is
+the title of an `it`, `test` or `describe`, or the comment directly above
+one. An ID in a file's header, in a helper or in a test's body names no
+test and is not counted, so a file cannot claim a criterion that none of
+its tests is about.
+
+It proves less than it might seem to. It shows that a test cites a
 criterion. It does not show that the test is a good test of it, and it
 does not read test results: whether the cited tests pass is what CI and
 the Release Gate say. A criterion with no file is a fact worth knowing
@@ -20,6 +27,7 @@ Usage:
 """
 
 import argparse
+import ast
 import re
 import sys
 from collections.abc import Collection, Iterator, Sequence
@@ -40,6 +48,10 @@ SKIPPED_PARTS = frozenset({"__pycache__", "node_modules", "fixtures"})
 
 _CRITERION = re.compile(r"^\d+\. \*\*\[(AC-\d{2})\]\*\* (.+)$")
 _CITED = re.compile(r"\bAC-\d{2}\b")
+# A test or a group of tests in TypeScript, at the start of a line:
+# `it(`, `test.skip(`, `describe.each(`.
+_TEST_CALL = re.compile(r"^[ \t]*(?:describe|it|test)(?:\.\w+)*\(", re.MULTILINE)
+_QUOTES = "\"'`"
 
 
 @dataclass(frozen=True)
@@ -70,6 +82,117 @@ def criteria(prd: str) -> list[Criterion]:
         if match:
             found.append(Criterion(id=match.group(1), text=match.group(2)))
     return found
+
+
+def _python_cited(text: str) -> set[str]:
+    """Find the criteria named in the docstrings of tests and test classes."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        # The test runner reports a file it cannot read; this table does not.
+        return set()
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            prefix = "test_"
+        elif isinstance(node, ast.ClassDef):
+            prefix = "Test"
+        else:
+            continue
+        if node.name.startswith(prefix):
+            found.update(_CITED.findall(ast.get_docstring(node) or ""))
+    return found
+
+
+def _string_end(text: str, start: int) -> int:
+    """Find where the string literal that opens at `start` closes.
+
+    Returns:
+        The index of the closing quote, or the end of the text if the
+        string is never closed.
+    """
+    quote = text[start]
+    index = start + 1
+    while index < len(text) and text[index] != quote:
+        index += 2 if text[index] == "\\" else 1
+    return min(index, len(text))
+
+
+def _group_end(text: str, start: int) -> int:
+    """Find the index after the bracket that closes the one before `start`.
+
+    Brackets inside string literals are not counted.
+    """
+    depth = 1
+    index = start
+    while index < len(text) and depth > 0:
+        char = text[index]
+        if char in _QUOTES:
+            index = _string_end(text, index)
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        index += 1
+    return index
+
+
+def _string_from(text: str, start: int) -> str | None:
+    """Read the string literal that begins at or after `start`, past spaces."""
+    index = start
+    while index < len(text) and text[index].isspace():
+        index += 1
+    if index < len(text) and text[index] in _QUOTES:
+        return text[index + 1 : _string_end(text, index)]
+    return None
+
+
+def _title(text: str, start: int) -> str:
+    """Read the title of the test whose opening bracket is before `start`.
+
+    A table test is written `it.each(table)("title", ...)`: its title is
+    the first thing in the second pair of brackets.
+    """
+    title = _string_from(text, start)
+    if title is None:
+        after = _group_end(text, start)
+        if text[after : after + 1] == "(":
+            title = _string_from(text, after + 1)
+    return title or ""
+
+
+def _comment_above(text: str, start: int) -> str:
+    """Read the comment that ends on the line directly above `start`."""
+    lines = text[:start].splitlines()
+    comment: list[str] = []
+    for line in reversed(lines):
+        if not line.strip().startswith(("//", "/*", "*")):
+            break
+        comment.append(line)
+    return "\n".join(comment)
+
+
+def _typescript_cited(text: str) -> set[str]:
+    """Find the criteria named in test titles and the comments above them."""
+    found: set[str] = set()
+    for call in _TEST_CALL.finditer(text):
+        found.update(_CITED.findall(_title(text, call.end())))
+        found.update(_CITED.findall(_comment_above(text, call.start())))
+    return found
+
+
+def cited_in(text: str, suffix: str) -> set[str]:
+    """Find the criteria a test file's tests say they serve.
+
+    Args:
+        text: The file's text.
+        suffix: The file's ending, which says what language it is in.
+
+    Returns:
+        The IDs tied to a test: see this module's docstring for where an
+        ID has to be.
+    """
+    return _python_cited(text) if suffix == ".py" else _typescript_cited(text)
 
 
 def _is_test_file(path: Path, suffixes: tuple[str, ...]) -> bool:
@@ -124,10 +247,31 @@ def citations(root: Path) -> dict[str, dict[str, list[str]]]:
     for _, folder, suffixes in LAYERS:
         for path in test_files(root, folder, suffixes):
             relative = path.relative_to(root).as_posix()
-            cited = sorted(set(_CITED.findall(path.read_text(encoding="utf-8"))))
+            cited = sorted(cited_in(path.read_text(encoding="utf-8"), path.suffix))
             for criterion in cited:
                 by_layer = found.setdefault(criterion, {})
                 by_layer.setdefault(_layer_of(relative), []).append(relative)
+    return found
+
+
+def loose(root: Path) -> dict[str, list[str]]:
+    """Find test files that name a criterion none of their tests is tied to.
+
+    Such a mention claims nothing in the table, and reads as if it did.
+
+    Args:
+        root: The top of the repository.
+
+    Returns:
+        For each such file, the IDs it names somewhere but ties to no test.
+    """
+    found: dict[str, list[str]] = {}
+    for _, folder, suffixes in LAYERS:
+        for path in test_files(root, folder, suffixes):
+            text = path.read_text(encoding="utf-8")
+            untied = set(_CITED.findall(text)) - cited_in(text, path.suffix)
+            if untied:
+                found[path.relative_to(root).as_posix()] = sorted(untied)
     return found
 
 
@@ -161,10 +305,11 @@ def render(listed: Sequence[Criterion], cited: dict[str, dict[str, list[str]]]) 
         "<!-- Generated by `python -m scripts.release.traceability --write`.",
         "     Do not edit by hand: a test fails when this file is out of date. -->",
         "",
-        "Each acceptance criterion in the PRD (§11), and the test files that",
-        "cite it by ID.",
+        "Each acceptance criterion in the PRD (§11), and the test files in",
+        "which a test cites it by ID: in its docstring (Python), or in its",
+        "title or the comment directly above it (TypeScript).",
         "",
-        "**What this shows:** that a test file names the criterion. **What it",
+        "**What this shows:** that a test names the criterion. **What it",
         "does not show:** that the test is a sufficient test of it, or that it",
         "passes. Whether tests pass is what CI and the Release Gate report",
         "(`docs/runbooks/release-gates.md`).",

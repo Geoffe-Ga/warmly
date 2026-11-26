@@ -540,7 +540,7 @@ class TestRun:
         assert run(base, head, None) == (0, "Release policy: nothing is weakened.")
 
     def test_a_weakening_with_no_label_is_blocked(self, tmp_path: Path) -> None:
-        """A weakening with no label is blocked."""
+        """A weakening with no label is blocked (AC-24)."""
         base, head = self.weakened(tmp_path)
 
         code, message = run(base, head, None)
@@ -566,7 +566,7 @@ class TestRun:
         assert "  - coverage: it was weakened from 90 to 80" in message
 
     def test_a_weakening_a_bot_labelled_is_blocked(self, tmp_path: Path) -> None:
-        """A weakening a bot labelled is blocked."""
+        """A weakening a bot labelled is blocked (AC-24)."""
         base, head = self.weakened(tmp_path)
 
         code, _ = run(base, head, self.events(tmp_path, [labelled("Bot")]))
@@ -576,7 +576,7 @@ class TestRun:
     def test_a_label_history_that_cannot_be_read_counts_as_no_label(
         self, tmp_path: Path
     ) -> None:
-        """A label history that cannot be read counts as no label."""
+        """A label history that cannot be read counts as no label (AC-24)."""
         base, head = self.weakened(tmp_path)
         broken = tmp_path / "events.json"
         broken.write_text("not json", encoding="utf-8")

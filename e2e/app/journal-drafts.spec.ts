@@ -1,5 +1,5 @@
 /**
- * Drafts in the browser (PRD JR-004, DEV-005; AC-02, AC-03, AC-21).
+ * Drafts in the browser (PRD JR-004, DEV-005; AC-02, AC-21).
  *
  * What is typed is saved as an encrypted draft on this device, so it is
  * still there after the page is closed and reopened offline, and after the
@@ -38,6 +38,8 @@ async function unlocked(page: Page): Promise<void> {
 }
 
 test.describe("journal drafts", () => {
+  // A draft is still there after the page is closed and reopened offline
+  // (PRD AC-02).
   test("offline: what is typed survives closing and reopening the page", async ({
     page,
     context,

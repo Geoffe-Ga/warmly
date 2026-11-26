@@ -125,7 +125,7 @@ async def test_a_refused_deletion_writes_nothing_to_the_ledger(
 async def test_nothing_sent_after_a_deletion_changes_the_record_or_the_ledger(
     db: Database, store: PostgresSyncStore
 ) -> None:
-    """Edits, repeats and second deletions all get ``deleted`` (SYNC-005)."""
+    """Edits, repeats and second deletions all get ``deleted`` (SYNC-005, AC-17)."""
     record = uuid4()
     await store.apply(OWNER_A, _op(record))
     await store.apply(OWNER_A, _delete(record, 1))
@@ -152,7 +152,10 @@ async def test_nothing_sent_after_a_deletion_changes_the_record_or_the_ledger(
 async def test_an_edit_racing_a_deletion_never_leaves_a_live_record(
     db: Database, store: PostgresSyncStore
 ) -> None:
-    """Whichever commits first, the other is refused; a deletion that wins stays."""
+    """Whichever commits first, the other is refused; a deletion that wins stays.
+
+    PRD AC-17.
+    """
     for _ in range(10):
         record = uuid4()
         await store.apply(OWNER_A, _op(record))
@@ -196,7 +199,7 @@ async def test_an_edit_racing_a_deletion_never_leaves_a_live_record(
 async def test_the_database_refuses_any_change_to_a_tombstone(
     db: Database, store: PostgresSyncStore, change: str
 ) -> None:
-    """A deleted record never changes, whatever code runs later."""
+    """A deleted record never changes, whatever code runs later (AC-17)."""
     record = uuid4()
     await store.apply(OWNER_A, _op(record))
     await store.apply(OWNER_A, _delete(record, 1))
