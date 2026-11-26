@@ -21,7 +21,11 @@ describe("whether two plain values say the same thing", () => {
     ["a different value", { a: 1 }, { a: 2 }],
     ["a missing key", { a: 1, b: 2 }, { a: 1 }],
     ["an extra key", { a: 1 }, { a: 1, b: 2 }],
-    ["a key that is there but undefined", { a: undefined }, { b: undefined }],
+    [
+      "a key set on one side and undefined on the other",
+      { a: 1 },
+      { a: undefined },
+    ],
     ["a list and an object", [], {}],
     ["nothing and an object", null, {}],
     ["text and a number", "1", 1],
@@ -29,6 +33,13 @@ describe("whether two plain values say the same thing", () => {
   ])("tells %s apart", (_name, left, right) => {
     expect(sameValue(left, right)).toBe(false);
     expect(sameValue(right, left)).toBe(false);
+  });
+
+  it("takes a key that holds undefined as not being there, as after storing and reading back", () => {
+    const record = { a: 1, b: undefined, c: [{ d: undefined, e: "x" }] };
+    expect(sameValue(record, JSON.parse(JSON.stringify(record)))).toBe(true);
+    expect(sameValue({ a: undefined }, {})).toBe(true);
+    expect(sameValue({}, { b: undefined })).toBe(true);
   });
 
   it("takes the same thing as the same", () => {

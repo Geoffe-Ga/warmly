@@ -1169,6 +1169,48 @@ describe("drafts (JR-004)", () => {
     expect(await drafts(services)).toHaveLength(1);
   });
 
+  it("a draft that sync changed while it was being typed is not saved over, by autosave or by finishing (invariant 5)", async () => {
+    const mine = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(mine));
+    await userEvent.type(first(), " mine");
+    // Another device's typing arrives: the store now holds a newer draft,
+    // and its own stale-copy check has nothing to object to.
+    const newer = {
+      ...mine,
+      responses: { good: "from the phone", improve: "x", loved: "y" },
+    };
+    await services.records.put("journal-entry", newer);
+
+    hidePage();
+
+    const banner = (
+      await screen.findByText(/on another of your devices/)
+    ).closest('[role="status"]');
+    expect(banner?.textContent).toContain("This draft");
+    expect(first()).toHaveProperty("value", "half a thought mine");
+    expect(await drafts(services)).toEqual([newer]);
+
+    // Finishing the entry from the out-of-date form is refused too.
+    for (const prompt of PROMPTS.slice(1)) {
+      await userEvent.type(screen.getByLabelText(prompt.label), "answered");
+    }
+    await userEvent.click(screen.getByRole("button", { name: "Save entry" }));
+    await services.lockHooks.flush();
+    expect(await services.records.list("journal-entry")).toEqual([newer]);
+
+    await userEvent.click(
+      within(banner as HTMLElement).getByRole("button", {
+        name: "Load the latest version",
+      }),
+    );
+    await waitFor(() => {
+      expect(first()).toHaveProperty("value", "from the phone");
+    });
+  });
+
   it("starts empty when the other tab finished or discarded the draft", async () => {
     const mine = entry(4, "2026-11-10", {
       status: "draft",

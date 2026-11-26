@@ -17,7 +17,11 @@ import {
 } from "../../../domain/journal/drafts";
 import type { EntryDate, JournalEntry } from "../../../domain/journal/types";
 import { deleteEntry } from "../../../domain/journal/delete";
-import { StaleRecordError } from "../../../storage/record-store";
+import { sameValue } from "../../../domain/same";
+import {
+  StaleRecordError,
+  type RecordStore,
+} from "../../../storage/record-store";
 import { describeOpenFailure } from "../../storage-messages";
 
 /** The compose form, as the screen sees it. */
@@ -63,6 +67,29 @@ export interface DraftForm {
 }
 
 /**
+ * Refuse to write over a draft that is no longer what the form last read
+ * or stored: sync or another tab changed it while it was being typed. The
+ * store's own stale-copy check does not catch a change that sync has
+ * already put in the store's copy.
+ *
+ * @param records - The record store.
+ * @param mine - The draft as the form knows it, if it has one.
+ * @throws StaleRecordError if the stored draft says something else.
+ */
+async function refuseIfChanged(
+  records: RecordStore,
+  mine: JournalEntry | undefined,
+): Promise<void> {
+  if (mine === undefined) {
+    return;
+  }
+  const stored = await records.get("journal-entry", mine.id);
+  if (stored !== undefined && !sameValue(stored, mine)) {
+    throw new StaleRecordError();
+  }
+}
+
+/**
  * Hold the compose form and keep its draft saved.
  *
  * The draft is saved a moment after typing stops, when the page is hidden
@@ -100,7 +127,10 @@ export function useDraft(): DraftForm {
     let mounted = true;
     const saver = new Autosave<EntryContent>(
       draftSaver({
-        put: (next) => records.put("journal-entry", next),
+        put: async (next) => {
+          await refuseIfChanged(records, draft.current);
+          await records.put("journal-entry", next);
+        },
         current: () => draft.current,
         finishing: () => finishing.current,
         stored: (next) => {
@@ -286,10 +316,17 @@ export function useDraft(): DraftForm {
         if (session.state !== "unlocked") {
           return undefined;
         }
+        await refuseIfChanged(records, draft.current);
         await records.put("journal-entry", entry);
         draft.current = undefined;
         return entry;
       } catch (error) {
+        if (error instanceof StaleRecordError) {
+          // The draft was changed somewhere else: the form says so and
+          // offers the latest version, as when a save is refused.
+          setOutOfDate(true);
+          setSaveError(error);
+        }
         // The entry was not stored, so the form is a draft again and the
         // next change is saved as one.
         finishing.current = false;

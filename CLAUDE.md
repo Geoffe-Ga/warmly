@@ -591,7 +591,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   (`src/domain/journal/drafts.ts`). The compose form saves through
   `useDraft`, which registers its flush with `services.lockHooks` and also
   flushes when the page is hidden or closed. Only the person finishing the
-  entry makes it complete. Autosave never calls AI or the network.
+  entry makes it complete. Autosave never calls AI or the network. Before
+  a draft is saved or finished, `useDraft` checks that the stored draft is
+  still what the form last read or stored (`refuseIfChanged`); if sync or
+  another tab changed it, the save is refused and the form offers the
+  latest version. Never write a draft without that check.
 - A completed entry is changed only through `editEntry`
   (`src/domain/journal/edit.ts`): it keeps the ID, creation time and day,
   applies the completion rule, and keeps no copy of the old text. A
