@@ -194,6 +194,7 @@ const PLAN: readonly Swept[] = [
     sweeping(route.id, "empty", "unlocked, nothing written"),
   ),
   sweeping("help", "locked", "signed in, locked"),
+  sweeping("help", "error", "a browser that cannot add a device"),
   sweeping("home", "offline", "unlocked, no connection"),
   sweeping("locked", "offline", "locked, no connection"),
   sweeping("journal", "content", "an entry and a note"),
@@ -295,6 +296,27 @@ test.describe("the sweep (UI-001 to UI-008, AC-23)", () => {
     await openInApp(page, pathFor("help"));
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await sweep(page, "help", "locked", "signed in, locked");
+  });
+
+  test("the notice in a browser that cannot add a device", async ({ page }) => {
+    // The browser refuses the one algorithm the app needs to add a device
+    // (ADR-0005). Everything else it offers is left alone.
+    await page.addInitScript(() => {
+      const generateKey = crypto.subtle.generateKey.bind(crypto.subtle);
+      crypto.subtle.generateKey = ((...args: unknown[]) => {
+        const algorithm = args[0] as { name?: string } | string;
+        const name = typeof algorithm === "string" ? algorithm : algorithm.name;
+        return name === "Ed25519"
+          ? Promise.reject(new DOMException("no", "NotSupportedError"))
+          : (generateKey as (...all: unknown[]) => Promise<unknown>)(...args);
+      }) as typeof crypto.subtle.generateKey;
+    });
+    await page.goto(pathFor("help"));
+
+    await expect(page.getByRole("alert")).toContainText(
+      "cannot make the signature Warmly uses to add a device",
+    );
+    await sweep(page, "help", "error", "a browser that cannot add a device");
   });
 
   test("every private screen, unlocked, before anything is written", async ({

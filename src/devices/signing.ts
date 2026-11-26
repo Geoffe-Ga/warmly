@@ -132,6 +132,11 @@ async function enrollmentSigningKey(
 export async function deviceEnrollmentKey(
   root: RootKey,
 ): Promise<Uint8Array<ArrayBuffer>> {
+  // WebCrypto has no way to ask an Ed25519 private key for its public half
+  // except exporting it. The export also holds the private scalar (`d`),
+  // in a string that cannot be wiped, so it is used here only, for `x`,
+  // and never kept or passed on. Do not copy this for a key that is not
+  // already derivable from what the page holds.
   const jwk = await crypto.subtle.exportKey(
     "jwk",
     await enrollmentSigningKey(root, true),

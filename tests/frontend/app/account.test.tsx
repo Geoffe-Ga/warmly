@@ -245,6 +245,34 @@ describe("the recovery key never outlives its onboarding (DEV-006)", () => {
     expect(services.session.state).toBe("unlocked");
   });
 
+  it("keeps the recovery key on screen and saves nothing when the browser cannot finish making the keys", async () => {
+    const services = await atRecoveryKeyScreen();
+    // What a browser without Ed25519 does when the enrollment key is made
+    // (ADR-0005): the confirmation fails with an error the app has no
+    // words of its own for.
+    services.vault.confirmRecoveryKey = () =>
+      Promise.reject(
+        new DOMException("Unrecognized name.", "NotSupportedError"),
+      );
+
+    await fill("Type the last group of your key", "test");
+    await press("I've saved my key");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Couldn't continue");
+    // The browser's own words are never shown.
+    expect(alert.textContent).not.toContain("Unrecognized name");
+    expect(screen.getByTestId("recovery-key").textContent).toBe(
+      FAKE_RECOVERY_KEY,
+    );
+    expect(
+      screen.getByLabelText<HTMLInputElement>("Type the last group of your key")
+        .value,
+    ).toBe("test");
+    expect(services.session.state).toBe("signed_in_locked");
+    expect(await services.vault.accountHasKeys()).toBe(false);
+  });
+
   it("the keys are not saved until the user confirms the recovery key", async () => {
     const services = await atRecoveryKeyScreen();
 
