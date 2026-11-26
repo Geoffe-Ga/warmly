@@ -42,6 +42,7 @@ describe("route table", () => {
       "trust-device",
       "locked",
       "help",
+      "privacy",
     ]);
   });
 

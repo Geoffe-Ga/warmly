@@ -76,6 +76,9 @@ export function Boundaries(): JSX.Element {
       <Card heading="What Warmly checks, and what it cannot">
         <p>{WHAT_IS_CHECKED}</p>
       </Card>
+      <p>
+        <Link href={pathFor("privacy")}>Privacy and its limits</Link>
+      </p>
     </PageLayout>
   );
 }

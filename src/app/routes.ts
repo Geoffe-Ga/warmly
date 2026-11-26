@@ -41,7 +41,8 @@ export type RouteId =
   | "device-revoked"
   | "trust-device"
   | "locked"
-  | "help";
+  | "help"
+  | "privacy";
 
 /**
  * Who may see a screen:
@@ -301,6 +302,14 @@ export const ROUTES: readonly RouteDef[] = [
     title: "What Warmly is and is not",
     summary:
       "Warmly is a private journal and a memory aid. It is not therapy, a crisis service or a judge.",
+    access: "open",
+  },
+  {
+    id: "privacy",
+    path: "/privacy",
+    title: "Privacy and its limits",
+    summary:
+      "What Warmly keeps private, what it cannot, and what happens to what you write.",
     access: "open",
   },
 ];

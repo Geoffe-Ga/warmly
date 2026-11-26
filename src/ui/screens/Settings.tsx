@@ -69,6 +69,9 @@ export function Settings(): JSX.Element {
   return (
     <PageLayout title="Settings" lead="Your account and your recovery key.">
       <StatusSummary />
+      <p>
+        <Link href={pathFor("privacy")}>Privacy and its limits</Link>
+      </p>
       <Card heading="Recovery key">
         <p>
           Your recovery key opens your journal on a new device. If you think

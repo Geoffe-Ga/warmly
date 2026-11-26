@@ -86,6 +86,9 @@ src/                     TypeScript PWA: app/ (route table, router, shell), ui/ 
                          components), domain/ (record types and rules), storage/
                          (RecordStore, IndexedDB schema, outbox), main.tsx
                          (bootstrap + SW registration)
+docs/README.md           Index of every document, and what is not written yet
+docs/architecture/       Diagrams of the system, keys, sync and deletion
+docs/traceability.md     Generated: acceptance criteria and the tests citing them
 docs/adr/                Architecture Decision Records
 docs/security/           Threat model and security notes
 docs/runbooks/           How to do risky operational changes safely
@@ -208,6 +211,13 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   `scripts/release/secret-scan.sh` and `sast.sh`; no report from Bandit).
   `.gitleaks.toml` allows only public test vectors: never add a path that
   could hold a real key. New CI jobs pin their actions by commit.
+- `docs/traceability.md` is made by
+  `python -m scripts.release.traceability --write` from the PRD's
+  acceptance criteria and the IDs test files cite. Never edit it by
+  hand: a test fails when it is out of date, so run the command after
+  adding or removing a citation. It shows that a test names a criterion,
+  not that the test is enough. `docs/README.md` is the index of every
+  document and says which required ones are not written yet.
 
 ## Frontend conventions
 
@@ -537,6 +547,13 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   `tests/frontend/reflect/fixtures/injection-v1.json` holds journal text
   that tries to act as instructions: never edit it, add a new version.
   These tests prove the app's own controls, not how a model behaves.
+- What is private and where that ends is said in fixed words on the
+  privacy page (`src/ui/screens/help/privacy.tsx`, route `privacy`,
+  access `open`; PRD SEC-001, OPS-003). Each sentence is a promise about
+  the product: never write one the product does not keep, and never say
+  more than "the servers cannot read it". Its words on deleting are
+  `DELETING_STATUS`, so the page, Settings and the delete warning cannot
+  drift apart. A test pins the statements.
 - A Reflect session and all its questions and answers are one private
   record (kind `reflect-session`, envelope type 4), changed only through
   `ReflectSessions` (`src/domain/reflect/sessions.ts`), reached as
