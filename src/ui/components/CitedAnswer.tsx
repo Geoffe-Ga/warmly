@@ -4,7 +4,10 @@ import type { ReflectionAnswer, SourceRef } from "../../ai/contracts";
 import { Link } from "../../app/navigation";
 import { pathFor } from "../../app/routes";
 import type { JournalEntry } from "../../domain/journal/types";
-import type { PostConversationReflection } from "../../domain/post-conversation/types";
+import {
+  isAfterNote,
+  type PostConversationReflection,
+} from "../../domain/post-conversation/types";
 import { formatEntryDate } from "../screens/journal/shared";
 
 /** Said for a source whose entry has been changed since the answer. */
@@ -69,9 +72,8 @@ function entryFor(
   return entries.find((entry) => entry.id === ref.entryId);
 }
 
-/** A journal entry has a status; what is written after a conversation has none. */
 function isJournal(entry: Citable): entry is JournalEntry {
-  return "status" in entry;
+  return !isAfterNote(entry);
 }
 
 /** Where a citation's link leads: the screen of the thing it points into. */

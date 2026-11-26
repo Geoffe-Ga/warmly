@@ -15,7 +15,10 @@ import { Link, NavigationContext } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import type { JournalEntry } from "../../../domain/journal/types";
-import type { PostConversationReflection } from "../../../domain/post-conversation/types";
+import {
+  isAfterNote,
+  type PostConversationReflection,
+} from "../../../domain/post-conversation/types";
 import { askRequest, storeExchange } from "../../../domain/reflect/ask";
 import { EntryTooLargeError } from "../../../domain/reflect/context";
 import {
@@ -301,7 +304,7 @@ function Ask(props: {
                   entry === undefined
                     ? undefined
                     : formatEntryDate(entry.entryDate),
-                  entry !== undefined && !("status" in entry),
+                  entry !== undefined && isAfterNote(entry),
                 ),
               );
             } else if (error instanceof SessionTooLongError) {
@@ -327,7 +330,7 @@ function Ask(props: {
             {tooLong !== undefined && (
               <>
                 {" "}
-                {"status" in tooLong ? (
+                {!isAfterNote(tooLong) ? (
                   <Link href={pathFor("journal-entry", { id: tooLong.id })}>
                     Open that entry
                   </Link>

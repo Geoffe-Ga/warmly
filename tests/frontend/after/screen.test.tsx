@@ -16,7 +16,10 @@ import {
   NEW_AFTER,
   NOTHING_WRITTEN,
 } from "../../../src/ui/screens/journal/AfterConversation";
-import { describeSent } from "../../../src/ui/components/AiDisclosureDialog";
+import {
+  describeSent,
+  tooLongNote,
+} from "../../../src/ui/components/AiDisclosureDialog";
 import { coverageNote } from "../../../src/ui/components/CitedAnswer";
 import { dependentsWarning } from "../../../src/ui/screens/journal/dependents";
 import { entryTooLong } from "../../../src/ui/screens/reflect/Session";
@@ -345,6 +348,7 @@ describe("the words used for it", () => {
           omitted: 0,
           tooLong: 0,
           afterOmitted: 0,
+          afterTooLong: 0,
           earlierTurns: 0,
           also: "your question",
           estimatedTokens: 900,
@@ -374,6 +378,39 @@ describe("the words used for it", () => {
       "2 of the 5 journal entries you had",
     );
   });
+
+  it.each([
+    [
+      1,
+      1,
+      "1 note written after a conversation is too long to send in one request, so it is left out. Warmly sends each whole, never part of one.",
+    ],
+    [
+      3,
+      3,
+      "3 notes written after conversations are too long to send in one request, so they are left out. Warmly sends each whole, never part of one.",
+    ],
+    [
+      2,
+      1,
+      "1 entry and 1 note written after a conversation are too long to send in one request, so they are left out. Warmly sends each whole, never part of one.",
+    ],
+    [
+      1,
+      0,
+      "1 entry is too long to send in one request, so it is left out. Warmly sends whole entries only, never part of one.",
+    ],
+    [
+      1200,
+      0,
+      "1,200 entries are too long to send in one request, so they are left out. Warmly sends whole entries only, never part of one.",
+    ],
+  ])(
+    "never call it an entry when it is left out for being too long: %i left out, %i of them notes",
+    (count, after, text) => {
+      expect(tooLongNote(count, after)).toBe(text);
+    },
+  );
 
   it("never call it an entry when it is too long to send", () => {
     expect(entryTooLong("20 November 2026", true)).toBe(

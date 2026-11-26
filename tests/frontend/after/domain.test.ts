@@ -11,6 +11,8 @@ import {
   groundReflection,
 } from "../../../src/ai/grounding";
 import { POLICY_RESERVE_TOKENS } from "../../../src/ai/config";
+import { FakeProvider } from "../../../src/ai/fake-provider";
+import { AiGateway } from "../../../src/ai/gateway";
 import { buildManifest } from "../../../src/ai/manifest";
 import { reflectTexts } from "../../../src/ai/prompts/reflect";
 import { promptFor } from "../../../src/ai/manifest";
@@ -28,11 +30,13 @@ import {
   AFTER_PROMPTS,
   canSaveAfter,
   canonicalAfter,
+  isAfterNote,
   isPostConversationReflection,
   newAfter,
   type PostConversationReflection,
 } from "../../../src/domain/post-conversation/types";
 import { askRequest } from "../../../src/domain/reflect/ask";
+import { selectContext } from "../../../src/domain/reflect/context";
 import { RecordReflectSessions } from "../../../src/domain/reflect/sessions";
 import { OUTBOX, RECORDS, type StoredRecord } from "../../../src/storage/db";
 import { MemoryRecordStore } from "../../../src/storage/record-store";
@@ -303,6 +307,114 @@ describe("it is sent to Reflect labelled as what it is (PC-004)", () => {
     });
   });
 
+  it("says which of the things too long to send are notes, and still sends the rest", async () => {
+    const entry = {
+      ...(await newEntry({ good: "Short.", improve: "b", loved: "c" })),
+      status: "complete" as const,
+    };
+    const long = await newAfter(
+      { went_well: "LONG ".repeat(50), difficult: "", remember: "" },
+      AT,
+    );
+
+    const request = askRequest({
+      question: "What helped?",
+      entries: [entry],
+      after: [long],
+      session: undefined,
+      // An ordinary piece of writing is sized at 10; the long note at 500.
+      // The room for writing is 85, so the entry fits and the note cannot.
+      sizing: {
+        budget: {
+          maxInputTokens: POLICY_RESERVE_TOKENS + 5 + 100,
+          maxOutputTokens: 0,
+          timeoutMs: 1000,
+        },
+        estimate: (sized) =>
+          5 +
+          sized.entries.reduce(
+            (sum, each) => sum + ("kind" in each ? 500 : 10),
+            0,
+          ),
+      },
+    });
+
+    expect(request.entries.map((each) => each.id)).toEqual([entry.id]);
+    expect(request.coverage).toEqual({
+      truncated: true,
+      omittedEntryCount: 1,
+      tooLong: 1,
+      afterOmitted: 1,
+      afterTooLong: 1,
+    });
+    const disclosure = new AiGateway(new FakeProvider()).disclose(request);
+    expect(disclosure).toMatchObject({
+      entries: 1,
+      after: 0,
+      omitted: 1,
+      afterOmitted: 1,
+      tooLong: 1,
+      afterTooLong: 1,
+    });
+  });
+
+  it("is chosen among by the same rule as an entry: the kind changes nothing", async () => {
+    // Twelve pieces of writing, one a day. Once as entries only, once with
+    // every third one a note instead. The same days must be chosen.
+    const days = Array.from({ length: 12 }, (_, index) => index + 1);
+    const when = (day: number): Date =>
+      new Date(`2026-10-${String(day).padStart(2, "0")}T10:00:00.000Z`);
+    const text = (day: number): string => `Day ${String(day)} dinner`;
+    const asEntry = async (day: number) => ({
+      ...(await newEntry(
+        { good: text(day), improve: "", loved: "" },
+        when(day),
+      )),
+      status: "complete" as const,
+    });
+    const asNote = (day: number) =>
+      newAfter(
+        { went_well: text(day), difficult: "", remember: "" },
+        when(day),
+      );
+    const input = {
+      question: "dinner on day 3",
+      budget: 5,
+      estimate: () => 1,
+    };
+
+    const plain = selectContext({
+      ...input,
+      entries: await Promise.all(days.map(asEntry)),
+    });
+    const mixed = selectContext({
+      ...input,
+      entries: await Promise.all(
+        days.map((day) => (day % 3 === 0 ? asNote(day) : asEntry(day))),
+      ),
+    });
+
+    expect(mixed.entries.map((each) => each.entryDate.date)).toEqual(
+      plain.entries.map((each) => each.entryDate.date),
+    );
+    expect(mixed.entries).toHaveLength(5);
+    expect(mixed.coverage.omittedEntryCount).toBe(7);
+    expect(plain.coverage.omittedEntryCount).toBe(7);
+  });
+
+  it("is told from a journal entry by one rule, which the stored form enforces", async () => {
+    const entry = await newEntry({ good: "a", improve: "b", loved: "c" });
+    const note = await newAfter(WORDS, AT);
+
+    expect(isAfterNote(note)).toBe(true);
+    expect(isAfterNote(entry)).toBe(false);
+    expect(isAfterNote({ ...entry, status: "draft" })).toBe(false);
+    // A note can never come to have a status: such a record is not a note.
+    expect(isPostConversationReflection({ ...note, status: "complete" })).toBe(
+      false,
+    );
+  });
+
   it("alone, with no journal entry, is enough to ask about", async () => {
     const after = await newAfter(WORDS, AT);
 
@@ -400,6 +512,21 @@ describe("it syncs like any private record (SYNC-001, SYNC-005)", () => {
       )
       .join("");
     expect(held).not.toContain("CANARY");
+  });
+
+  it("is read back from its stored envelope after the app is closed and opened again", async () => {
+    const server = new MemoryServer();
+    const first = await device(server);
+    const made = await createAfter(first.store, WORDS, AT);
+
+    // The same local database, opened afresh, as after a restart.
+    const again = await device(server, undefined, { name: first.name });
+
+    expect(await again.store.get("post-conversation", made.id)).toEqual(made);
+    // It is bound to its own type: it is not found as any other kind.
+    expect(await again.store.get("journal-entry", made.id)).toBeUndefined();
+    expect(await again.store.list("journal-entry")).toEqual([]);
+    expect(await again.store.unreadable("journal-entry")).toBe(0);
   });
 
   it("keeps both versions when changed on two devices, until one is chosen", async () => {

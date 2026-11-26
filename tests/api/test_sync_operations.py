@@ -122,6 +122,24 @@ def test_records_belong_to_the_account_in_the_token(
     assert {owner for owner, _record in sync_store.records} == {UUID(OWNER_ID)}
 
 
+@pytest.mark.parametrize("record_type", [0, 1, 2, 3, 4, 5, 255])
+def test_any_type_number_in_range_is_stored_without_being_interpreted(
+    client: TestClient, sync_store: InMemorySyncStore, record_type: int
+) -> None:
+    """The type is opaque: a new kind of record needs no server change.
+
+    The app gives each kind of private record a number (a journal entry,
+    a card, a note written after a conversation, and so on). The server
+    keeps the number and never reads meaning into it.
+    """
+    record_id = f"77777777-7777-4777-8777-{record_type:012d}"
+
+    results = _send(client, _op(record_type, record_id=record_id, type=record_type))
+
+    assert [result["status"] for result in results] == ["applied"]
+    assert (UUID(OWNER_ID), UUID(record_id)) in sync_store.records
+
+
 @pytest.mark.parametrize(
     "field", ["owner_id", "owner", "account_id", "device_id", "revision"]
 )

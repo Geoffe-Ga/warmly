@@ -34,15 +34,41 @@ export const NOT_EVERYTHING =
   "Your whole journal does not fit in one request. Warmly chose your newest entries, the ones that share words with your question, and a spread of older ones. The answer can only be about the entries that are sent.";
 
 /**
- * Said when entries are left out because each is too long to send at all.
+ * Said when things are left out because each is too long to send at all.
+ * A note written after a conversation is named as that, never as an
+ * entry (PRD PC-004).
  *
- * @param count - How many such entries there are.
+ * @param count - How many such things there are, of both kinds.
+ * @param after - How many of them are notes written after a conversation.
  * @returns The sentence.
  */
-export function tooLongNote(count: number): string {
+export function tooLongNote(count: number, after = 0): string {
+  const entries = count - after;
+  const things = [
+    countOf(entries, "entry", "entries"),
+    countOf(
+      after,
+      "note written after a conversation",
+      "notes written after conversations",
+    ),
+  ]
+    .filter((each) => each !== undefined)
+    .join(" and ");
+  const whole =
+    after === 0
+      ? "Warmly sends whole entries only, never part of one."
+      : "Warmly sends each whole, never part of one.";
   return count === 1
-    ? "1 entry is too long to send in one request, so it is left out. Warmly sends whole entries only, never part of one."
-    : `${count.toLocaleString("en-US")} entries are too long to send in one request, so they are left out. Warmly sends whole entries only, never part of one.`;
+    ? `${things} is too long to send in one request, so it is left out. ${whole}`
+    : `${things} are too long to send in one request, so they are left out. ${whole}`;
+}
+
+/** "1 entry", "1,200 entries", or nothing when there are none. */
+function countOf(count: number, one: string, many: string): string | undefined {
+  if (count <= 0) {
+    return undefined;
+  }
+  return count === 1 ? `1 ${one}` : `${count.toLocaleString("en-US")} ${many}`;
 }
 
 /** Said when a request cannot be described, so cannot be agreed to. */
@@ -211,7 +237,9 @@ export function AiDisclosureDialog(
         {disclosure.provider}, as readable text.
       </p>
       {disclosure.omitted > disclosure.tooLong && <p>{NOT_EVERYTHING}</p>}
-      {disclosure.tooLong > 0 && <p>{tooLongNote(disclosure.tooLong)}</p>}
+      {disclosure.tooLong > 0 && (
+        <p>{tooLongNote(disclosure.tooLong, disclosure.afterTooLong)}</p>
+      )}
       {disclosure.large && (
         <p>
           This is a large request (about{" "}

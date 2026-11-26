@@ -18,7 +18,10 @@ import type {
   SourceEntry,
 } from "../../ai/provider";
 import type { JournalEntry } from "../journal/types";
-import type { PostConversationReflection } from "../post-conversation/types";
+import {
+  isAfterNote,
+  type PostConversationReflection,
+} from "../post-conversation/types";
 import { EntryTooLargeError, selectContext, type Selection } from "./context";
 
 /**
@@ -93,7 +96,7 @@ export type Sendable = JournalEntry | PostConversationReflection;
  * answer to the journal's questions (PRD PC-004).
  */
 function sourceOf(written: Sendable): SourceEntry {
-  if ("status" in written) {
+  if (!isAfterNote(written)) {
     return {
       id: written.id,
       contentHash: written.contentHash,
@@ -193,10 +196,11 @@ export function reflectRequest(
       : blamingTheSession(select, () => {
           reflectRequest(question, entries, sizing, [], after);
         });
-  const afterSent = selection.entries.filter(
-    (each) => !("status" in each),
-  ).length;
-  const afterOmitted = after.length - afterSent;
+  // Counted from what was really left out, not worked out by subtraction.
+  const sent = new Set(selection.entries.map((each) => each.id));
+  const afterOmitted = after.filter((note) => !sent.has(note.id)).length;
+  const tooLong = new Set(selection.tooLong);
+  const afterTooLong = after.filter((note) => tooLong.has(note.id)).length;
   return {
     ...empty,
     entries: selection.entries.map(sourceOf),
@@ -209,6 +213,7 @@ export function reflectRequest(
               ? { tooLong: selection.tooLong.length }
               : {}),
             ...(afterOmitted > 0 ? { afterOmitted } : {}),
+            ...(afterTooLong > 0 ? { afterTooLong } : {}),
           },
         }
       : {}),

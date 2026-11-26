@@ -78,6 +78,11 @@ export interface RequestCoverage {
    * right name. Absent when none were.
    */
   readonly afterOmitted?: number;
+  /**
+   * How many of {@link RequestCoverage.tooLong} are such notes. Absent
+   * when none were.
+   */
+  readonly afterTooLong?: number;
 }
 
 /**
@@ -102,6 +107,17 @@ export interface ReflectRequest {
   readonly history?: readonly EarlierTurn[];
   /** What was left out, if anything. Nothing was, when this is absent. */
   readonly coverage?: RequestCoverage;
+}
+
+/**
+ * Whether a source is a note written after a conversation, not a journal
+ * entry.
+ *
+ * @param source - One entry of a request.
+ * @returns Whether it is labelled `post_conversation`.
+ */
+export function isAfterSource(source: SourceEntry): source is AfterSource {
+  return "kind" in source;
 }
 
 /** A request for conversation cards built from chosen entries. */

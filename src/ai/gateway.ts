@@ -35,13 +35,14 @@ import { AiBusyError, NoProviderError, RequestTooLargeError } from "./errors";
 import { FakeProvider } from "./fake-provider";
 import { groundAlternatives, groundCards, groundReflection } from "./grounding";
 import { buildManifest, promptFor, type Manifest } from "./manifest";
-import type {
-  AIProvider,
-  AiRequest,
-  CardsRequest,
-  ConfigCheck,
-  ReflectRequest,
-  SegmentAlternativesRequest,
+import {
+  isAfterSource,
+  type AIProvider,
+  type AiRequest,
+  type CardsRequest,
+  type ConfigCheck,
+  type ReflectRequest,
+  type SegmentAlternativesRequest,
 } from "./provider";
 
 // The type of a consent token, for code that passes one through without
@@ -87,6 +88,8 @@ export interface Disclosure {
   readonly after: number;
   /** How many of {@link Disclosure.omitted} are such notes. */
   readonly afterOmitted: number;
+  /** How many of {@link Disclosure.tooLong} are such notes. */
+  readonly afterTooLong: number;
   /** What else is included, in the person's own words elsewhere on screen. */
   readonly also: "your question" | "your topic" | "the wording you chose";
   /**
@@ -195,11 +198,11 @@ export class AiGateway {
           : 0,
       tooLong:
         request.kind === "reflect" ? (request.coverage?.tooLong ?? 0) : 0,
-      after: request.entries.filter(
-        (entry) => "kind" in entry && entry.kind === "post_conversation",
-      ).length,
+      after: request.entries.filter(isAfterSource).length,
       afterOmitted:
         request.kind === "reflect" ? (request.coverage?.afterOmitted ?? 0) : 0,
+      afterTooLong:
+        request.kind === "reflect" ? (request.coverage?.afterTooLong ?? 0) : 0,
       also: ALSO[request.kind],
       earlierTurns:
         request.kind === "reflect" ? (request.history ?? []).length : 0,

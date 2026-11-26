@@ -10,7 +10,11 @@
  * outcome, no rating, and no link to the cards that were used.
  */
 import { utf8 } from "../../crypto/encoding";
-import { entryDateFor, type EntryDate } from "../journal/types";
+import {
+  entryDateFor,
+  type EntryDate,
+  type JournalEntry,
+} from "../journal/types";
 
 /** The three answers' names, as they are stored and cited. */
 export type AfterKey = "went_well" | "difficult" | "remember";
@@ -45,6 +49,23 @@ export interface PostConversationReflection {
   readonly responses: AfterResponses;
   /** Hash of the three answers; see {@link afterContentHash}. */
   readonly contentHash: string;
+}
+
+/**
+ * Tell a note written after a conversation from a journal entry.
+ *
+ * A journal entry always has a `status`; a note never does, and a stored
+ * record with one is refused as a note ({@link isPostConversationReflection}).
+ * Every place that needs to know which kind it holds asks here, so there
+ * is one rule and one test for it.
+ *
+ * @param written - A journal entry or a note.
+ * @returns Whether it is a note written after a conversation.
+ */
+export function isAfterNote(
+  written: JournalEntry | PostConversationReflection,
+): written is PostConversationReflection {
+  return !("status" in written);
 }
 
 /** What the person is shown in lists, in place of "journal entry". */

@@ -139,3 +139,14 @@ what the model writes, which is what makes AC-09 hold.
 - The shares and the margin are constants (`SHARES`, `ESTIMATE_MARGIN`).
   Changing them changes which entries are sent, so it should be a recorded
   decision, not a tuning tweak.
+
+## Amendment: notes written after a conversation (issue #62, decision D-22)
+
+Reflect also sends notes written after a conversation (PRD PC-004). They
+are chosen among together with journal entries, by the same rule and from
+the same room: `selectContext` works on anything with an ID, a day, a
+creation time and answers, and does not look at which kind it holds.
+`SHARES` and `ESTIMATE_MARGIN` are unchanged. A note is sent whole or not
+at all, like an entry. What differs is only how a note is labelled when
+it is sent and how it is counted when the person is told what will be
+sent or what was left out: always as a note, never as an entry.
