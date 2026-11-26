@@ -20,15 +20,43 @@
 export type ProviderId = "fake" | "openai" | "anthropic";
 
 /** The three answers of a journal entry. */
-export type ResponseKey = "good" | "improve" | "loved";
+export type JournalResponseKey = "good" | "improve" | "loved";
 
-/** One journal entry the person chose to send. */
-export interface SourceEntry {
+/** The three answers of a reflection written after a conversation. */
+export type AfterResponseKey = "went_well" | "difficult" | "remember";
+
+/**
+ * Any answer that can be cited. The two kinds of writing use different
+ * names on purpose, so that something written after a conversation can
+ * never be read as an answer to one of the journal's questions (PRD
+ * PC-004; decision D-22).
+ */
+export type ResponseKey = JournalResponseKey | AfterResponseKey;
+
+/** One journal entry that is sent. */
+export interface JournalSource {
   readonly id: string;
   /** The entry's content hash, so an answer can be tied to what was sent. */
   readonly contentHash: string;
-  readonly responses: Readonly<Record<ResponseKey, string>>;
+  /** Absent for a journal entry, which is the usual kind. */
+  readonly kind?: "journal_entry";
+  readonly responses: Readonly<Record<JournalResponseKey, string>>;
 }
+
+/** One reflection written after a conversation that is sent. */
+export interface AfterSource {
+  readonly id: string;
+  /** Its content hash, so an answer can be tied to what was sent. */
+  readonly contentHash: string;
+  readonly kind: "post_conversation";
+  readonly responses: Readonly<Record<AfterResponseKey, string>>;
+}
+
+/** One piece of the person's own writing that is sent. */
+export type SourceEntry = JournalSource | AfterSource;
+
+/** The text of a source, under whichever names its kind uses. */
+export type SourceResponses = SourceEntry["responses"];
 
 /** How much of the journal a Reflect request covers. */
 export interface RequestCoverage {
@@ -44,6 +72,17 @@ export interface RequestCoverage {
    * long to send in one request at all. Absent when none were.
    */
   readonly tooLong?: number;
+  /**
+   * How many of the omitted entries are notes written after a
+   * conversation, so the person can be told what was left out by its
+   * right name. Absent when none were.
+   */
+  readonly afterOmitted?: number;
+  /**
+   * How many of {@link RequestCoverage.tooLong} are such notes. Absent
+   * when none were.
+   */
+  readonly afterTooLong?: number;
 }
 
 /**
@@ -68,6 +107,17 @@ export interface ReflectRequest {
   readonly history?: readonly EarlierTurn[];
   /** What was left out, if anything. Nothing was, when this is absent. */
   readonly coverage?: RequestCoverage;
+}
+
+/**
+ * Whether a source is a note written after a conversation, not a journal
+ * entry.
+ *
+ * @param source - One entry of a request.
+ * @returns Whether it is labelled `post_conversation`.
+ */
+export function isAfterSource(source: SourceEntry): source is AfterSource {
+  return source.kind === "post_conversation";
 }
 
 /** A request for conversation cards built from chosen entries. */
@@ -97,7 +147,12 @@ export type AiRequest =
 export interface AliasedSource {
   /** The entry's name in this request, for example `E1`. */
   readonly alias: string;
-  readonly responses: Readonly<Record<ResponseKey, string>>;
+  /**
+   * Present only for something written after a conversation, so that a
+   * provider labels it as such and does not treat it as a journal entry.
+   */
+  readonly kind?: "post_conversation";
+  readonly responses: SourceResponses;
 }
 
 /** A Reflect request as a provider is given it. */

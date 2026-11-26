@@ -21,8 +21,23 @@
  * chosen. The result is given oldest first.
  */
 import type { RequestCoverage } from "../../ai/provider";
-import type { JournalEntry } from "../journal/types";
+import type { EntryDate } from "../journal/types";
 import { tokenize } from "../search/tokenize";
+
+/**
+ * Something the person wrote that can be sent: a journal entry, or a
+ * reflection written after a conversation. A journal entry that is still
+ * a draft is never sent.
+ */
+export interface ContextDocument {
+  readonly id: string;
+  readonly createdAt: string;
+  readonly entryDate: EntryDate;
+  /** Only journal entries have one; a draft is left out. */
+  readonly status?: string;
+  /** Its answers, under whatever names its kind uses. */
+  readonly responses: Readonly<Record<string, string>>;
+}
 
 /** The share of the budget each part may spend. */
 export const SHARES = { newest: 0.6, relevant: 0.2, spread: 0.2 } as const;
@@ -44,9 +59,9 @@ export class EntryTooLargeError extends Error {
 }
 
 /** What was chosen, and what that leaves out. */
-export interface Selection {
+export interface Selection<T extends ContextDocument = ContextDocument> {
   /** The entries to send, oldest first. */
-  readonly entries: readonly JournalEntry[];
+  readonly entries: readonly T[];
   /** How many finished entries there were to choose from. */
   readonly total: number;
   /**
@@ -59,8 +74,8 @@ export interface Selection {
   };
 }
 
-interface Sized {
-  readonly entry: JournalEntry;
+interface Sized<T extends ContextDocument = ContextDocument> {
+  readonly entry: T;
   readonly size: number;
   /** Position in the journal, oldest first. */
   readonly at: number;
@@ -76,15 +91,21 @@ function sizeOf(estimate: number): number {
     : Number.POSITIVE_INFINITY;
 }
 
-function inOrder(entries: readonly JournalEntry[]): JournalEntry[] {
-  return entries
-    .filter((entry) => entry.status === "complete")
-    .sort(
-      (a, b) =>
-        a.entryDate.date.localeCompare(b.entryDate.date) ||
-        a.createdAt.localeCompare(b.createdAt) ||
-        a.id.localeCompare(b.id),
-    );
+function inOrder<T extends ContextDocument>(entries: readonly T[]): T[] {
+  return (
+    entries
+      // Sent only if finished: a note, which has no status, or an entry
+      // marked complete. Any other status is left out, whatever it is.
+      .filter(
+        (entry) => entry.status === undefined || entry.status === "complete",
+      )
+      .sort(
+        (a, b) =>
+          a.entryDate.date.localeCompare(b.entryDate.date) ||
+          a.createdAt.localeCompare(b.createdAt) ||
+          a.id.localeCompare(b.id),
+      )
+  );
 }
 
 function wordsOf(text: string): Set<string> {
@@ -92,10 +113,11 @@ function wordsOf(text: string): Set<string> {
 }
 
 /** How many of the question's words an entry uses. */
-function overlap(question: ReadonlySet<string>, entry: JournalEntry): number {
-  const words = wordsOf(
-    `${entry.responses.good} ${entry.responses.improve} ${entry.responses.loved}`,
-  );
+function overlap(
+  question: ReadonlySet<string>,
+  entry: ContextDocument,
+): number {
+  const words = wordsOf(Object.values(entry.responses).join(" "));
   let shared = 0;
   for (const word of question) {
     if (words.has(word)) {
@@ -138,7 +160,7 @@ class Chosen {
   }
 
   /** The chosen entries, oldest first. */
-  from(all: readonly Sized[]): Sized[] {
+  from<S extends Sized>(all: readonly S[]): S[] {
     return all.filter((item) => this.has(item));
   }
 }
@@ -228,14 +250,14 @@ function topUp(all: readonly Sized[], chosen: Chosen): void {
  *   there. An entry whose size cannot be worked out is treated the same.
  * @throws EntryTooLargeError if there are entries and none of them fits.
  */
-export function selectContext(input: {
-  readonly entries: readonly JournalEntry[];
+export function selectContext<T extends ContextDocument>(input: {
+  readonly entries: readonly T[];
   readonly question: string;
-  readonly estimate: (entry: JournalEntry) => number;
+  readonly estimate: (entry: T) => number;
   readonly budget: number;
-}): Selection {
+}): Selection<T> {
   const budget = Math.max(0, Math.floor(input.budget));
-  const all: Sized[] = inOrder(input.entries).map((entry, at) => ({
+  const all: Sized<T>[] = inOrder(input.entries).map((entry, at) => ({
     entry,
     at,
     size: sizeOf(input.estimate(entry)),

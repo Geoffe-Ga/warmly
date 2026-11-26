@@ -9,6 +9,7 @@
  */
 import type { EarlierTurn, ReflectRequest } from "../../ai/provider";
 import type { JournalEntry } from "../journal/types";
+import type { PostConversationReflection } from "../post-conversation/types";
 import { reflectRequest, type RequestSizing } from "./request";
 import {
   SessionFinishedError,
@@ -73,12 +74,15 @@ export function askRequest(input: {
   readonly entries: readonly JournalEntry[];
   readonly session: ReflectSession | undefined;
   readonly sizing: RequestSizing | undefined;
+  /** The reflections written after conversations, if any. */
+  readonly after?: readonly PostConversationReflection[];
 }): ReflectRequest {
   return reflectRequest(
     input.question,
     input.entries,
     input.sizing,
     historyOf(input.session),
+    input.after ?? [],
   );
 }
 

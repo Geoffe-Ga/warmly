@@ -79,7 +79,14 @@ export const CARD_TYPES = [
 /** One of {@link CARD_TYPES}. */
 export type CardType = (typeof CARD_TYPES)[number];
 
-const RESPONSE_KEYS = ["good", "improve", "loved"] as const;
+const RESPONSE_KEYS = [
+  "good",
+  "improve",
+  "loved",
+  "went_well",
+  "difficult",
+  "remember",
+] as const;
 
 /** The fixed limits an answer must fit. One over any of them is invalid. */
 export const LIMITS = {

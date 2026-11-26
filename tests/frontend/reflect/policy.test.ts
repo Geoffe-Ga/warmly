@@ -32,6 +32,11 @@ const RULES: readonly (readonly [
     "AI-013",
     "Never present it as proof of what objectively happened",
   ],
+  [
+    "a note written after a conversation is not a journal answer",
+    "PC-004",
+    'A "post_conversation" is a separate note the person chose to write after a conversation.',
+  ],
   ["no verdict on who is right", "RF-012", "Give no verdict on who is right."],
   ["no diagnosis", "AI-013, RF-012", "Do not diagnose anyone."],
   [

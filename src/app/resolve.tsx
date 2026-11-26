@@ -38,6 +38,7 @@ import { ConflictReview } from "../ui/screens/sync/ConflictReview";
 import { redirectFor } from "./access";
 import { matchRoute } from "./router";
 import { Boundaries } from "../ui/screens/help/boundaries";
+import { AfterConversation } from "../ui/screens/journal/AfterConversation";
 import type { RouteDef, RouteId, RouteParams } from "./routes";
 import type { SessionState } from "./session";
 
@@ -65,6 +66,7 @@ const SCREENS: Readonly<
   "journal-new": Compose,
   "journal-entry": Entry,
   "journal-edit": EditEntry,
+  "after-conversation": AfterConversation,
   "sync-conflicts": ConflictReview,
   reflect: Landing,
   "reflect-session": Session,

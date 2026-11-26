@@ -2,51 +2,54 @@ import type { JSX } from "preact";
 import { useMemo } from "preact/hooks";
 
 import { SearchIndex, parseQuery } from "../../../domain/search";
-import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
 
-/** One entry that matched, with a piece of its text around the match. */
-export interface JournalMatch {
-  readonly entry: JournalEntry;
+/** Something in the timeline that can be searched. */
+export interface Searchable {
+  readonly id: string;
+  /** Its pieces of text, in the order they should be quoted. */
+  readonly fields: readonly string[];
+}
+
+/** One item that matched, with a piece of its text around the match. */
+export interface JournalMatch<T extends Searchable> {
+  readonly item: T;
   readonly snippet: string;
 }
 
 /** The outcome of looking for what was typed in the search box. */
-export interface JournalSearch {
+export interface JournalSearch<T extends Searchable = Searchable> {
   /**
    * Whether there is anything to look for. A box that is empty, or holds
    * only spaces, punctuation or emoji, has no words to search with.
    */
   readonly searching: boolean;
-  /** The matching entries, in the order the entries were given. */
-  readonly matches: readonly JournalMatch[];
+  /** What matched, in the order the items were given. */
+  readonly matches: readonly JournalMatch<T>[];
 }
 
 /**
- * Search completed journal entries for what was typed (PRD JR-010).
+ * Search the timeline for what was typed (PRD JR-010, PC-001).
  *
- * The index is built in memory from the entries passed in, and built again
+ * The index is built in memory from the items passed in, and built again
  * whenever they change. It is held only by the screen that is showing, so
  * it is gone as soon as the app locks. Nothing is stored and nothing is
  * sent anywhere; searching never calls AI.
  *
- * @param entries - The entries to search, in the order to show them.
+ * @param items - What to search, in the order to show it.
  * @param query - What is typed in the search box.
  * @returns Whether a search is under way, and what it found.
  */
-export function useJournalSearch(
-  entries: readonly JournalEntry[],
+export function useJournalSearch<T extends Searchable>(
+  items: readonly T[],
   query: string,
-): JournalSearch {
+): JournalSearch<T> {
   const index = useMemo(() => {
     const built = new SearchIndex();
-    for (const entry of entries) {
-      built.add({
-        id: entry.id,
-        fields: PROMPTS.map((prompt) => entry.responses[prompt.key]),
-      });
+    for (const item of items) {
+      built.add({ id: item.id, fields: item.fields });
     }
     return built;
-  }, [entries]);
+  }, [items]);
 
   return useMemo(() => {
     if (parseQuery(query).prefix === undefined) {
@@ -57,12 +60,12 @@ export function useJournalSearch(
     );
     return {
       searching: true,
-      matches: entries.flatMap((entry) => {
-        const snippet = snippets.get(entry.id);
-        return snippet === undefined ? [] : [{ entry, snippet }];
+      matches: items.flatMap((item) => {
+        const snippet = snippets.get(item.id);
+        return snippet === undefined ? [] : [{ item, snippet }];
       }),
     };
-  }, [index, entries, query]);
+  }, [index, items, query]);
 }
 
 /**

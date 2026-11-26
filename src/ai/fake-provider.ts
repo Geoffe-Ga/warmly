@@ -37,8 +37,6 @@ function cancelled(signal: AbortSignal): Promise<void> {
     : Promise.resolve();
 }
 
-const KEYS: readonly ResponseKey[] = ["good", "improve", "loved"];
-
 /** The most entries the stand-in quotes, which is also the most cards. */
 const QUOTED = 3;
 
@@ -49,10 +47,11 @@ const QUOTED = 3;
 function quoteFrom(
   source: AliasedSource,
 ): { alias: string; key: ResponseKey; quote: string } | undefined {
-  for (const key of KEYS) {
-    const quote = source.responses[key].trim().slice(0, 40).trim();
+  for (const [key, text] of Object.entries(source.responses)) {
+    const quote = text.trim().slice(0, 40).trim();
     if (quote !== "") {
-      return { alias: source.alias, key, quote };
+      // The names are those of the source's own kind.
+      return { alias: source.alias, key: key as ResponseKey, quote };
     }
   }
   return undefined;

@@ -9,6 +9,7 @@
  */
 import { isCardCollection, isConversationCard } from "../domain/cards/types";
 import { isJournalEntry } from "../domain/journal/types";
+import { isPostConversationReflection } from "../domain/post-conversation/types";
 import { isReflectSession } from "../domain/reflect/types";
 import {
   DecryptError,
@@ -74,6 +75,11 @@ const FORMATS: { readonly [K in RecordKind]: KindFormat<K> } = {
     isValid: isConversationCard,
   },
   "reflect-session": { type: 4, schemaVersion: 1, isValid: isReflectSession },
+  "post-conversation": {
+    type: 5,
+    schemaVersion: 1,
+    isValid: isPostConversationReflection,
+  },
 };
 
 const KINDS = Object.keys(FORMATS) as RecordKind[];
@@ -207,12 +213,14 @@ async function openStore(
       "card-collection": new Map(),
       "conversation-card": new Map(),
       "reflect-session": new Map(),
+      "post-conversation": new Map(),
     },
     unreadable: {
       "journal-entry": new Set(),
       "card-collection": new Set(),
       "conversation-card": new Set(),
       "reflect-session": new Set(),
+      "post-conversation": new Set(),
     },
     superseded: false,
   };

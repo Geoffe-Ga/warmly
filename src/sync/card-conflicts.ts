@@ -13,6 +13,7 @@
  */
 import { keptCardsCollection } from "../domain/cards/collections";
 import type { CardCollection, ConversationCard } from "../domain/cards/types";
+import type { PostConversationReflection } from "../domain/post-conversation/types";
 import type { ReflectSession } from "../domain/reflect/types";
 import type {
   Keep,
@@ -52,11 +53,20 @@ export interface SessionConflict extends Base {
   readonly theirs?: ReflectSession;
 }
 
+/** Something written after a conversation, with two versions. */
+export interface AfterConflict extends Base {
+  readonly record: "post-conversation";
+  readonly mine?: PostConversationReflection;
+  readonly theirs?: PostConversationReflection;
+}
+
 /**
- * A collection, a card or a Reflect session waiting for the person to
- * choose a version. (The name is from when this covered cards only.)
+ * A collection, a card, a Reflect session or something written after a
+ * conversation, waiting for the person to choose a version. (The name is
+ * from when this covered cards only.)
  */
-export type CardsConflict = CollectionConflict | CardConflict | SessionConflict;
+export type CardsConflict =
+  CollectionConflict | CardConflict | SessionConflict | AfterConflict;
 
 function kindOf(found: RecordConflict<unknown>): ConflictKind {
   if (found.mine !== undefined && found.theirs !== undefined) {
@@ -86,20 +96,23 @@ function describe<R extends CardsConflict["record"], T>(
  * The collections and cards waiting for the person to choose a version.
  *
  * @param records - The record store.
- * @returns Collections first, then cards, then Reflect sessions.
+ * @returns Collections first, then cards, then Reflect sessions, then
+ *   what was written after conversations.
  */
 export async function listCardConflicts(
   records: RecordStore,
 ): Promise<CardsConflict[]> {
-  const [collections, cards, sessions] = await Promise.all([
+  const [collections, cards, sessions, after] = await Promise.all([
     records.conflicts("card-collection"),
     records.conflicts("conversation-card"),
     records.conflicts("reflect-session"),
+    records.conflicts("post-conversation"),
   ]);
   return [
     ...collections.map((found) => describe("card-collection", found)),
     ...cards.map((found) => describe("conversation-card", found)),
     ...sessions.map((found) => describe("reflect-session", found)),
+    ...after.map((found) => describe("post-conversation", found)),
   ];
 }
 
@@ -187,6 +200,13 @@ export async function keepAsNew(
   } else if (conflict.record === "reflect-session") {
     // The same questions and answers, as a separate reflection.
     await records.put("reflect-session", {
+      ...conflict.mine,
+      id,
+      updatedAt: at,
+    });
+  } else if (conflict.record === "post-conversation") {
+    // The same words, written on the same day, under a new ID.
+    await records.put("post-conversation", {
       ...conflict.mine,
       id,
       updatedAt: at,

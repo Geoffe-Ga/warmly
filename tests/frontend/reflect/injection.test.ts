@@ -65,9 +65,12 @@ describe("journal text stays where it was put (SEC-010)", () => {
       expect(Object.keys(read.entries[0] ?? {}).sort()).toEqual([
         "good",
         "improve",
+        "kind",
         "loved",
         "name",
       ]);
+      // The label is the app's, whatever the text says about itself.
+      expect((read.entries[0] as { kind?: string }).kind).toBe("journal_entry");
       // The text comes back character for character, as a value.
       expect(read.entries[0]?.good).toBe(text);
       expect(read.entries[0]?.name).toBe("E1");

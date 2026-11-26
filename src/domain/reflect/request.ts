@@ -18,7 +18,11 @@ import type {
   SourceEntry,
 } from "../../ai/provider";
 import type { JournalEntry } from "../journal/types";
-import { EntryTooLargeError, selectContext } from "./context";
+import {
+  isAfterNote,
+  type PostConversationReflection,
+} from "../post-conversation/types";
+import { EntryTooLargeError, selectContext, type Selection } from "./context";
 
 /**
  * The limits on a request and a way to size one, from the gateway
@@ -82,14 +86,35 @@ function blamingTheSession<T>(select: () => T, asFirstQuestion: () => void): T {
   }
 }
 
-function sourceOf(entry: JournalEntry): SourceEntry {
+/** Something that can be sent: an entry, or a later reflection. */
+export type Sendable = JournalEntry | PostConversationReflection;
+
+/**
+ * A fresh copy of what is sent of one piece of writing: its ID, its hash
+ * and its answers, under the names of its own kind. Something written
+ * after a conversation is labelled as that, so it can never be read as an
+ * answer to the journal's questions (PRD PC-004).
+ */
+function sourceOf(written: Sendable): SourceEntry {
+  if (!isAfterNote(written)) {
+    return {
+      id: written.id,
+      contentHash: written.contentHash,
+      responses: {
+        good: written.responses.good,
+        improve: written.responses.improve,
+        loved: written.responses.loved,
+      },
+    };
+  }
   return {
-    id: entry.id,
-    contentHash: entry.contentHash,
+    id: written.id,
+    contentHash: written.contentHash,
+    kind: "post_conversation",
     responses: {
-      good: entry.responses.good,
-      improve: entry.responses.improve,
-      loved: entry.responses.loved,
+      went_well: written.responses.went_well,
+      difficult: written.responses.difficult,
+      remember: written.responses.remember,
     },
   };
 }
@@ -112,6 +137,9 @@ function sourceOf(entry: JournalEntry): SourceEntry {
  *   entry is included.
  * @param history - The earlier turns of the session the question is asked
  *   in, and of no other. They are sent with it, as fresh copies.
+ * @param after - The reflections written after conversations. They are
+ *   chosen among with the entries, by the same rule, and sent labelled as
+ *   their own kind.
  * @returns The request, oldest entry first, saying what was left out if
  *   anything was.
  * @throws InvalidQuestionError if the question is empty or too long.
@@ -123,6 +151,7 @@ export function reflectRequest(
   entries: readonly JournalEntry[],
   sizing?: RequestSizing,
   history: readonly EarlierTurn[] = [],
+  after: readonly PostConversationReflection[] = [],
 ): ReflectRequest {
   const asked = question.trim();
   if (asked === "" || [...asked].length > MAX_QUESTION) {
@@ -149,9 +178,9 @@ export function reflectRequest(
   if (room <= 0 && history.length > 0) {
     throw new SessionTooLongError();
   }
-  const select = (): ReturnType<typeof selectContext> =>
-    selectContext({
-      entries,
+  const select = (): Selection<Sendable> =>
+    selectContext<Sendable>({
+      entries: [...entries, ...after],
       question: asked,
       budget: room,
       estimate: (entry) =>
@@ -165,8 +194,13 @@ export function reflectRequest(
     history.length === 0
       ? select()
       : blamingTheSession(select, () => {
-          reflectRequest(question, entries, sizing);
+          reflectRequest(question, entries, sizing, [], after);
         });
+  // Counted from what was really left out, not worked out by subtraction.
+  const sent = new Set(selection.entries.map((each) => each.id));
+  const afterOmitted = after.filter((note) => !sent.has(note.id)).length;
+  const tooLong = new Set(selection.tooLong);
+  const afterTooLong = after.filter((note) => tooLong.has(note.id)).length;
   return {
     ...empty,
     entries: selection.entries.map(sourceOf),
@@ -178,6 +212,8 @@ export function reflectRequest(
             ...(selection.tooLong.length > 0
               ? { tooLong: selection.tooLong.length }
               : {}),
+            ...(afterOmitted > 0 ? { afterOmitted } : {}),
+            ...(afterTooLong > 0 ? { afterTooLong } : {}),
           },
         }
       : {}),

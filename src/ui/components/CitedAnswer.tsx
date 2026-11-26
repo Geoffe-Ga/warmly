@@ -4,6 +4,10 @@ import type { ReflectionAnswer, SourceRef } from "../../ai/contracts";
 import { Link } from "../../app/navigation";
 import { pathFor } from "../../app/routes";
 import type { JournalEntry } from "../../domain/journal/types";
+import {
+  isAfterNote,
+  type PostConversationReflection,
+} from "../../domain/post-conversation/types";
 import { formatEntryDate } from "../screens/journal/shared";
 
 /** Said for a source whose entry has been changed since the answer. */
@@ -55,23 +59,60 @@ function numberSources(answer: ReflectionAnswer): {
   return { sources, byClaim };
 }
 
+/**
+ * Something the person wrote that an answer can point into: a journal
+ * entry, or a reflection written after a conversation.
+ */
+export type Citable = JournalEntry | PostConversationReflection;
+
 function entryFor(
-  entries: readonly JournalEntry[],
+  entries: readonly Citable[],
   ref: SourceRef,
-): JournalEntry | undefined {
+): Citable | undefined {
   return entries.find((entry) => entry.id === ref.entryId);
 }
 
-function sourceLabel(number: number, entry: JournalEntry | undefined): string {
+function isJournal(entry: Citable): entry is JournalEntry {
+  return !isAfterNote(entry);
+}
+
+/** Where a citation's link leads: the screen of the thing it points into. */
+function hrefOf(entry: Citable): string {
+  return isJournal(entry)
+    ? pathFor("journal-entry", { id: entry.id })
+    : pathFor("after-conversation", { id: entry.id });
+}
+
+/** What the thing is called, with its day. Never "entry" for a reflection. */
+function nameOf(entry: Citable): string {
+  const day = formatEntryDate(entry.entryDate);
+  return isJournal(entry)
+    ? `your entry from ${day}`
+    : `what you wrote after a conversation on ${day}`;
+}
+
+function capitalised(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function sourceLabel(number: number, entry: Citable | undefined): string {
   return entry === undefined
     ? `Source ${String(number)}`
-    : `Source ${String(number)}: your entry from ${formatEntryDate(entry.entryDate)}`;
+    : `Source ${String(number)}: ${nameOf(entry)}`;
+}
+
+/** The text of one answer, if this kind of writing has an answer by that name. */
+function answerText(entry: Citable, key: string): string | undefined {
+  const found: unknown = (entry.responses as Readonly<Record<string, unknown>>)[
+    key
+  ];
+  return typeof found === "string" ? found : undefined;
 }
 
 /** The numbered links that stand where a claim's mark was. */
 function Marks(props: {
   readonly cited: readonly Source[];
-  readonly entries: readonly JournalEntry[];
+  readonly entries: readonly Citable[];
   readonly onFollow: (ref: SourceRef) => void;
 }): JSX.Element {
   return (
@@ -86,7 +127,7 @@ function Marks(props: {
         ) : (
           <Link
             key={source.number}
-            href={pathFor("journal-entry", { id: entry.id })}
+            href={hrefOf(entry)}
             class="citation"
             label={sourceLabel(source.number, entry)}
             onFollow={() => {
@@ -105,7 +146,7 @@ function Marks(props: {
 function Paragraph(props: {
   readonly text: string;
   readonly byClaim: ReadonlyMap<string, readonly Source[]>;
-  readonly entries: readonly JournalEntry[];
+  readonly entries: readonly Citable[];
   readonly onFollow: (ref: SourceRef) => void;
 }): JSX.Element {
   // Splitting on a pattern with one group gives text and claim IDs in turn.
@@ -131,7 +172,7 @@ function Paragraph(props: {
 /** What a source says now: the words it pointed to, or why they are not shown. */
 function Excerpt(props: {
   readonly source: Source;
-  readonly entry: JournalEntry | undefined;
+  readonly entry: Citable | undefined;
 }): JSX.Element {
   const { ref } = props.source;
   const { entry } = props;
@@ -140,10 +181,11 @@ function Excerpt(props: {
   }
   // The words are read from the entry as it is now, and only if it is the
   // entry that was sent: an answer never shows words from changed text.
-  if (entry.contentHash !== ref.sourceHash) {
+  const text = answerText(entry, ref.responseKey);
+  if (entry.contentHash !== ref.sourceHash || text === undefined) {
     return <span>{SOURCE_CHANGED}</span>;
   }
-  return <q>{entry.responses[ref.responseKey].slice(ref.start, ref.end)}</q>;
+  return <q>{text.slice(ref.start, ref.end)}</q>;
 }
 
 /**
@@ -166,9 +208,15 @@ function Excerpt(props: {
  * wrote, so an answer cannot pass for one about the whole journal.
  *
  * @param answer - The checked answer.
+ * @param withNotes - Whether the person has notes written after
+ *   conversations, which are counted with the entries but never called
+ *   entries.
  * @returns The sentence, or `undefined` when every entry was sent.
  */
-export function coverageNote(answer: ReflectionAnswer): string | undefined {
+export function coverageNote(
+  answer: ReflectionAnswer,
+  withNotes = false,
+): string | undefined {
   const { includedEntryIds, omittedEntryCount, truncated } = answer.coverage;
   if (!truncated && omittedEntryCount === 0) {
     return undefined;
@@ -177,7 +225,10 @@ export function coverageNote(answer: ReflectionAnswer): string | undefined {
   const all = (includedEntryIds.length + omittedEntryCount).toLocaleString(
     "en-US",
   );
-  return `This answer is about ${sent} of the ${all} journal entries you had when you asked. The others did not fit in one request, so it does not speak for your whole journal.`;
+  const what = withNotes
+    ? "journal entries and notes written after conversations"
+    : "journal entries";
+  return `This answer is about ${sent} of the ${all} ${what} you had when you asked. The others did not fit in one request, so it does not speak for your whole journal.`;
 }
 
 /**
@@ -191,7 +242,7 @@ export const ANSWER_IS_A_READING =
 
 export function CitedAnswer(props: {
   readonly answer: ReflectionAnswer;
-  readonly entries: readonly JournalEntry[];
+  readonly entries: readonly Citable[];
   /**
    * Told which passage a citation points to, just before its link is
    * followed, so the entry screen can mark those words. The passage is
@@ -205,7 +256,10 @@ export function CitedAnswer(props: {
     .split(/\n{2,}/)
     .filter((text) => text.trim() !== "");
 
-  const partial = coverageNote(answer);
+  const partial = coverageNote(
+    answer,
+    entries.some((entry) => !isJournal(entry)),
+  );
   const follow = (ref: SourceRef): void => {
     props.onFollow?.(ref);
   };
@@ -233,12 +287,12 @@ export function CitedAnswer(props: {
                   {entry !== undefined && (
                     <>
                       <Link
-                        href={pathFor("journal-entry", { id: entry.id })}
+                        href={hrefOf(entry)}
                         onFollow={() => {
                           follow(source.ref);
                         }}
                       >
-                        Your entry from {formatEntryDate(entry.entryDate)}
+                        {capitalised(nameOf(entry))}
                       </Link>
                       {": "}
                     </>
