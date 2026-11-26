@@ -102,6 +102,14 @@ describe("the request holds exactly what was picked (CC-001, CC-002)", () => {
     );
   });
 
+  it("refuses the whole selection when one of several picked entries is a draft", async () => {
+    const { a, b } = await journal();
+
+    expect(() =>
+      cardsRequest([a, { ...b, status: "draft" }], undefined),
+    ).toThrow(NothingSelectedError);
+  });
+
   it("carries the picked entries, oldest first, and nothing else", async () => {
     const { a, b, c } = await journal();
 

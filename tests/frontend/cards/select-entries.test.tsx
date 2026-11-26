@@ -417,6 +417,55 @@ describe("cards that have arrived are never dropped", () => {
     expect(await cardsIn(services, collectionId)).toBe(1);
   });
 
+  it("are fully stored, once, by the time a lock that arrives mid-save lets go", async () => {
+    const provider = new FakeProvider();
+    const { services, collectionId, path } = await setUp(provider);
+    const put = services.records.put.bind(services.records);
+    const puts: string[] = [];
+    let locked: Promise<number> | undefined;
+    let listedAtLock = -1;
+    services.records.put = (kind, record) => {
+      puts.push(kind);
+      // Storage takes real time, as IndexedDB does: the list is written a
+      // little after it is asked for.
+      const stored =
+        kind === "card-collection"
+          ? new Promise((resolve) => setTimeout(resolve, 20)).then(() =>
+              put(kind, record),
+            )
+          : put(kind, record);
+      if (kind === "conversation-card" && locked === undefined) {
+        // The lock arrives the instant the first card is stored, while
+        // the collection's list has not been written yet.
+        void stored.then(() => {
+          locked = services.lockHooks.flush().then(async (failed) => {
+            listedAtLock =
+              (await services.records.get("card-collection", collectionId))
+                ?.cardIds.length ?? -1;
+            return failed;
+          });
+        });
+      }
+      return stored;
+    };
+    await renderApp(path, services);
+    await tick(/Alpha/, /Charlie/);
+    await press("Suggest cards");
+    await press(SEND);
+    await screen.findByText(addedText(2));
+
+    // The lock waited for the save that was under way: no hook failed,
+    // and both cards were in the collection before the keys could go.
+    expect(await locked).toBe(0);
+    expect(listedAtLock).toBe(2);
+    // Each card was written once, and the list once.
+    expect(puts).toEqual([
+      "conversation-card",
+      "conversation-card",
+      "card-collection",
+    ]);
+  });
+
   it("are kept, and the person is told where, when their collection was deleted while they were on their way", async () => {
     const base = new FakeProvider();
     // What happens elsewhere just as the answer arrives; set below.

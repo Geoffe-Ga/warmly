@@ -78,6 +78,9 @@ export function cardsTexts(prompt: CardsPrompt): CardsTexts {
           name: source.alias,
           ...source.responses,
         })),
+        // No screen asks for a topic yet, so this is always empty. It is
+        // part of the request the gateway was built with, and the
+        // instructions say what an empty one means.
         topic: prompt.topic,
       },
       null,

@@ -126,20 +126,38 @@ function Picker(props: {
   const [unsaved, setUnsaved] = useState<readonly ConversationCard[]>();
   const [saveProblem, setSaveProblem] = useState<string>();
 
+  // The same cards, readable at once by the lock hook, and the save that
+  // is under way, if one is.
+  const waiting = useRef<readonly ConversationCard[] | undefined>(undefined);
+  const saving = useRef<Promise<void> | undefined>(undefined);
+
   /** Store cards that are already here. Sends nothing. */
   const save = useCallback(
-    async (cards: readonly ConversationCard[]): Promise<void> => {
+    (cards: readonly ConversationCard[]): Promise<void> => {
       setSaveProblem(undefined);
-      try {
-        const here = await saveGenerated({ records }, cards);
-        setUnsaved(undefined);
-        setTicked([]);
-        setAdded(cards.length);
-        setGone(!here);
-      } catch (error) {
-        // Never the error's own text.
-        setSaveProblem(describeStorageError(error, "save") ?? CARDS_NOT_SAVED);
-      }
+      const storing = saveGenerated({ records }, cards).then(
+        (here) => {
+          waiting.current = undefined;
+          setUnsaved(undefined);
+          setTicked([]);
+          setAdded(cards.length);
+          setGone(!here);
+        },
+        (error: unknown) => {
+          // Never the error's own text.
+          setSaveProblem(
+            describeStorageError(error, "save") ?? CARDS_NOT_SAVED,
+          );
+        },
+      );
+      saving.current = storing;
+      void storing.then(() => {
+        // Only if no later save has started meanwhile.
+        if (saving.current === storing) {
+          saving.current = undefined;
+        }
+      });
+      return storing;
     },
     [records],
   );
@@ -152,21 +170,24 @@ function Picker(props: {
     // failure never makes a second copy.
     const cards = cardsFrom(state.result, state.request, collectionId);
     controller.reset();
+    waiting.current = cards;
     setUnsaved(cards);
     void save(cards);
   }, [state, controller, collectionId, save]);
 
   // Cards that are here but not stored yet are stored before the keys are
-  // dropped, when the app locks (ADR-0004).
-  const waiting = useRef<readonly ConversationCard[] | undefined>(undefined);
-  useEffect(() => {
-    waiting.current = unsaved;
-  }, [unsaved]);
+  // dropped, when the app locks (ADR-0004). A save that is already under
+  // way is waited for, never run a second time beside itself; only if it
+  // failed are the cards stored again here.
   useEffect(
     () =>
       lockHooks.register(async () => {
+        if (saving.current !== undefined) {
+          await saving.current;
+        }
         if (waiting.current !== undefined) {
           await saveGenerated({ records }, waiting.current);
+          waiting.current = undefined;
         }
       }),
     [lockHooks, records],
