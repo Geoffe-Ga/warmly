@@ -172,6 +172,62 @@ function UpdateNotice(): JSX.Element {
 }
 
 /**
+ * What is said when reflections were removed because a journal entry
+ * they were built from was changed or deleted (PRD DEP-003). A count and
+ * fixed words: never which reflection, which entry or what either said.
+ *
+ * @param count - How many were removed.
+ * @returns The sentence.
+ */
+export function removedText(count: number): string {
+  return count === 1
+    ? "A reflection was removed because a journal entry it was built from was changed or deleted."
+    : `${count.toLocaleString("en-US")} reflections were removed because a journal entry they were built from was changed or deleted.`;
+}
+
+/**
+ * Tells the person when reflections have been removed, until they say
+ * they have seen it. Removing them calls no AI and nothing is made again.
+ */
+function RemovedNotice(props: { readonly state: SessionState }): JSX.Element {
+  const { invalidation } = useServices();
+  const [count, setCount] = useState(() => invalidation.removed);
+  const unlocked = props.state === "unlocked";
+
+  useEffect(() => {
+    // Anything built from an entry that changed while this device was
+    // locked or away is removed on unlock, and after every change from
+    // then on. Locking stops it (`dropSecrets`).
+    if (unlocked) {
+      invalidation.start();
+    }
+  }, [invalidation, unlocked]);
+
+  useEffect(() => {
+    const update = (): void => {
+      setCount(invalidation.removed);
+    };
+    update();
+    return invalidation.subscribe(update);
+  }, [invalidation]);
+
+  return (
+    <div class="removed-notice">
+      <p role="status">{count > 0 ? removedText(count) : ""}</p>
+      {count > 0 && (
+        <Button
+          onClick={() => {
+            invalidation.acknowledge();
+          }}
+        >
+          OK
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
  * Root component. Restores the signed-in session, owns the current path and
  * keeps it in step with the browser history, enforces the access rules, sets
  * the document title, and moves focus to the page heading after each in-app
@@ -270,6 +326,7 @@ export function App(props: AppProps): JSX.Element {
           />
           <OfflineNotice state={state} />
           <UpdateNotice />
+          <RemovedNotice state={state} />
           <main>
             {view === undefined ? (
               <PageLayout title="Opening Warmly" />

@@ -113,6 +113,15 @@ export interface RecordStore {
   /** Remove a record. Removing one that is not there does nothing. */
   delete(kind: RecordKind, id: string): Promise<void>;
   /**
+   * The records of the kind that this device knows were deleted, here or
+   * on another device. A record that is simply not here, for example one
+   * that sync has not fetched yet, is not among them: "deleted" and "not
+   * here" are different things, and only the first is a fact.
+   *
+   * @returns Their IDs, in no particular order.
+   */
+  deleted(kind: RecordKind): Promise<string[]>;
+  /**
    * @returns How many records of the kind are stored on this device but
    *   cannot be read by this version of the app. They are left untouched.
    */
@@ -192,6 +201,8 @@ export class MemoryRecordStore implements RecordStore {
       readonly revision: number;
     }
   >();
+  /** The IDs of deleted records, as `kind/id`. */
+  #deleted = new Set<string>();
   readonly #listeners = new Set<() => void>();
 
   #kind<K extends RecordKind>(kind: K): Map<string, RecordKinds[K]> {
@@ -231,9 +242,19 @@ export class MemoryRecordStore implements RecordStore {
 
   delete(kind: RecordKind, id: string): Promise<void> {
     if (this.#kind(kind).delete(id)) {
+      this.#deleted.add(`${kind}/${id}`);
       this.#changed();
     }
     return Promise.resolve();
+  }
+
+  deleted(kind: RecordKind): Promise<string[]> {
+    const prefix = `${kind}/`;
+    return Promise.resolve(
+      [...this.#deleted]
+        .filter((key) => key.startsWith(prefix))
+        .map((key) => key.slice(prefix.length)),
+    );
   }
 
   unreadable(): Promise<number> {
@@ -302,6 +323,7 @@ export class MemoryRecordStore implements RecordStore {
       // deleted record is simply absent.
       if (parked.theirs === undefined) {
         this.#kind(kind).delete(id);
+        this.#deleted.add(`${kind}/${id}`);
       } else {
         this.#kind(kind).set(id, parked.theirs as RecordKinds[K]);
       }
@@ -323,6 +345,7 @@ export class MemoryRecordStore implements RecordStore {
   lock(): void {
     this.#records = emptyRecords();
     this.#parked = new Map();
+    this.#deleted = new Set();
     this.#changed();
   }
 }

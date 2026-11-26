@@ -68,6 +68,8 @@ import {
   RecordReflectSessions,
   type ReflectSessions,
 } from "../domain/reflect/sessions";
+import { Invalidator } from "../domain/deps/invalidate";
+import { DEPENDENCY_RULES } from "../domain/dependency-rules";
 import { CitedPassage } from "../domain/reflect/passage";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
@@ -101,6 +103,11 @@ export interface Services {
   readonly reflect: ReflectSessions;
   /** The cited passage being carried to the entry screen, in memory. */
   readonly passage: CitedPassage;
+  /**
+   * Removes what was built from an entry that has since been changed or
+   * deleted (invariant 6). Runs while the app is unlocked.
+   */
+  readonly invalidation: Invalidator;
   /** Collections of conversation cards, read from the private records. */
   readonly cards: CardsStore;
   /** A new version of the app waiting to be used. */
@@ -343,6 +350,7 @@ export function createServices(): Services {
       ? recordsDatabaseName(owner, tabRecordsPrefix())
       : recordsDatabaseName(owner);
   const records = new EncryptedRecordStore(databaseName);
+  const invalidation = new Invalidator(records, DEPENDENCY_RULES);
   const auth = createAuthClient(
     import.meta.env,
     import.meta.env.MODE !== "production"
@@ -407,6 +415,7 @@ export function createServices(): Services {
     cards: new RecordCardsStore(records),
     reflect: new RecordReflectSessions(records),
     passage: new CitedPassage(),
+    invalidation,
     persistence,
     session: createSession(),
     onboarding: createOnboarding(),

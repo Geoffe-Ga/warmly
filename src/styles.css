@@ -396,7 +396,8 @@ textarea.field__control {
 
 /* Update notice: a new version is ready, with the button that switches */
 
-.update-notice {
+.update-notice,
+.removed-notice {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -409,12 +410,14 @@ textarea.field__control {
   font-size: var(--font-size-small);
 }
 
-.update-notice p {
+.update-notice p,
+.removed-notice p {
   margin: 0;
 }
 
 /* Nothing waiting: the live region stays in the page, out of sight. */
-.update-notice:has(p:empty) {
+.update-notice:has(p:empty),
+.removed-notice:has(p:empty) {
   display: none;
 }
 

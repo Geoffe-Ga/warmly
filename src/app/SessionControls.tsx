@@ -29,6 +29,7 @@ export function dropSecrets(services: Services): void {
   // Anything decrypted goes with the keys.
   services.records.lock();
   services.passage.clear();
+  services.invalidation.stop();
   services.sync.reset();
 }
 

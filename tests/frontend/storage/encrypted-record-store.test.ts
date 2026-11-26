@@ -525,6 +525,36 @@ async function entryIn(store: EncryptedRecordStore): Promise<JournalEntry> {
   return found;
 }
 
+describe("records the store knows were deleted (SYNC-006)", () => {
+  it("lists a deletion made here, by kind, and nothing that was never here", async () => {
+    const { store } = await unlockedStore();
+    const [kept, removed] = [await entry("Kept"), await entry("Removed")];
+    await store.put("journal-entry", kept);
+    await store.put("journal-entry", removed);
+    expect(await store.deleted("journal-entry")).toEqual([]);
+
+    await store.delete("journal-entry", removed.id);
+    await store.delete("journal-entry", "00000000-0000-4000-8000-00000000dead");
+
+    expect(await store.deleted("journal-entry")).toEqual([removed.id]);
+    expect(await store.deleted("reflect-session")).toEqual([]);
+  });
+
+  it("still knows after the app has been locked and opened again", async () => {
+    const { store, names, root } = await unlockedStore();
+    const removed = await entry("Removed");
+    await store.put("journal-entry", removed);
+    await store.delete("journal-entry", removed.id);
+    store.lock();
+    expect(await store.deleted("journal-entry")).toEqual([]);
+
+    const again = new EncryptedRecordStore(names);
+    again.unlock(root, OWNER);
+
+    expect(await again.deleted("journal-entry")).toEqual([removed.id]);
+  });
+});
+
 describe("records the store cannot read are left alone and counted (§13.6)", () => {
   it("under another key", async () => {
     const { store, names, name } = await unlockedStore();

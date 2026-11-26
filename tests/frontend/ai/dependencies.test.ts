@@ -63,25 +63,20 @@ describe("the AI layer's boundaries (D-17, SEC-009)", () => {
     expect(using("consumeConsent")).toEqual(["src/ai/gateway.ts"]);
   });
 
-  // Invariant 6: a reflection must be deleted when an entry it was built
-  // from changes, and the engine that does it is issue #51. Until it
-  // exists, no real provider may be connected, so that no real reflection
-  // can exist. Issue #51 replaces this test with one for the engine.
-  it("no real provider is connected before dependency invalidation exists (#51)", () => {
+  // Invariant 6: a reflection is deleted when an entry it was built from
+  // changes. A real provider must never be connectable in a build that
+  // lacks the engine that does it, or that does not run it.
+  it("the dependency engine exists and is run by the app shell (invariant 6)", () => {
     const paths = Object.keys(SOURCES);
-    const hasEngine = paths.some((path) => path.includes("/src/domain/deps/"));
-    const realProviders = paths.filter((path) =>
-      path.includes("/src/ai/providers/"),
-    );
-    const gateway = SOURCES["../../../src/ai/gateway.ts"] ?? "";
+    const shell = SOURCES["../../../src/app/App.tsx"] ?? "";
+    const lock = SOURCES["../../../src/app/SessionControls.tsx"] ?? "";
+    const rules = SOURCES["../../../src/domain/dependency-rules.ts"] ?? "";
 
-    expect(hasEngine || realProviders.length === 0).toBe(true);
-    if (!hasEngine) {
-      // The only provider the gateway can be made with is the stand-in.
-      expect(gateway.match(/new \w*Provider\(/g)).toEqual([
-        "new FakeProvider(",
-      ]);
-    }
+    expect(paths).toContain("../../../src/domain/deps/invalidate.ts");
+    expect(shell).toContain("invalidation.start()");
+    expect(lock).toContain("services.invalidation.stop()");
+    // Every kind of record built by AI has a rule.
+    expect(rules).toContain("REFLECT_SESSION_RULE");
   });
 
   it("nothing in the AI layer reaches the network or the Warmly API", () => {

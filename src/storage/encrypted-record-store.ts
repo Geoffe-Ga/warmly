@@ -654,6 +654,20 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     return record;
   }
 
+  async deleted(kind: RecordKind): Promise<string[]> {
+    const opened = await this.#read();
+    if (opened === undefined || opened.superseded) {
+      return [];
+    }
+    const { type } = FORMATS[kind];
+    // Read from the stored rows each time: a tombstone can arrive from
+    // another tab or from sync, and it is never cached decrypted.
+    const { rows } = await readAll(opened.database);
+    return rows
+      .filter((row) => row.type === type && row.tombstone)
+      .map((row) => row.id);
+  }
+
   async unreadable(kind: RecordKind): Promise<number> {
     return (await this.#read())?.unreadable[kind].size ?? 0;
   }

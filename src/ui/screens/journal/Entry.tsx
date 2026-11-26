@@ -15,6 +15,7 @@ import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { useAction } from "../account/shared";
 import { describeOpenFailure } from "../../storage-messages";
+import { DependentsWarning } from "./dependents";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
 
 /** What the screen has found out about the entry. */
@@ -376,7 +377,10 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
           });
         }}
       >
-        {DELETE_WARNING}
+        <p>{DELETE_WARNING}</p>
+        {entry.status === "complete" && (
+          <DependentsWarning entryId={entry.id} doing="delete" />
+        )}
       </ConfirmDialog>
       {back}
     </PageLayout>

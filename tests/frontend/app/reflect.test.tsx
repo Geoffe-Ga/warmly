@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FakeProvider } from "../../../src/ai/fake-provider";
 import { AiGateway } from "../../../src/ai/gateway";
+import { removedText } from "../../../src/app/App";
 import { dropSecrets } from "../../../src/app/SessionControls";
 import { pathFor } from "../../../src/app/routes";
 import type { JournalEntry } from "../../../src/domain/journal/types";
@@ -16,10 +17,7 @@ import {
   MAX_QUESTION,
   reflectRequest,
 } from "../../../src/domain/reflect/request";
-import {
-  SOURCE_CHANGED,
-  SOURCE_GONE,
-} from "../../../src/ui/components/CitedAnswer";
+import { SOURCE_GONE } from "../../../src/ui/components/CitedAnswer";
 import {
   RecordReflectSessions,
   SessionFinishedError,
@@ -516,19 +514,14 @@ describe("asking a question (RF-002, RF-003, SEC-009)", () => {
   });
 });
 
-describe("a reflection whose entry has changed (DEP-003; engine in #51)", () => {
-  // The engine that deletes such a reflection is issue #51. Until it
-  // lands, this is what protects the person: the reflection is still
-  // listed, but it never shows the entry's old words or its new ones as
-  // if they had been cited. When #51 lands, the first expectation changes
-  // to "the reflection is gone".
-  it("is still here until the invalidation engine lands, and shows none of the entry's words as cited", async () => {
-    const { services } = await setUp();
+describe("a reflection whose entry has changed (DEP-003, AC-12)", () => {
+  it("is removed, the person is told in fixed words, and no provider is called", async () => {
+    const { services, provider } = await setUp();
     await renderApp(NEW, services);
     await askAndSend("What has gone well?");
     await screen.findByRole("heading", { name: "Answer" });
     const [stored] = await services.reflect.list();
-    cleanup();
+    const calls = provider.calls.length;
 
     await services.records.put("journal-entry", {
       ...FIRST,
@@ -536,18 +529,65 @@ describe("a reflection whose entry has changed (DEP-003; engine in #51)", () => 
       contentHash: "9".repeat(64),
       updatedAt: "2026-11-20T10:00:00.000Z",
     });
-    await renderApp(
-      pathFor("reflect-session", { id: stored?.id ?? "" }),
-      services,
-    );
-    const answer = (
-      await screen.findByRole("heading", { name: "Answer" })
-    ).closest(".card") as HTMLElement;
 
-    expect(await services.reflect.list()).toHaveLength(1);
-    expect(answer.textContent).toContain(SOURCE_CHANGED);
-    expect(answer.textContent).not.toContain("We cooked together 1.");
-    expect(answer.textContent).not.toContain("Rewritten since.");
+    const notice = await screen.findByText(removedText(1));
+    expect(await services.reflect.list()).toEqual([]);
+    expect(
+      await services.records.get("reflect-session", stored?.id ?? ""),
+    ).toBeUndefined();
+    // The screen it was open on says it is not here any more.
+    expect(screen.queryByRole("heading", { name: "Answer" })).toBeNull();
+    expect(notice.textContent).not.toMatch(/gone well|cooked|Rewritten/);
+    expect(provider.calls).toHaveLength(calls);
+
+    await userEvent.setup().click(screen.getByRole("button", { name: "OK" }));
+    expect(screen.queryByText(removedText(1))).toBeNull();
+    expect(services.invalidation.removed).toBe(0);
+  });
+
+  it("says how many when more than one was removed", () => {
+    expect(removedText(3)).toBe(
+      "3 reflections were removed because a journal entry they were built from was changed or deleted.",
+    );
+    expect(removedText(1)).toBe(
+      "A reflection was removed because a journal entry it was built from was changed or deleted.",
+    );
+  });
+
+  it("a reflection is removed on unlock if its entry changed while the app was locked", async () => {
+    const { services } = await setUp();
+    await services.reflect.start({
+      question: "Why?",
+      answer: {
+        markdown: "Because.",
+        citations: [],
+        sources: [{ entryId: FIRST.id, sourceHash: "0".repeat(64) }],
+        coverage: {
+          includedEntryIds: [FIRST.id],
+          omittedEntryCount: 0,
+          truncated: false,
+        },
+      },
+    });
+
+    await renderApp("/reflect", services);
+
+    expect(
+      await screen.findByText("You have no saved reflections yet."),
+    ).toBeTruthy();
+    expect(await screen.findByText(removedText(1))).toBeTruthy();
+  });
+
+  it("stops watching, and forgets the count, when the app locks", async () => {
+    const { services } = await setUp();
+    await renderApp("/reflect", services);
+    await screen.findByRole("heading", { name: "Reflect" });
+    const stopping = vi.spyOn(services.invalidation, "stop");
+
+    dropSecrets(services);
+
+    expect(stopping).toHaveBeenCalledTimes(1);
+    expect(services.invalidation.removed).toBe(0);
   });
 });
 

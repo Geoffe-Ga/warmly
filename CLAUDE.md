@@ -24,7 +24,7 @@ and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Coll
 printed, presented and deleted; they are encrypted records that sync like
 journal entries. Reflect has its landing and session screens, answered by
 the stand-in provider outside production; sessions are encrypted records
-that sync, can be finished into a read-only state and can be deleted. Other routes render accessible placeholders.
+that sync, can be finished into a read-only state and can be deleted, and are removed when an entry they were built from changes. Other routes render accessible placeholders.
 
 ---
 
@@ -368,12 +368,7 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   answer is shown with `CitedAnswer`, which shows answer text as text and
   reads cited words from the entry as it is now, and only if its content
   hash still matches. An answer records every entry that was sent for
-  it, with its hash then (`ReflectionAnswer.sources`), cited or not. **Not
-  built yet (issue #51):** deleting a reflection when one of those entries
-  is edited or deleted (invariant 6). Until then a reflection whose entry
-  changed stays listed and shows none of that entry's words. No real
-  provider is connected, so no real reflection can exist yet; do not
-  connect one (#44, #45) before #51 has landed.
+  it, with its hash then (`ReflectionAnswer.sources`), cited or not.
 - Which entries a Reflect request sends is decided only by `selectContext`
   (`src/domain/reflect/context.ts`, ADR-0009), on the device, from sizes
   given by `services.ai.sizing()`: never call AI or the network to choose,
@@ -396,6 +391,21 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   travels in memory through `services.passage` (`CitedPassage`), once:
   never in the address, storage or history. The entry screen marks them
   only if the entry's content hash still matches (`passageIn`).
+- What was built from a journal entry is removed when that entry is
+  edited or deleted (invariant 6; ADR-0010, `src/domain/deps/`). A record
+  is stale when an entry it was built from is known to be deleted
+  (`RecordStore.deleted`) or is here, settled, and has a different content
+  hash. An entry that is not here yet, is waiting in "Changed in two
+  places", or cannot be read says nothing: never treat "not here" as
+  deleted. A Reflect session depends on every entry sent for any of its
+  answers, cited or not, and is deleted whole, as an ordinary deletion
+  that syncs. `Invalidator` (`services.invalidation`) runs on unlock and
+  after every record change and stops in `dropSecrets`. It never calls AI
+  and nothing is regenerated; `src/domain/deps` imports nothing from
+  `src/ai`. A new kind of derived record adds a rule to
+  `src/domain/dependency-rules.ts`. The person is told before (the edit
+  screen and delete confirmation, `dependentsWarning`) and after (the
+  shell's notice, `removedText`): a count and fixed words only.
 - A Reflect session and all its questions and answers are one private
   record (kind `reflect-session`, envelope type 4), changed only through
   `ReflectSessions` (`src/domain/reflect/sessions.ts`), reached as
