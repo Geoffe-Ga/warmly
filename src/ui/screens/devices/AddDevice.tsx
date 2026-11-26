@@ -16,12 +16,9 @@ import { Card } from "../../components/Card";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import {
-  AccountForm,
-  afterRecoveryKey,
-  describeError,
-  useAction,
-} from "../account/shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { describeError } from "../../error-messages";
+import { afterRecoveryKey } from "../account/shared";
 
 /** Where the pairing has got to on this, the new, device. */
 type Step =
@@ -41,7 +38,7 @@ function ConfirmationForm(props: {
   const [error, setError] = useState<string | undefined>(undefined);
 
   return (
-    <AccountForm
+    <ActionForm
       action={action}
       validate={() => {
         const problem =
@@ -80,7 +77,7 @@ function ConfirmationForm(props: {
           Finish
         </Button>
       </div>
-    </AccountForm>
+    </ActionForm>
   );
 }
 

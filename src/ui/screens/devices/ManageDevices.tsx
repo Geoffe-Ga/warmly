@@ -15,7 +15,8 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, describeError, useAction } from "../account/shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { describeError } from "../../error-messages";
 
 /** What the list is showing. */
 type Load =
@@ -48,7 +49,7 @@ function RenameForm(props: {
   };
 
   return (
-    <AccountForm
+    <ActionForm
       action={action}
       validate={validate}
       onValid={async () => {
@@ -78,7 +79,7 @@ function RenameForm(props: {
           Cancel
         </Button>
       </div>
-    </AccountForm>
+    </ActionForm>
   );
 }
 

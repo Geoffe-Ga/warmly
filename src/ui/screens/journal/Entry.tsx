@@ -17,7 +17,7 @@ import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { useAction } from "../account/shared";
+import { useAction } from "../../components/ActionForm";
 import { describeOpenFailure } from "../../storage-messages";
 import { DependentsWarning } from "./dependents";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";

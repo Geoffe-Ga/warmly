@@ -16,7 +16,8 @@ import { Card } from "../../components/Card";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, describeError, useAction } from "../account/shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { describeError } from "../../error-messages";
 
 /** Where the approval has got to on this, the unlocked, device. */
 type Step =
@@ -65,7 +66,7 @@ function ApprovalForm(props: {
       : { kind: "recovery_key", recoveryKey: secret };
 
   return (
-    <AccountForm
+    <ActionForm
       action={action}
       validate={validate}
       onValid={async () => {
@@ -129,7 +130,7 @@ function ApprovalForm(props: {
           Don't approve
         </Button>
       </div>
-    </AccountForm>
+    </ActionForm>
   );
 }
 

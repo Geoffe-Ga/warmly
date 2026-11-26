@@ -8,12 +8,8 @@ import { Button } from "../../components/Button";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import {
-  AccountForm,
-  MIN_PASSWORD_LENGTH,
-  newPasswordError,
-  useAction,
-} from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { MIN_PASSWORD_LENGTH, newPasswordError } from "./shared";
 
 /**
  * Choose a new password after following the emailed reset link. The user is
@@ -49,7 +45,7 @@ export function NewPassword(): JSX.Element {
       title="Choose a new password"
       lead="You opened the reset link we emailed you. Choose a new password to finish."
     >
-      <AccountForm
+      <ActionForm
         action={action}
         validate={() => {
           const problem = newPasswordError(password);
@@ -78,7 +74,7 @@ export function NewPassword(): JSX.Element {
             Save new password
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
       <p>
         Link not working?{" "}
         <Link href={pathFor("reset-password")}>Send a new one</Link>

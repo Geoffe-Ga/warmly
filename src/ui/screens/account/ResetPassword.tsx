@@ -8,7 +8,8 @@ import { Button } from "../../components/Button";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, emailError, useAction } from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { emailError } from "./shared";
 
 /**
  * Ask for a password-reset link. The confirmation is the same for every
@@ -38,7 +39,7 @@ export function ResetPassword(): JSX.Element {
           If that address has an account, a reset link is on its way.
         </StatusBanner>
       )}
-      <AccountForm
+      <ActionForm
         action={action}
         validate={() => {
           setError(emailError(email));
@@ -65,7 +66,7 @@ export function ResetPassword(): JSX.Element {
             Send reset link
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
       <p>
         <Link href={pathFor("sign-in")}>Back to sign in</Link>
       </p>

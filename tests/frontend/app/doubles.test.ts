@@ -50,7 +50,7 @@ import {
   FakeKeyVault,
   normaliseRecoveryKey,
 } from "../../../src/testing/fake-key-vault";
-import { describeError } from "../../../src/ui/screens/account/shared";
+import { describeError } from "../../../src/ui/error-messages";
 
 beforeEach(() => {
   sessionStorage.clear();

@@ -12,7 +12,7 @@ import { StaleRecordError } from "../../../storage/record-store";
 import { Button } from "../../components/Button";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, useAction } from "../account/shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
 import { EntryFields, OutOfDate } from "./EntryFields";
 import { describeOpenFailure } from "../../storage-messages";
 import { DependentsWarning } from "./dependents";
@@ -137,7 +137,7 @@ export function EditEntry(props: {
         />
       )}
       <DependentsWarning entryId={id} doing="edit" />
-      <AccountForm
+      <ActionForm
         action={action}
         validate={() => {
           setTried(true);
@@ -170,7 +170,7 @@ export function EditEntry(props: {
             Save changes
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
       <p>
         <Link href={entryPath}>Cancel and go back to the entry</Link>
       </p>

@@ -22,7 +22,7 @@ import { TextArea } from "../../components/Field";
 import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { AccountForm, useAction } from "../account/shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
 import { DependentsWarning } from "./dependents";
 import { DELETE_WARNING } from "./Entry";
 import { formatEntryDate } from "./shared";
@@ -221,7 +221,7 @@ function AfterForm(props: {
       {record !== undefined && (
         <DependentsWarning entryId={record.id} doing="edit" what="after" />
       )}
-      <AccountForm
+      <ActionForm
         action={action}
         validate={() => {
           setTried(true);
@@ -267,7 +267,7 @@ function AfterForm(props: {
             </Button>
           )}
         </div>
-      </AccountForm>
+      </ActionForm>
       {record !== undefined && (
         <ConfirmDialog
           open={confirming}

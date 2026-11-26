@@ -10,7 +10,8 @@ import type { KeyVault } from "../../../crypto/key-vault";
 import { Button } from "../../components/Button";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
-import { AccountForm, emailError, useAction } from "./shared";
+import { ActionForm, useAction } from "../../components/ActionForm";
+import { emailError } from "./shared";
 
 interface FieldErrors {
   readonly email?: string | undefined;
@@ -68,7 +69,7 @@ export function SignIn(): JSX.Element {
 
   return (
     <PageLayout title="Sign in" lead="Sign in to your own account.">
-      <AccountForm
+      <ActionForm
         action={action}
         validate={validate}
         onValid={async () => {
@@ -107,7 +108,7 @@ export function SignIn(): JSX.Element {
             Sign in
           </Button>
         </div>
-      </AccountForm>
+      </ActionForm>
       <p>
         <Link href={pathFor("reset-password")}>Forgot your password?</Link>
       </p>
