@@ -20,19 +20,15 @@ Usage:
         --manifest release/required-checks.yml --results check-runs.json
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import yaml
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
 
 # The only state that lets a check pass.
 SUCCESS = "success"

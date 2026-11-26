@@ -8,6 +8,7 @@ requires.
 
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 import yaml
@@ -90,23 +91,63 @@ def test_every_required_check_names_a_job_ci_runs(
     assert not unknown
 
 
-def test_no_required_job_can_be_skipped_by_a_condition(
+def required_jobs(
     manifest: Manifest, workflow: dict[str, object]
-) -> None:
-    """A job with an `if:` can be skipped, and a skipped check blocks."""
+) -> dict[str, dict[str, Any]]:
+    """The workflow's jobs that the manifest names, by job key."""
     jobs = workflow["jobs"]
     assert isinstance(jobs, dict)
-    required = {each.job for each in manifest.checks}
+    names = {each.job.split(" (Python")[0] for each in manifest.checks}
+    return {
+        key: job
+        for key, job in jobs.items()
+        if job["name"].split(" (Python")[0] in names
+    }
 
-    conditional = [
-        job["name"]
-        for job in jobs.values()
-        if "if" in job
-        and job["name"].split(" (Python")[0]
-        in {name.split(" (Python")[0] for name in required}
+
+def tolerates_failure(job_or_step: dict[str, Any]) -> bool:
+    """Whether a job or step is told to carry on after failing.
+
+    Anything but an absent or plainly false setting counts, including an
+    expression, which cannot be judged here.
+    """
+    return job_or_step.get("continue-on-error", False) is not False
+
+
+def test_no_required_job_can_be_skipped_or_allowed_to_fail(
+    manifest: Manifest, workflow: dict[str, object]
+) -> None:
+    """A required job has no `if:` and no `continue-on-error`.
+
+    A job with an `if:` can be skipped, which blocks every release. A job or
+    step with `continue-on-error` reports success after failing, which would
+    let a release through.
+    """
+    found = required_jobs(manifest, workflow)
+
+    assert len(found) == 5
+    assert not [key for key, job in found.items() if "if" in job]
+    assert not [key for key, job in found.items() if tolerates_failure(job)]
+    assert not [
+        (key, step.get("name"))
+        for key, job in found.items()
+        for step in job["steps"]
+        if tolerates_failure(step)
     ]
 
-    assert not conditional
+
+def test_the_gate_is_the_only_job_that_always_runs(
+    manifest: Manifest, workflow: dict[str, object]
+) -> None:
+    """The gate must run after a failure, to report it. Nothing else may."""
+    jobs = workflow["jobs"]
+    assert isinstance(jobs, dict)
+
+    always = [key for key, job in jobs.items() if "always()" in str(job.get("if", ""))]
+
+    assert always == ["release-gate"]
+    assert "release-gate" not in required_jobs(manifest, workflow)
+    assert not tolerates_failure(jobs["release-gate"])
 
 
 def test_the_gate_waits_for_every_job_the_manifest_names(

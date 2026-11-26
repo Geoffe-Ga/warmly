@@ -362,6 +362,52 @@ class TestRun:
             "  - e2e (E2E): skipped",
         ]
 
+    def test_results_saved_by_gh_in_pages_are_read(self, tmp_path: Path) -> None:
+        """`gh api --paginate --slurp` saves a list of whole responses.
+
+        Each has GitHub's other fields too; only name, status and
+        conclusion are read.
+        """
+        pages = [
+            {
+                "total_count": 3,
+                "check_runs": [
+                    {
+                        "id": 1,
+                        "name": "Quality (3.12)",
+                        "status": "completed",
+                        "conclusion": "success",
+                        "html_url": "https://example.invalid/1",
+                        "started_at": "2026-11-26T14:16:42Z",
+                        "completed_at": "2026-11-26T14:18:36Z",
+                    },
+                    {
+                        "id": 2,
+                        "name": "Release Gate",
+                        "status": "in_progress",
+                        "conclusion": None,
+                    },
+                ],
+            },
+            {
+                "total_count": 3,
+                "check_runs": [
+                    {
+                        "id": 3,
+                        "name": "E2E",
+                        "status": "completed",
+                        "conclusion": "success",
+                    }
+                ],
+            },
+        ]
+        manifest, saved = self.write(tmp_path, pages)
+
+        code, message = run(manifest, saved)
+
+        assert code == 0
+        assert message == "Release gate: allowed. All 2 required checks passed."
+
     def test_no_results_file_blocks(self, tmp_path: Path) -> None:
         """No results file blocks."""
         manifest, saved = self.write(tmp_path, green_runs())

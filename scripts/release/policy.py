@@ -26,16 +26,15 @@ Usage:
         --events label-events.json
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
 import re
 import sys
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from scripts.release.gate import (
     Check,
@@ -44,9 +43,6 @@ from scripts.release.gate import (
     Threshold,
     parse_manifest,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Iterator, Sequence
 
 # Where the manifest lives in a copy of the repository.
 MANIFEST_PATH = "release/required-checks.yml"
@@ -199,16 +195,20 @@ def read_number(root: Path, threshold: Threshold) -> int | None:
         threshold: Which number, and how to find it.
 
     Returns:
-        The number, or None when the file is not there, the pattern does
-        not match, or it matches more than one different number.
+        The number, or None when it cannot be trusted: the file is not
+        there, the pattern is not a valid expression or does not match, or
+        it matches more than one different number.
     """
     path = root / threshold.file
     if not path.is_file():
         return None
-    values = {
-        int(match.group(1))
-        for match in re.finditer(threshold.pattern, path.read_text(encoding="utf-8"))
-    }
+    try:
+        found = re.findall(threshold.pattern, path.read_text(encoding="utf-8"))
+        values = {int(each) for each in found}
+    except (re.error, TypeError, ValueError):
+        # A broken pattern, one with no group or several, or a group that
+        # is not a whole number.
+        return None
     return values.pop() if len(values) == 1 else None
 
 
@@ -243,7 +243,11 @@ def threshold_violations(
         new = read_number(head_root, now)
         if new is None:
             found.append(
-                Violation(before.id, f"its number cannot be found in `{now.file}`")
+                Violation(
+                    before.id,
+                    f"its number cannot be read from `{now.file}`: it is "
+                    "missing, or given more than once with different values",
+                )
             )
         elif old is not None and _moved_unsafely(before.keep, old, new):
             found.append(Violation(before.id, f"it was weakened from {old} to {new}"))
@@ -326,14 +330,14 @@ def approved_by_person(events: Any) -> bool:
     return isinstance(actor, dict) and actor.get("type") == "User"
 
 
-def _read_events(path: Path | None) -> Any:
-    """Read the saved label history; unreadable counts as none."""
+def _read_events(path: Path | None) -> tuple[Any, bool]:
+    """Read the saved label history, and say whether it could be read."""
     if path is None:
-        return []
+        return [], True
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8")), True
     except (OSError, ValueError):
-        return []
+        return [], False
 
 
 def run(base_root: Path, head_root: Path, events_path: Path | None) -> tuple[int, str]:
@@ -356,7 +360,13 @@ def run(base_root: Path, head_root: Path, events_path: Path | None) -> tuple[int
     if not found:
         return 0, "Release policy: nothing is weakened."
     lines = [f"  - {each.subject}: {each.problem}" for each in found]
-    if approved_by_person(_read_events(events_path)):
+    events, readable = _read_events(events_path)
+    if not readable:
+        lines.append(
+            "The pull request's label history could not be read, so no label "
+            "was counted."
+        )
+    if approved_by_person(events):
         heading = (
             f"Release policy: {len(found)} change(s) weaken the policy, and a "
             f"person has allowed them with the `{POLICY_LABEL}` label:"

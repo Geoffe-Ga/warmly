@@ -45,6 +45,7 @@ addopts = [
     "--strict-markers",
     "--strict-config",
     "--cov=warmly",
+    "--cov=scripts/release",
     "--cov-branch",
     "--cov-report=term-missing:skip-covered",
     "--cov-report=html",
@@ -62,7 +63,7 @@ markers = [
 asyncio_default_fixture_loop_scope = "function"
 
 [tool.coverage.run]
-source = ["warmly"]
+source = ["warmly", "scripts/release"]
 branch = true
 omit = [
     "*/tests/*",

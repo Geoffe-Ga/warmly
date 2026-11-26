@@ -13,16 +13,12 @@ Usage:
     python -m scripts.release.bandit_report bandit-report.json
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+from typing import Any
 
 # The severities that block. Bandit's scale stops at HIGH; CRITICAL is
 # listed so a later version that adds it blocks too.

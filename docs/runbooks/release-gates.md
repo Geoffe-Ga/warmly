@@ -137,14 +137,27 @@ Be clear about its limits:
   is taken from the base branch, but the workflow that calls it is not.
 - **It protects only what the manifest lists.** A threshold nobody listed
   can be lowered without it noticing.
+- **It does not read the workflow for other ways to weaken a check**, such
+  as removing a step from a required job or changing what a step runs.
+  One case is caught, by a test rather than by the guard: a required job
+  may not have an `if:` or `continue-on-error`
+  (`tests/release/test_manifest.py`).
+- **The label proves an account, not a person's judgement.** The guard
+  accepts the label from any account GitHub calls a `User`. That includes
+  the pull request's own author, and an agent acting through a person's
+  account looks the same as that person. The project's rule is that an
+  agent never adds the label, but nothing in the guard can enforce it.
 
-Both are closed by repository settings, which a person must set:
+These are closed by repository settings, which a person must set:
 
 1. Make **Release Gate** and **Release Policy Guard** required status
    checks on `main` (Settings, Branches, branch protection).
 2. Require review from a code owner for `.github/workflows/`,
    `release/` and `scripts/release/`.
 3. Create the `release-policy-change` label.
+4. Require an approving review from someone other than the author on
+   `main`. That is what turns "a person labelled it" into "a second
+   person agreed".
 
 Until the first is done, the gate reports and does not prevent a merge.
 

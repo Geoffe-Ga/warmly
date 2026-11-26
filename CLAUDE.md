@@ -193,8 +193,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   (`scripts/release/gate.py`, `docs/runbooks/release-gates.md`): every
   check in `release/required-checks.yml` must be there, finished and
   successful. Missing, skipped, cancelled, neutral and still running all
-  block. Never make the gate treat anything but `success` as a pass, and
-  never give a required CI job an `if:`.
+  block. Never make the gate treat anything but `success` as a pass. A
+  job the manifest names never has an `if:` and never has
+  `continue-on-error`, on the job or on a step; the gate itself is the
+  one job that runs `if: always()`, so it can report a failure. A test
+  holds both.
 - Never remove a check from that manifest, delete a file under one of its
   `paths`, or weaken a threshold to get green. The Release Policy Guard
   (`scripts/release/policy.py`) fails such a pull request unless a person

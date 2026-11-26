@@ -54,6 +54,14 @@ FILES = {
 }
 
 
+def unreadable(file: str) -> str:
+    """What the guard says of a number it cannot read from a file."""
+    return (
+        f"its number cannot be read from `{file}`: it is missing, or given "
+        "more than once with different values"
+    )
+
+
 def copy(root: Path, files: dict[str, str]) -> Path:
     """Write one copy of a small repository and return its top."""
     for name, text in files.items():
@@ -267,7 +275,7 @@ class TestViolations:
         base, head = pair(tmp_path, FILES | {"pyproject.toml": "[tool]\n"})
 
         assert violations(base, head) == [
-            Violation("coverage", "its number cannot be found in `pyproject.toml`")
+            Violation("coverage", unreadable("pyproject.toml"))
         ]
 
     def test_a_number_whose_file_is_gone_is_a_violation(self, tmp_path: Path) -> None:
@@ -277,7 +285,7 @@ class TestViolations:
         base, head_root = pair(tmp_path, head)
 
         assert violations(base, head_root) == [
-            Violation("download-kb", "its number cannot be found in `budget.ts`")
+            Violation("download-kb", unreadable("budget.ts"))
         ]
 
     def test_two_different_numbers_for_one_threshold_cannot_be_trusted(
@@ -288,7 +296,27 @@ class TestViolations:
         base, head = pair(tmp_path, FILES | {"pyproject.toml": text})
 
         assert [each.problem for each in violations(base, head)] == [
-            "its number cannot be found in `pyproject.toml`"
+            unreadable("pyproject.toml")
+        ]
+
+    @pytest.mark.parametrize(
+        "pattern",
+        [
+            "fail_under = (\\d+",
+            "fail_under = \\d+",
+            "(fail)_under = (\\d+)",
+            "(fail)_under",
+        ],
+    )
+    def test_a_pattern_that_cannot_give_one_number_is_a_violation(
+        self, tmp_path: Path, pattern: str
+    ) -> None:
+        """A broken pattern, or one without exactly one number, reads nothing."""
+        broken = MANIFEST.replace("fail_under = (\\d+)", pattern)
+        base, head = pair(tmp_path, FILES | {"release/required-checks.yml": broken})
+
+        assert violations(base, head) == [
+            Violation("coverage", unreadable("pyproject.toml"))
         ]
 
     def test_a_removed_threshold_is_a_violation(self, tmp_path: Path) -> None:
@@ -506,8 +534,25 @@ class TestRun:
         broken = tmp_path / "events.json"
         broken.write_text("not json", encoding="utf-8")
 
-        assert run(base, head, broken)[0] == 1
-        assert run(base, head, tmp_path / "missing.json")[0] == 1
+        for path in (broken, tmp_path / "missing.json"):
+            code, message = run(base, head, path)
+
+            assert code == 1
+            assert message.splitlines()[-1] == (
+                "The pull request's label history could not be read, so no "
+                "label was counted."
+            )
+
+    def test_a_readable_history_with_no_label_says_nothing_about_reading(
+        self, tmp_path: Path
+    ) -> None:
+        """The note about an unreadable history appears only when it is one."""
+        base, head = self.weakened(tmp_path)
+
+        code, message = run(base, head, self.events(tmp_path, []))
+
+        assert code == 1
+        assert "could not be read" not in message
 
     def test_a_broken_manifest_is_blocked_whatever_the_label(
         self, tmp_path: Path
