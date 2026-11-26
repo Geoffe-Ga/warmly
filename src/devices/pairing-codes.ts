@@ -122,33 +122,26 @@ export function transferMessage(transcript: PairingTranscript): {
 }
 
 /**
- * Decode a value of a known length; anything else counts as altered.
+ * Decode a value the relay handed over; anything that cannot be decoded,
+ * or is not the length it must be, counts as altered.
  *
  * @param encoded - The value as the relay gave it.
- * @param length - How many bytes it must be.
+ * @param length - How many bytes it must be. Left out for a wrapped key,
+ *   whose length is checked when it is opened.
  * @returns The bytes.
  * @throws PairingError `pairing_tampered`.
  */
-export function decoded(encoded: string, length: number): Bytes {
+export function decoded(encoded: string, length?: number): Bytes {
   let value: Bytes;
   try {
     value = fromBase64(encoded);
   } catch {
     throw new PairingError("pairing_tampered");
   }
-  if (value.length !== length) {
+  if (length !== undefined && value.length !== length) {
     throw new PairingError("pairing_tampered");
   }
   return value;
-}
-
-/** Decode a wrapped key; anything undecodable counts as altered. */
-export function sealedKey(encoded: string): Bytes {
-  try {
-    return fromBase64(encoded);
-  } catch {
-    throw new PairingError("pairing_tampered");
-  }
 }
 
 /** Whether two byte strings are the same. Neither is a secret. */

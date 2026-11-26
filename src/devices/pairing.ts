@@ -51,7 +51,6 @@ import {
   pairingCode,
   pairingCommitment,
   sameBytes,
-  sealedKey,
   transferMessage,
   type PairingTranscript,
 } from "./pairing-codes";
@@ -251,7 +250,7 @@ export class AccountPairing implements DevicePairing {
       received = await hpkeOpen(
         recipient,
         transferMessage(transcript),
-        sealedKey(approved.wrappedKey ?? ""),
+        decoded(approved.wrappedKey ?? ""),
       );
     } catch (error) {
       if (error instanceof HpkeOpenError) {
