@@ -351,8 +351,12 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   `classifyAiError` and put into words by `describeAiError`
   (`src/ai/errors.ts`): never show a provider's own error text. A request
   must fit the budget (`src/ai/budget.ts`, limits in `src/ai/config.ts`),
-  and the gateway runs one request at a time. Call `reset()` when the
-  screen closes or the app locks.
+  and the gateway runs one request at a time. Cancel and the time limit
+  end the wait at once (`untilAborted`, `src/ai/abort.ts`) in both the
+  controller and the gateway, whether or not the provider stops; a
+  provider adapter must still pass the signal on, and whatever a stopped
+  call returns later is dropped unread. Call `reset()` when the screen
+  closes or the app locks.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

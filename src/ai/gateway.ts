@@ -23,6 +23,7 @@
  * Journal text passes through this module on its way to the provider and is
  * never logged, stored or sent anywhere else.
  */
+import { untilAborted } from "./abort";
 import { budgetFor, withinBudget } from "./budget";
 import { consumeConsent, sealRequest, type ConsentToken } from "./consent";
 import type {
@@ -30,6 +31,7 @@ import type {
   ReflectionAnswer,
   SegmentAlternatives,
 } from "./contracts";
+import { AiBusyError, NoProviderError, RequestTooLargeError } from "./errors";
 import { FakeProvider } from "./fake-provider";
 import { groundAlternatives, groundCards, groundReflection } from "./grounding";
 import { buildManifest, promptFor, type Manifest } from "./manifest";
@@ -47,13 +49,9 @@ import type {
 // which only the disclosure dialog may import.
 export type { ConsentToken } from "./consent";
 
-/** No provider is connected, so there is nothing to send a request to. */
-export class NoProviderError extends Error {
-  constructor() {
-    super("No AI provider is connected");
-    this.name = "NoProviderError";
-  }
-}
+// Defined beside the other failures; exported here too because this is
+// where callers meet them.
+export { AiBusyError, NoProviderError, RequestTooLargeError } from "./errors";
 
 /**
  * The call did not come with the person's fresh agreement to send this
@@ -63,22 +61,6 @@ export class ConsentRequiredError extends Error {
   constructor() {
     super("The person has not agreed to send this request");
     this.name = "ConsentRequiredError";
-  }
-}
-
-/** The request is larger than the provider's model accepts. Nothing was sent. */
-export class RequestTooLargeError extends Error {
-  constructor() {
-    super("The request is too large for the provider");
-    this.name = "RequestTooLargeError";
-  }
-}
-
-/** Another AI request is still running. Nothing was sent or used up. */
-export class AiBusyError extends Error {
-  constructor() {
-    super("Another AI request is still running");
-    this.name = "AiBusyError";
   }
 }
 
@@ -220,14 +202,22 @@ export class AiGateway {
    * Make one call, and only one at a time (PRD AI-016). A second call
    * while one is running is refused before its consent is looked at, so
    * its token is not used up.
+   *
+   * The call ends as soon as its signal fires, whether or not the
+   * provider stops: the gateway is free for the next request at once, and
+   * whatever the stopped call returns later is dropped unread. A call
+   * whose signal has already fired is refused before anything is used up.
    */
-  async #one<T>(call: () => Promise<T>): Promise<T> {
+  async #one<T>(signal: AbortSignal, call: () => Promise<T>): Promise<T> {
     if (this.#busy) {
       throw new AiBusyError();
     }
+    if (signal.aborted) {
+      throw new DOMException("The request was stopped", "AbortError");
+    }
     this.#busy = true;
     try {
-      return await call();
+      return await untilAborted(call(), signal);
     } finally {
       this.#busy = false;
     }
@@ -251,7 +241,7 @@ export class AiGateway {
     consent: ConsentToken,
     signal: AbortSignal = new AbortController().signal,
   ): Promise<ReflectionAnswer> {
-    return this.#one(async () => {
+    return this.#one(signal, async () => {
       const { provider, manifest } = this.#admit(request, consent);
       const raw = await provider.reflect(promptFor(request, manifest), signal);
       return groundReflection(raw, manifest, request.coverage);
@@ -272,7 +262,7 @@ export class AiGateway {
     consent: ConsentToken,
     signal: AbortSignal = new AbortController().signal,
   ): Promise<readonly GeneratedCard[]> {
-    return this.#one(async () => {
+    return this.#one(signal, async () => {
       const { provider, manifest } = this.#admit(request, consent);
       const raw = await provider.generateCards(
         promptFor(request, manifest),
@@ -296,7 +286,7 @@ export class AiGateway {
     consent: ConsentToken,
     signal: AbortSignal = new AbortController().signal,
   ): Promise<SegmentAlternatives> {
-    return this.#one(async () => {
+    return this.#one(signal, async () => {
       const { provider, manifest } = this.#admit(request, consent);
       const raw = await provider.generateSegmentAlternatives(
         promptFor(request, manifest),

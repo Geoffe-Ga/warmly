@@ -58,14 +58,42 @@ export class AiError extends Error {
   }
 }
 
-/** Errors known by name, so this module need not import their classes. */
+/** No provider is connected, so there is nothing to send a request to. */
+export class NoProviderError extends Error {
+  constructor() {
+    super("No AI provider is connected");
+    this.name = "NoProviderError";
+  }
+}
+
+/** The request is larger than the provider's model accepts. Nothing was sent. */
+export class RequestTooLargeError extends Error {
+  constructor() {
+    super("The request is too large for the provider");
+    this.name = "RequestTooLargeError";
+  }
+}
+
+/** Another AI request is still running. Nothing was sent or used up. */
+export class AiBusyError extends Error {
+  constructor() {
+    super("Another AI request is still running");
+    this.name = "AiBusyError";
+  }
+}
+
+/** What a browser throws for a request that was stopped or took too long. */
 const BY_NAME: Readonly<Record<string, AiErrorKind>> = {
   AbortError: "cancelled",
   TimeoutError: "timeout",
-  NoProviderError: "no_credential",
-  RequestTooLargeError: "too_large",
-  AiBusyError: "busy",
 };
+
+/** The app's own refusals, each with its kind. */
+const OWN: readonly (readonly [new () => Error, AiErrorKind])[] = [
+  [NoProviderError, "no_credential"],
+  [RequestTooLargeError, "too_large"],
+  [AiBusyError, "busy"],
+];
 
 /**
  * Say which kind of failure an error is.
@@ -84,6 +112,10 @@ export function classifyAiError(error: unknown): AiErrorKind {
     error instanceof UngroundedCitationError
   ) {
     return "invalid_output";
+  }
+  const own = OWN.find(([made]) => error instanceof made);
+  if (own !== undefined) {
+    return own[1];
   }
   // Read by name, not by class: what a browser throws for an aborted or
   // timed-out request is a DOMException, which is not always an `Error`.
@@ -159,7 +191,12 @@ export function describeAiError(
   }
 }
 
-/** Said with every failure: what was kept, and what trying again means. */
+/**
+ * Said with every failure: what was kept, and what trying again means.
+ *
+ * @param provider - The provider's name as shown, for example "OpenAI".
+ * @returns The sentence.
+ */
 export function retryNote(provider: string): string {
   return `Nothing you wrote or chose was lost. Warmly does not try again by itself: if you do, you will be asked first, and your writing is sent to ${provider} again.`;
 }

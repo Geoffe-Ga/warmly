@@ -19,6 +19,7 @@
  * The phases are `idle`, `awaiting-consent`, `running`, `failed` and
  * `done`.
  */
+import { untilAborted } from "./abort";
 import { REQUEST_TIMEOUT_MS } from "./config";
 import { classifyAiError, type AiErrorKind } from "./errors";
 import type { ConsentToken } from "./gateway";
@@ -151,7 +152,12 @@ export class AiRequestController<R extends AiRequest, T> {
       this.#stop("timeout");
     }, this.#timeoutMs);
     try {
-      const result = await this.#send(request, consent, abort.signal);
+      // The wait ends when the request is stopped, even if the provider
+      // never answers: Cancel and the time limit do not depend on it.
+      const result = await untilAborted(
+        this.#send(request, consent, abort.signal),
+        abort.signal,
+      );
       if (run === this.#run) {
         this.#set({ phase: "done", request, result });
       }
@@ -169,8 +175,10 @@ export class AiRequestController<R extends AiRequest, T> {
 
   #failed(request: R, error: unknown): void {
     // Why it stopped is known here, whatever the provider threw when its
-    // request was aborted.
-    const kind = this.#stopped ?? classifyAiError(error);
+    // request was aborted. A request that was cut off without the person
+    // or the time limit stopping it is a failure, and is shown as one.
+    const thrown = classifyAiError(error);
+    const kind = this.#stopped ?? (thrown === "cancelled" ? "network" : thrown);
     this.#set(
       kind === "cancelled"
         ? { phase: "idle" }

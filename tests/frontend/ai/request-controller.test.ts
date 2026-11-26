@@ -29,7 +29,12 @@ import {
   RequestTooLargeError,
 } from "../../../src/ai/gateway";
 import { UngroundedCitationError } from "../../../src/ai/grounding";
-import type { ReflectRequest, SourceEntry } from "../../../src/ai/provider";
+import { untilAborted } from "../../../src/ai/abort";
+import type {
+  AIProvider,
+  ReflectRequest,
+  SourceEntry,
+} from "../../../src/ai/provider";
 import { AiRequestController } from "../../../src/ai/request-controller";
 import type { ReflectionAnswer } from "../../../src/ai/contracts";
 
@@ -41,6 +46,47 @@ const ENTRY: SourceEntry = {
 
 function request(question = "CANARY question"): ReflectRequest {
   return { kind: "reflect", question, entries: [ENTRY] };
+}
+
+/**
+ * A provider that takes no notice of being told to stop: it answers only
+ * when the test says so, however long ago the request was aborted.
+ */
+function deafProvider(): {
+  gateway: AiGateway;
+  answer: () => void;
+  calls: () => number;
+} {
+  const base = new FakeProvider();
+  const waiting: (() => void)[] = [];
+  let calls = 0;
+  const provider: AIProvider = {
+    id: base.id,
+    name: base.name,
+    capabilities: () => base.capabilities(),
+    validateConfig: () => base.validateConfig(),
+    estimateTokens: (prompt) => base.estimateTokens(prompt),
+    reflect: () => {
+      calls += 1;
+      return new Promise((resolve) => {
+        waiting.push(() => {
+          resolve({ markdown: "A late answer.", citations: [] });
+        });
+      });
+    },
+    generateCards: (prompt, signal) => base.generateCards(prompt, signal),
+    generateSegmentAlternatives: (prompt, signal) =>
+      base.generateSegmentAlternatives(prompt, signal),
+  };
+  return {
+    gateway: new AiGateway(provider),
+    answer: () => {
+      for (const each of waiting.splice(0)) {
+        each();
+      }
+    },
+    calls: () => calls,
+  };
 }
 
 function setUp(timeoutMs?: number): {
@@ -322,14 +368,76 @@ describe("stopping a request (AI-016)", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
-  it("a provider that reports its own cancellation shows no error either", async () => {
+  it("a request cut off without the person or the time limit stopping it is shown as a failure", async () => {
     const { controller, provider } = setUp();
+    const asked = request();
     provider.failNextWith("cancelled");
-    controller.ask(request());
+    controller.ask(asked);
 
     await agree(controller);
 
+    // Not silently back to idle: the person asked and got nothing.
+    expect(controller.state()).toEqual({
+      phase: "failed",
+      request: asked,
+      error: "network",
+    });
+  });
+
+  it("Cancel works at once even if the provider ignores it, and a late answer is dropped", async () => {
+    const deaf = deafProvider();
+    const controller = new AiRequestController<
+      ReflectRequest,
+      ReflectionAnswer
+    >((asked, consent, signal) => deaf.gateway.reflect(asked, consent, signal));
+    const asked = request();
+    controller.ask(asked);
+    const running = controller.confirm(grantConsent(asked));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.state().phase).toBe("running");
+
+    controller.cancel();
+    await running;
+
     expect(controller.state()).toEqual({ phase: "idle" });
+    // The provider answers long after it was told to stop.
+    deaf.answer();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.state()).toEqual({ phase: "idle" });
+    // The gateway is free: the next request is not refused as busy.
+    const next = request("Next");
+    controller.ask(next);
+    const second = controller.confirm(grantConsent(next));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.state().phase).toBe("running");
+    controller.cancel();
+    await second;
+  });
+
+  it("the time limit works even if the provider never answers or stops", async () => {
+    const deaf = deafProvider();
+    const controller = new AiRequestController<
+      ReflectRequest,
+      ReflectionAnswer
+    >(
+      (asked, consent, signal) => deaf.gateway.reflect(asked, consent, signal),
+      5_000,
+    );
+    const asked = request();
+    controller.ask(asked);
+    const running = controller.confirm(grantConsent(asked));
+
+    await vi.advanceTimersByTimeAsync(5_000);
+    await running;
+
+    expect(controller.state()).toEqual({
+      phase: "failed",
+      request: asked,
+      error: "timeout",
+    });
+    expect(deaf.calls()).toBe(1);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(deaf.calls()).toBe(1);
   });
 
   it("stops waiting after the time limit, says it timed out, and sends nothing more", async () => {
@@ -454,6 +562,47 @@ describe("the gateway runs one request at a time (AI-016)", () => {
     expect(provider.calls).toHaveLength(2);
   });
 
+  it("is free as soon as a call is stopped, whatever the provider does", async () => {
+    const deaf = deafProvider();
+    const first = request("First");
+    const stop = new AbortController();
+    const running = deaf.gateway.reflect(
+      first,
+      grantConsent(first),
+      stop.signal,
+    );
+
+    stop.abort();
+
+    await expect(running).rejects.toMatchObject({ name: "AbortError" });
+    const second = request("Second");
+    const next = new AbortController();
+    const again = deaf.gateway.reflect(
+      second,
+      grantConsent(second),
+      next.signal,
+    );
+    next.abort();
+    await expect(again).rejects.toMatchObject({ name: "AbortError" });
+    expect(deaf.calls()).toBe(2);
+  });
+
+  it("refuses a call that was stopped before it began, without using up its consent", async () => {
+    const provider = new FakeProvider();
+    const gateway = new AiGateway(provider);
+    const asked = request();
+    const token = grantConsent(asked);
+    const stopped = new AbortController();
+    stopped.abort();
+
+    await expect(
+      gateway.reflect(asked, token, stopped.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    expect(provider.calls).toEqual([]);
+    await expect(gateway.reflect(asked, token)).resolves.toBeDefined();
+  });
+
   it("is free again after a call fails", async () => {
     const provider = new FakeProvider();
     const gateway = new AiGateway(provider);
@@ -467,6 +616,46 @@ describe("the gateway runs one request at a time (AI-016)", () => {
     await expect(
       gateway.reflect(second, grantConsent(second)),
     ).resolves.toBeDefined();
+  });
+});
+
+describe("waiting no longer than a signal allows", () => {
+  it("gives the result when the work finishes first", async () => {
+    await expect(
+      untilAborted(Promise.resolve("done"), new AbortController().signal),
+    ).resolves.toBe("done");
+  });
+
+  it("gives the work's own failure when it fails first", async () => {
+    await expect(
+      untilAborted(
+        Promise.reject(new AiError("network")),
+        new AbortController().signal,
+      ),
+    ).rejects.toThrow(AiError);
+  });
+
+  it("ends at once when the signal fires, and drops what comes later", async () => {
+    const stop = new AbortController();
+    let finish: (value: string) => void = () => undefined;
+    const work = new Promise<string>((resolve) => {
+      finish = resolve;
+    });
+    const waited = untilAborted(work, stop.signal);
+
+    stop.abort();
+    finish("too late");
+
+    await expect(waited).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("ends at once when the signal has already fired, and a later failure of the work is not left unhandled", async () => {
+    const stop = new AbortController();
+    stop.abort();
+
+    await expect(
+      untilAborted(Promise.reject(new Error("synthetic")), stop.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
   });
 });
 
