@@ -96,8 +96,11 @@ describe("the help page (RF-012, RF-013)", () => {
   });
 
   it("the app has no code that looks for crisis in what a person writes (RF-013)", () => {
+    // A tripwire, not a proof: it catches the obvious names for such code
+    // and nothing cleverer. The one file left out is the help page's own
+    // text, which says that Warmly does none of this.
     const code = Object.entries(SOURCES).filter(
-      ([path]) => !path.includes("/ui/screens/help/"),
+      ([path]) => !path.endsWith("/ui/screens/help/boundaries.tsx"),
     );
 
     expect(code.length).toBeGreaterThan(50);

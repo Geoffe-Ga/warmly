@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 
-import { ROUTES, pathFor } from "../../src/app/routes";
+import { redirectFor } from "../../src/app/access";
+import { ROUTES, pathFor, type RouteDef } from "../../src/app/routes";
 import { expect, test } from "../fixtures/test";
 
 const WCAG_22_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
@@ -12,8 +13,11 @@ const SAMPLE_PARAMS = { id: "sample-1", cardId: "sample-2" };
  * cover what a signed-out visitor sees and what must not be in the bundle.
  */
 test.describe("production build: signed-out access (DEV-005)", () => {
-  const NEEDS_SIGN_IN = ["private", "locked"];
-  for (const route of ROUTES.filter((r) => NEEDS_SIGN_IN.includes(r.access))) {
+  // Asked of the access rules themselves, so a new access level cannot be
+  // left out of one list or the other.
+  const needsSignIn = (route: RouteDef): boolean =>
+    redirectFor(route.access, "signed_out") !== undefined;
+  for (const route of ROUTES.filter(needsSignIn)) {
     test(`${route.id} is not reachable signed out`, async ({ page }) => {
       await page.goto(pathFor(route.id, SAMPLE_PARAMS));
 
@@ -24,7 +28,7 @@ test.describe("production build: signed-out access (DEV-005)", () => {
     });
   }
 
-  for (const route of ROUTES.filter((r) => !NEEDS_SIGN_IN.includes(r.access))) {
+  for (const route of ROUTES.filter((route) => !needsSignIn(route))) {
     test(`${route.id} renders and has no WCAG 2.2 AA violations (AC-23)`, async ({
       page,
     }) => {
