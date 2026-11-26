@@ -86,9 +86,9 @@ test.describe("large text (UI-003)", () => {
       await openInApp(page, pathFor(route.id, SAMPLE_PARAMS));
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       // Fonts differ between machines, and a wider one must not break a
-      // screen that a narrower one fits. Wider letter spacing stands in
-      // for a wider font, so the answer is the same everywhere.
-      for (const spacing of ["0", "0.1em"]) {
+      // screen that a narrower one fits. Much wider letter spacing stands
+      // in for any wider font, so the answer is the same everywhere.
+      for (const spacing of ["0", "0.3em"]) {
         const overflow = await page.evaluate((letterSpacing) => {
           const root = document.documentElement;
           root.style.fontSize = "200%";

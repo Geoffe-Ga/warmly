@@ -307,7 +307,7 @@ The system uses the **device's own UI font** (`system-ui, -apple-system, "Segoe 
 - **All sizes are in rem** so the interface follows the user's browser text-size setting and tolerates high zoom (PRD §3.6).
 - **Three weights only:** 400 for reading, 600 for controls and labels, 700 for headings.
 - **One `h1` per screen**, and it receives focus after in-app navigation so screen-reader users hear that the screen changed.
-- Headings use `overflow-wrap: anywhere` so a long word cannot force horizontal scrolling on a narrow phone.
+- All text uses `overflow-wrap: anywhere` (set on `body`), so a word too long for its line breaks and cannot force horizontal scrolling, on a narrow phone, at double text size, in any font. Grid columns that hold text are `minmax(0, 1fr)` and text fields may shrink, for the same reason.
 
 ## Layout
 

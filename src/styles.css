@@ -68,6 +68,9 @@ body {
   font-family: var(--font-body);
   font-size: var(--font-size-body);
   line-height: var(--line-height);
+  /* A word too long for its line breaks, on any screen, at any text size
+     and in any font, so that a page never has to scroll sideways */
+  overflow-wrap: anywhere;
 }
 
 h1,
@@ -251,6 +254,8 @@ a {
 
 .field__control {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: var(--touch-target);
   padding: var(--space-2) var(--space-3);
   border: var(--border-width) solid var(--color-border-strong);
