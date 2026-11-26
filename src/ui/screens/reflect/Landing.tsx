@@ -9,6 +9,7 @@ import {
   type ReflectSession,
 } from "../../../domain/reflect/types";
 import { PageLayout } from "../../components/PageLayout";
+import { BoundaryNotice } from "../help/boundaries";
 import { JournalBrowser } from "../journal/Timeline";
 import { useJournalEntries } from "../journal/shared";
 
@@ -107,6 +108,7 @@ export function Landing(): JSX.Element {
           </li>
         </ul>
       </nav>
+      <BoundaryNotice />
       <section aria-labelledby="reflect-saved">
         <h2 id="reflect-saved">Your reflections</h2>
         <SessionList sessions={sessions} />

@@ -37,6 +37,7 @@ import { Session } from "../ui/screens/reflect/Session";
 import { ConflictReview } from "../ui/screens/sync/ConflictReview";
 import { redirectFor } from "./access";
 import { matchRoute } from "./router";
+import { Boundaries } from "../ui/screens/help/boundaries";
 import type { RouteDef, RouteId, RouteParams } from "./routes";
 import type { SessionState } from "./session";
 
@@ -67,6 +68,7 @@ const SCREENS: Readonly<
   "sync-conflicts": ConflictReview,
   reflect: Landing,
   "reflect-session": Session,
+  help: Boundaries,
   prepare: Collections,
   collection: Collection,
   card: CardScreen,

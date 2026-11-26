@@ -38,15 +38,18 @@ export type RouteId =
   | "add-device"
   | "device-revoked"
   | "trust-device"
-  | "locked";
+  | "locked"
+  | "help";
 
 /**
  * Who may see a screen:
  * - `public`: signed-out visitors (sign-in and registration).
  * - `locked`: a signed-in user whose data is still locked (unlock, recovery).
  * - `private`: an unlocked user. Everything that can show private content.
+ * - `open`: anyone, in any state. Only for screens of fixed words that
+ *   show nothing private, such as what the product is and is not.
  */
-export type RouteAccess = "public" | "locked" | "private";
+export type RouteAccess = "public" | "locked" | "private" | "open";
 
 /** One entry in the route table. */
 export interface RouteDef {
@@ -275,6 +278,14 @@ export const ROUTES: readonly RouteDef[] = [
     title: "Warmly is locked",
     summary: "Your journal is closed. Unlock it to continue.",
     access: "locked",
+  },
+  {
+    id: "help",
+    path: "/help",
+    title: "What Warmly is and is not",
+    summary:
+      "Warmly is a private journal and a memory aid. It is not therapy, a crisis service or a judge.",
+    access: "open",
   },
 ];
 

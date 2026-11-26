@@ -577,6 +577,11 @@ textarea.field__control {
   white-space: pre-line;
 }
 
+/* The standing note under an answer sits clear of what is above it */
+.cited-answer .cited-answer__caution {
+  margin-top: var(--space-3);
+}
+
 .citation {
   margin-left: var(--space-1);
   font-weight: 600;

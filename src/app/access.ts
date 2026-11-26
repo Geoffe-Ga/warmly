@@ -35,6 +35,12 @@ const REDIRECTS: Readonly<
     signed_in_locked: LOCKED_PATH,
     unlocked: undefined,
   },
+  // Fixed words that show nothing private: readable in every state.
+  open: {
+    signed_out: undefined,
+    signed_in_locked: undefined,
+    unlocked: undefined,
+  },
 };
 
 /**
