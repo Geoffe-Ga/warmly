@@ -7,6 +7,7 @@
  */
 import type { CardCollection, ConversationCard } from "../domain/cards/types";
 import type { JournalEntry } from "../domain/journal/types";
+import type { UnfinishedEdit } from "../domain/journal/unfinished";
 import type { PostConversationReflection } from "../domain/post-conversation/types";
 import type { ReflectSession } from "../domain/reflect/types";
 
@@ -168,6 +169,34 @@ export interface RecordStore {
     merged?: RecordKinds[K],
   ): Promise<boolean>;
   /**
+   * The edit to a journal entry that the person has not saved, if this
+   * device is keeping one (ADR-0015). It is kept on this device only and
+   * is never part of the entry.
+   *
+   * @param id - The entry's ID.
+   * @returns The edit, or `undefined` if there is none or it cannot be
+   *   read.
+   */
+  unfinished(id: string): Promise<UnfinishedEdit | undefined>;
+  /**
+   * Keep an unsaved edit to a journal entry on this device, in place of
+   * any kept before. It never changes the entry and never syncs.
+   *
+   * @param id - The entry's ID.
+   * @param edit - What the edit form holds.
+   * @returns Whether it was kept. `false` if the entry is not on this
+   *   device or has been deleted: nothing is kept for an entry that is
+   *   gone.
+   */
+  keepUnfinished(id: string, edit: UnfinishedEdit): Promise<boolean>;
+  /**
+   * Forget the unsaved edit to a journal entry. Forgetting one that is not
+   * there does nothing.
+   *
+   * @param id - The entry's ID.
+   */
+  dropUnfinished(id: string): Promise<void>;
+  /**
    * Be told after any record changes.
    *
    * @param listener - Called after each change.
@@ -207,6 +236,8 @@ export class MemoryRecordStore implements RecordStore {
   >();
   /** The IDs of deleted records, as `kind/id`. */
   #deleted = new Set<string>();
+  /** Unsaved edits to journal entries, by entry ID. */
+  #unfinished = new Map<string, UnfinishedEdit>();
   readonly #listeners = new Set<() => void>();
 
   #kind<K extends RecordKind>(kind: K): Map<string, RecordKinds[K]> {
@@ -247,8 +278,29 @@ export class MemoryRecordStore implements RecordStore {
   delete(kind: RecordKind, id: string): Promise<void> {
     if (this.#kind(kind).delete(id)) {
       this.#deleted.add(`${kind}/${id}`);
+      if (kind === "journal-entry") {
+        // An unsaved edit goes with the entry it was an edit of.
+        this.#unfinished.delete(id);
+      }
       this.#changed();
     }
+    return Promise.resolve();
+  }
+
+  unfinished(id: string): Promise<UnfinishedEdit | undefined> {
+    return Promise.resolve(this.#unfinished.get(id));
+  }
+
+  keepUnfinished(id: string, edit: UnfinishedEdit): Promise<boolean> {
+    if (!this.#kind("journal-entry").has(id)) {
+      return Promise.resolve(false);
+    }
+    this.#unfinished.set(id, edit);
+    return Promise.resolve(true);
+  }
+
+  dropUnfinished(id: string): Promise<void> {
+    this.#unfinished.delete(id);
     return Promise.resolve();
   }
 
@@ -328,6 +380,9 @@ export class MemoryRecordStore implements RecordStore {
       if (parked.theirs === undefined) {
         this.#kind(kind).delete(id);
         this.#deleted.add(`${kind}/${id}`);
+        if (kind === "journal-entry") {
+          this.#unfinished.delete(id);
+        }
       } else {
         this.#kind(kind).set(id, parked.theirs as RecordKinds[K]);
       }
@@ -350,6 +405,7 @@ export class MemoryRecordStore implements RecordStore {
     this.#records = emptyRecords();
     this.#parked = new Map();
     this.#deleted = new Set();
+    this.#unfinished = new Map();
     this.#changed();
   }
 }

@@ -1,12 +1,8 @@
 import type { JSX } from "preact";
-import { useContext, useEffect, useState } from "preact/hooks";
+import { useContext, useState } from "preact/hooks";
 
 import { Link, NavigationContext } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
-import { useServices } from "../../../app/services";
-import { BLANK, type EntryContent } from "../../../domain/journal/drafts";
-import { editEntry } from "../../../domain/journal/edit";
-import type { JournalEntry } from "../../../domain/journal/types";
 import { canComplete, unanswered } from "../../../domain/journal/validation";
 import { StaleRecordError } from "../../../storage/record-store";
 import { Button } from "../../components/Button";
@@ -14,19 +10,22 @@ import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { ActionForm, useAction } from "../../components/ActionForm";
 import { EntryFields, OutOfDate } from "./EntryFields";
-import { describeOpenFailure } from "../../storage-messages";
 import { DependentsWarning } from "./dependents";
+import { SaveStatus } from "./SaveStatus";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
+import { useEditForm } from "./useEditForm";
 
-/** What the screen has found out about the entry to edit. */
-type Found =
-  | { readonly kind: "loading" | "missing" }
-  | { readonly kind: "failed"; readonly message: string }
-  | { readonly kind: "entry"; readonly entry: JournalEntry };
-
-function contentOf(entry: JournalEntry): EntryContent {
-  return { responses: entry.responses, feelings: entry.feelings ?? [] };
-}
+/** Said once the unsaved changes are kept. */
+export const CHANGES_KEPT = "Unsaved changes are kept on this device";
+/** Said when the unsaved changes could not be kept. */
+export const CHANGES_NOT_KEPT =
+  "Your unsaved changes couldn't be kept on this device. They are still on this page: save them before you leave it.";
+/** Said when the form opens with unsaved changes from an earlier visit. */
+export const CHANGES_BROUGHT_BACK =
+  "These are changes you typed here earlier and did not save. The entry itself has not been changed by them. Save them, or start again from the saved entry.";
+/** Added when the entry is no longer the one those changes were made to. */
+export const ENTRY_CHANGED_SINCE =
+  "The entry has been changed since you typed them. Saving will replace what it says now.";
 
 /** What is said when there is no entry to edit. */
 const NOTICES = {
@@ -50,9 +49,10 @@ const NOTICES = {
  * text is not kept anywhere. The same rule as for a new entry applies:
  * every answer needs some text. Nothing here calls AI or the network.
  *
- * What is typed is held only on this screen until it is saved. It is not
- * saved as a draft, because that would change the entry before the person
- * chose to.
+ * What is typed is not saved as a draft of the entry, because that would
+ * change the entry before the person chose to. It is kept apart from the
+ * entry until it is saved or cancelled, and offered again if the app locked
+ * or the page was closed first (ADR-0015).
  *
  * @param props - The route's parameters; `id` names the entry.
  * @returns The edit screen.
@@ -60,44 +60,13 @@ const NOTICES = {
 export function EditEntry(props: {
   readonly params: RouteParams;
 }): JSX.Element {
-  const { records, events } = useServices();
   const { navigate } = useContext(NavigationContext);
   const action = useAction();
   const id = props.params["id"] ?? "";
-  const [found, setFound] = useState<Found>({ kind: "loading" });
-  const [content, setContent] = useState<EntryContent>(BLANK);
+  const form = useEditForm(id);
+  const { found, content } = form;
   const [tried, setTried] = useState(false);
   const [outOfDate, setOutOfDate] = useState(false);
-
-  // Uses only state setters, which never change, so it is safe to call from
-  // the effect below although it is made again on every render.
-  const show = (entry: JournalEntry | undefined): void => {
-    if (entry?.status === "complete") {
-      setFound({ kind: "entry", entry });
-      setContent(contentOf(entry));
-    } else {
-      setFound({ kind: "missing" });
-    }
-  };
-
-  useEffect(() => {
-    let current = true;
-    void records.get("journal-entry", id).then(
-      (entry) => {
-        if (current) {
-          show(entry);
-        }
-      },
-      (error: unknown) => {
-        if (current) {
-          setFound({ kind: "failed", message: describeOpenFailure(error) });
-        }
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [records, id]);
 
   const back = (
     <p>
@@ -129,12 +98,31 @@ export function EditEntry(props: {
           disabled={action.busy}
           onLoad={() => {
             action.run(async () => {
-              show(await records.reload("journal-entry", id));
+              await form.loadLatest();
               setOutOfDate(false);
               setTried(false);
             });
           }}
         />
+      )}
+      {form.recovered !== undefined && (
+        <StatusBanner tone="info" label="Unsaved changes brought back">
+          {CHANGES_BROUGHT_BACK}
+          {form.recovered.entryChangedSince && ` ${ENTRY_CHANGED_SINCE}`}
+          <div class="button-row">
+            <Button
+              disabled={action.busy}
+              onClick={() => {
+                action.run(async () => {
+                  await form.startAgain();
+                  setTried(false);
+                });
+              }}
+            >
+              Start again from the saved entry
+            </Button>
+          </div>
+        </StatusBanner>
       )}
       <DependentsWarning entryId={id} doing="edit" />
       <ActionForm
@@ -145,7 +133,7 @@ export function EditEntry(props: {
         }}
         onValid={async () => {
           try {
-            await editEntry({ records, events }, id, content);
+            await form.save();
           } catch (error) {
             if (error instanceof StaleRecordError) {
               setOutOfDate(true);
@@ -160,20 +148,39 @@ export function EditEntry(props: {
           Saving replaces what this entry said. The earlier wording is not kept,
           and there is no undo. The entry keeps its date.
         </p>
+        <p>
+          Until you save, the entry stays as it was. What you type is kept on
+          this device, apart from the entry, so that locking Warmly or closing
+          this page does not lose it. Cancelling removes it.
+        </p>
         <EntryFields
           content={content}
           missing={tried ? unanswered(content.responses) : []}
-          onChange={setContent}
+          onChange={form.change}
+        />
+        <SaveStatus
+          state={form.keepState}
+          error={form.keepError}
+          saved={CHANGES_KEPT}
+          failed={CHANGES_NOT_KEPT}
         />
         <div class="button-row">
           <Button type="submit" variant="primary" disabled={action.busy}>
             Save changes
           </Button>
+          <Button
+            disabled={action.busy}
+            onClick={() => {
+              action.run(async () => {
+                await form.abandon();
+                navigate(entryPath);
+              });
+            }}
+          >
+            Cancel and go back to the entry
+          </Button>
         </div>
       </ActionForm>
-      <p>
-        <Link href={entryPath}>Cancel and go back to the entry</Link>
-      </p>
     </PageLayout>
   );
 }

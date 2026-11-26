@@ -10,7 +10,7 @@ import AxeBuilder from "@axe-core/playwright";
 
 import { expect, test, type Page } from "../fixtures/test";
 
-import { onboard, unlockThisDevice } from "./account";
+import { onboard, openInApp, unlockThisDevice } from "./account";
 
 const GOOD = "What's going well?";
 
@@ -30,6 +30,11 @@ async function openCompose(page: Page): Promise<void> {
 async function carryOn(page: Page): Promise<void> {
   await page.getByRole("link", { name: "Journal", exact: true }).click();
   await page.getByRole("link", { name: /Carry on with your draft/ }).click();
+}
+
+/** Wait until unlocking has finished and the home screen is showing. */
+async function unlocked(page: Page): Promise<void> {
+  await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
 }
 
 test.describe("journal drafts", () => {
@@ -96,6 +101,62 @@ test.describe("journal drafts", () => {
     await expect(page.getByLabel(GOOD)).toHaveValue(
       "Synthetic: typed just before the lock",
     );
+  });
+
+  test("a lock or a reload in the middle of an edit keeps the unsaved changes, apart from the entry (AC-21, ADR-0015)", async ({
+    page,
+  }) => {
+    await page.clock.install();
+    await onboard(page);
+    await openCompose(page);
+    for (const box of await page.getByRole("textbox").all()) {
+      await box.fill("Synthetic answer");
+    }
+    await page.getByRole("button", { name: "Save entry" }).click();
+    await expect(page).toHaveURL(/\/journal\/entries\/[0-9a-f-]{36}$/);
+    const entryPath = new URL(page.url()).pathname;
+    await page.getByRole("link", { name: "Edit this entry" }).click();
+
+    // Typed, and then left alone before the usual save has happened.
+    await page.getByLabel(GOOD).fill("Synthetic: changed just before the lock");
+    await page.clock.fastForward("31:00");
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Warmly is locked",
+    );
+    await expect(page.getByText("changed just before the lock")).toHaveCount(0);
+    await unlockThisDevice(page);
+    await unlocked(page);
+
+    // The entry itself still says what it said.
+    await openInApp(page, entryPath);
+    await expect(page.getByText("Synthetic answer").first()).toBeVisible();
+    await expect(page.getByText("changed just before the lock")).toHaveCount(0);
+
+    // The changes are offered when the entry is edited again.
+    await page.getByRole("link", { name: "Edit this entry" }).click();
+    await expect(page.getByLabel(GOOD)).toHaveValue(
+      "Synthetic: changed just before the lock",
+    );
+    await expect(page.getByText("Unsaved changes brought back")).toBeVisible();
+    await expectNoViolations(page);
+
+    // They are still offered after the page is closed and opened again.
+    await page.reload();
+    await unlockThisDevice(page);
+    await unlocked(page);
+    await openInApp(page, `${entryPath}/edit`);
+    await expect(page.getByLabel(GOOD)).toHaveValue(
+      "Synthetic: changed just before the lock",
+    );
+
+    // Cancelling gives them up for good.
+    await page
+      .getByRole("button", { name: "Cancel and go back to the entry" })
+      .click();
+    await expect(page).toHaveURL(new RegExp(`${entryPath}$`));
+    await page.getByRole("link", { name: "Edit this entry" }).click();
+    await expect(page.getByLabel(GOOD)).toHaveValue("Synthetic answer");
+    await expect(page.getByText("Unsaved changes brought back")).toHaveCount(0);
   });
 
   test("a draft is finished into one entry, or discarded after confirmation", async ({

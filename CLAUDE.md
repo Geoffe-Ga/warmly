@@ -17,7 +17,7 @@ route is a stub. `src/` is a Preact shell with real account, recovery-key,
 Manage Devices, device-pairing and device-removal flows (real cryptography; in-memory doubles stand in for the
 servers outside production) and a journal that can be written, listed, read,
 searched, edited in place and deleted for good, with drafts saved as they
-are typed, stored encrypted in IndexedDB. The AI seam exists (gateway,
+are typed and unsaved edits kept apart from their entry, stored encrypted in IndexedDB. The AI seam exists (gateway,
 consent dialog, checked answers, a stand-in provider outside production) and no real
 provider is connected. A sync engine sends the outbox
 and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Collections and manual conversation cards can be made, edited, reordered,
@@ -390,7 +390,7 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   collection and each card are separate records (kinds `card-collection`
   and `conversation-card`, envelope types 2 and 3: never reuse a type
   number; 4 is a Reflect session, 5 is a note written after a
-  conversation). A card never holds text copied from a journal entry, only
+  conversation, 6 is an unsaved edit). A card never holds text copied from a journal entry, only
   references (PRD DEP-004). A collection's name and a card's text never go
   in a URL, the tab title or drag data.
 - A collection's cards are shown by `orderCards`: the cards its list names,
@@ -602,6 +602,16 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   makes the stored change look failed (`emit` does not reject). So anything
   that depends on an entry also stores its content hash and checks it again
   on unlock.
+- What is typed on the edit screen and not yet saved is kept as a row of
+  its own (`unfinished` store, envelope type 6; ADR-0015), through
+  `useEditForm` and `RecordStore.keepUnfinished` only. It is never the
+  entry, never changes the entry, has no revision, and is never put in
+  the outbox or sent. It is removed when the entry is saved (after, never
+  before), when the person cancels, starts again or loads the latest
+  version, and in every transaction that deletes its entry. Leaving the
+  screen any other way keeps it, and the edit screen offers it back in
+  fixed words; if the entry changed meanwhile it says so and never merges
+  or chooses. Never keep an unsaved edit anywhere else.
 - An entry or draft is deleted only through `deleteEntry`
   (`src/domain/journal/delete.ts`), after the person confirms. There is no
   trash and no undo. A completed entry's deletion announces

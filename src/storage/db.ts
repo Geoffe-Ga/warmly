@@ -18,7 +18,7 @@ import {
 export { NewerDatabaseError } from "./errors";
 
 /** The schema version this code reads and writes. */
-export const DB_VERSION = 2;
+export const DB_VERSION = 3;
 /** Object store of records, keyed by `[type, id]`. */
 export const RECORDS = "records";
 /** Object store of queued operations, in the order they were made. */
@@ -31,6 +31,13 @@ export const META = "meta";
  * version until the person decides between them.
  */
 export const PARKED = "parked";
+
+/**
+ * Object store of edits the person has not saved (ADR-0015). Each row is an
+ * envelope, keyed like the record it is an edit of. Rows here never leave
+ * the device: nothing reads this store to sync.
+ */
+export const UNFINISHED = "unfinished";
 
 /** The `meta` row that holds this device's place in the change feed. */
 export const CURSOR_KEY = "cursor";
@@ -51,6 +58,18 @@ export interface ParkedRecord {
   /** The record's revision on the server. */
   readonly revision: number;
   readonly tombstone: boolean;
+}
+
+/** One edit the person has not saved, as stored. */
+export interface UnfinishedRow {
+  /** The type number of the record this is an edit of. */
+  readonly type: number;
+  /** That record's ID. */
+  readonly id: string;
+  /** The encrypted edit. */
+  readonly envelope: Uint8Array<ArrayBuffer>;
+  /** The version of the edit's own shape inside the envelope. */
+  readonly schemaVersion: number;
 }
 
 /** One record as stored. Everything but `envelope` is plain metadata. */
@@ -90,6 +109,11 @@ const MIGRATIONS: readonly ((database: IDBDatabase) => void)[] = [
   (database) => {
     database.createObjectStore(META, { keyPath: "key" });
     database.createObjectStore(PARKED, { keyPath: ["type", "id"] });
+  },
+  // 2 -> 3: edits the person has not saved, kept on this device only
+  // (ADR-0015).
+  (database) => {
+    database.createObjectStore(UNFINISHED, { keyPath: ["type", "id"] });
   },
 ];
 

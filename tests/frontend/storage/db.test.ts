@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { importRootKey } from "../../../src/crypto/root-key";
 import type { JournalEntry } from "../../../src/domain/journal/types";
+import type { UnfinishedEdit } from "../../../src/domain/journal/unfinished";
 import {
   StorageBlockedError,
   StorageError,
@@ -15,6 +16,7 @@ import {
   OUTBOX,
   PARKED,
   RECORDS,
+  UNFINISHED,
   openRecordsDatabase,
   recordsDatabaseName,
   transact,
@@ -35,6 +37,8 @@ interface SnapshotFile {
   readonly expected: {
     readonly "journal-entry": readonly JournalEntry[];
     readonly deleted: readonly string[];
+    /** Unsaved edits the snapshot holds, by entry ID (from version 3). */
+    readonly unfinished?: Readonly<Record<string, UnfinishedEdit>>;
   };
 }
 
@@ -88,6 +92,11 @@ describe("the local database schema", () => {
         [OUTBOX]: { keyPath: "seq", autoIncrement: true, rows: [] },
         [PARKED]: { keyPath: ["type", "id"], autoIncrement: false, rows: [] },
         [RECORDS]: { keyPath: ["type", "id"], autoIncrement: false, rows: [] },
+        [UNFINISHED]: {
+          keyPath: ["type", "id"],
+          autoIncrement: false,
+          rows: [],
+        },
       },
     });
   });
@@ -133,6 +142,11 @@ describe("the local database schema", () => {
       expect(await store.unreadable("journal-entry")).toBe(0);
       for (const id of snapshot.expected.deleted) {
         expect(await store.get("journal-entry", id)).toBeUndefined();
+      }
+      // An unsaved edit is still read, and an older snapshot has none.
+      const unfinished = snapshot.expected.unfinished ?? {};
+      for (const each of snapshot.expected["journal-entry"]) {
+        expect(await store.unfinished(each.id)).toEqual(unfinished[each.id]);
       }
       store.lock();
       const upgraded = await dumpDatabase(name);

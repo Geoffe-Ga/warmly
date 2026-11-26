@@ -18,6 +18,7 @@ else was considered, and why. Write one before the code that depends on it.
 | [0010](0010-dependency-invalidation.md) | What is removed when a journal entry changes: every reflection built from it, whole, as an ordinary deletion, decided on the device from the records themselves | Accepted |
 | [0013](0013-api-contract-from-code.md) | API contract generated from code, with an isolated type generator | Accepted |
 | [0014](0014-local-encrypted-store.md) | The local encrypted record store: a row per record, an outbox in the same transaction, forward-only migrations | Accepted |
+| [0015](0015-unsaved-edits.md) | Unsaved edits to a finished entry: kept on the device as an encrypted row of their own, never the entry, never synced | Accepted |
 
 ## How to add one
 

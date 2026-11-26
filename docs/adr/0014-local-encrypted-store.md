@@ -69,6 +69,12 @@ Schema version 2 (ADR-0006) adds two more:
   holds the server's `envelope` (or `null` for a deletion), `schemaVersion`,
   `revision` and `tombstone`: ciphertext and counters only.
 
+Schema version 3 (ADR-0015) adds one more:
+
+- `unfinished`, keyed by `[type, id]`: an edit to a finished entry that has
+  not been saved. It holds `type`, `id`, `envelope` and `schemaVersion`,
+  and is never queued or sent.
+
 Nothing else is stored. No record content, content hash, search index or
 decrypted cache is ever written. A test writes a canary sentence and scans
 every stored value for it.

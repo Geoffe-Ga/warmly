@@ -1,9 +1,8 @@
 import type { JSX } from "preact";
-import { useContext, useRef, useState } from "preact/hooks";
+import { useContext, useState } from "preact/hooks";
 
 import { Link, NavigationContext } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
-import type { SaveState } from "../../../domain/journal/drafts";
 import { canComplete, unanswered } from "../../../domain/journal/validation";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -11,7 +10,7 @@ import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { ActionForm, useAction } from "../../components/ActionForm";
 import { EntryFields, OutOfDate } from "./EntryFields";
-import { describeStorageError } from "../../storage-messages";
+import { SaveStatus } from "./SaveStatus";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
 import { useDraft } from "./useDraft";
 
@@ -20,39 +19,6 @@ export const DRAFT_SAVED = "Saved on this device";
 /** Said when a draft could not be stored. */
 export const DRAFT_NOT_SAVED =
   "This draft couldn't be saved on this device. Keep this page open so what you wrote isn't lost.";
-
-/**
- * Where the draft stands, in words. Only a settled state is announced to a
- * screen reader: "Saving" comes and goes with every pause in typing, so it
- * is shown but not read out.
- */
-function SaveStatus(props: {
-  readonly state: SaveState;
-  /** What the last failed save threw. */
-  readonly error: unknown;
-}): JSX.Element {
-  // The last settled message stays in the live region while a save is
-  // under way, so it is not announced again after every pause.
-  const settled = useRef("");
-  if (props.state === "saved") {
-    settled.current = DRAFT_SAVED;
-  } else if (props.state === "failed") {
-    // A known storage failure gets its own words and next step.
-    settled.current =
-      describeStorageError(props.error, "save") ?? DRAFT_NOT_SAVED;
-  } else if (props.state === "idle") {
-    settled.current = "";
-  }
-  const busy = props.state === "waiting" || props.state === "saving";
-  return (
-    <div class="save-status">
-      <p role="status" class={busy ? "visually-hidden" : undefined}>
-        {settled.current}
-      </p>
-      {busy && <p aria-hidden="true">Saving…</p>}
-    </div>
-  );
-}
 
 /**
  * Write a new journal entry: the three prompts, in order, each with a text
@@ -148,7 +114,12 @@ export function Compose(): JSX.Element {
           missing={missing}
           onChange={form.change}
         />
-        <SaveStatus state={form.saveState} error={form.saveError} />
+        <SaveStatus
+          state={form.saveState}
+          error={form.saveError}
+          saved={DRAFT_SAVED}
+          failed={DRAFT_NOT_SAVED}
+        />
         <div class="button-row">
           <Button type="submit" variant="primary" disabled={action.busy}>
             Save entry
