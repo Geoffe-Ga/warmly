@@ -35,20 +35,9 @@ export function describeSync(state: SyncState): string {
   }
 }
 
-/**
- * The sync status line and the button that runs a sync (PRD SYNC-010,
- * AC-23). The status is announced politely when it changes. Sync also runs
- * on its own; the button is for the person who wants it now. When a record
- * needs the person, a link leads to where they can see why.
- *
- * @param props - The sync engine.
- * @returns The indicator.
- */
-export function SyncStatus(props: { readonly sync: SyncControl }): JSX.Element {
-  const { sync } = props;
+/** Follow the sync engine's state. */
+function useSyncState(sync: SyncControl): SyncState {
   const [state, setState] = useState(() => sync.state());
-  const [busy, setBusy] = useState(false);
-
   useEffect(() => {
     const update = (): void => {
       setState(sync.state());
@@ -57,7 +46,19 @@ export function SyncStatus(props: { readonly sync: SyncControl }): JSX.Element {
     update();
     return unsubscribe;
   }, [sync]);
+  return state;
+}
 
+/**
+ * The sync status line (PRD SYNC-010, AC-23): a state and a count, said
+ * politely when it changes. When a record needs the person, a link leads
+ * to where they can see why. It sits in the top bar while unlocked.
+ *
+ * @param props - The sync engine.
+ * @returns The line.
+ */
+export function SyncStatus(props: { readonly sync: SyncControl }): JSX.Element {
+  const state = useSyncState(props.sync);
   return (
     <div class="sync-status">
       <p role="status" aria-live="polite">
@@ -66,17 +67,31 @@ export function SyncStatus(props: { readonly sync: SyncControl }): JSX.Element {
       {state.status === "attention" && (
         <Link href={pathFor("sync-conflicts")}>Review what changed</Link>
       )}
-      <Button
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          void sync.sync().finally(() => {
-            setBusy(false);
-          });
-        }}
-      >
-        Sync now
-      </Button>
     </div>
+  );
+}
+
+/**
+ * The button that runs a sync now. Sync also runs on its own; this is for
+ * the person who wants it at once. It lives in the menu.
+ *
+ * @param props - The sync engine.
+ * @returns The button.
+ */
+export function SyncNow(props: { readonly sync: SyncControl }): JSX.Element {
+  const { sync } = props;
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        void sync.sync().finally(() => {
+          setBusy(false);
+        });
+      }}
+    >
+      Sync now
+    </Button>
   );
 }

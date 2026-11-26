@@ -5,10 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { dropSecrets } from "../../../src/app/SessionControls";
 import type { SyncControl, SyncState } from "../../../src/sync/engine";
 import {
+  SyncNow,
   SyncStatus,
   describeSync,
 } from "../../../src/ui/components/SyncStatus";
-import { renderApp, testServices } from "../app/helpers";
+import { openMenu, renderApp, testServices } from "../app/helpers";
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -107,7 +108,7 @@ describe("the sync status indicator (SYNC-010, AC-23)", () => {
 
   it("runs a sync when asked, and the button waits while it runs", async () => {
     const sync = control({ status: "pending", waiting: 1 });
-    render(<SyncStatus sync={sync} />);
+    render(<SyncNow sync={sync} />);
     const button = screen.getByRole("button", { name: "Sync now" });
 
     await userEvent.click(button);
@@ -154,6 +155,7 @@ describe("the sync status indicator (SYNC-010, AC-23)", () => {
 
   it("shows the status only while unlocked", async () => {
     await renderApp("/", testServices("unlocked"));
+    await openMenu();
     expect(screen.getByRole("button", { name: "Sync now" })).toBeTruthy();
     expect(document.querySelector(".sync-status")?.textContent).toContain(
       "All changes saved",

@@ -9,7 +9,7 @@ import AxeBuilder from "@axe-core/playwright";
 
 import { expect, test, type Page } from "../fixtures/test";
 
-import { onboard } from "./account";
+import { onboard, openMenu } from "./account";
 
 const PROMPTS = [
   "What's going well?",
@@ -53,6 +53,7 @@ test.describe("sync status", () => {
     await page.getByLabel(PROMPTS[0] ?? "").fill("CANARY rewritten offline");
     await page.getByRole("button", { name: "Save changes" }).click();
     await expect(page.getByText("A journal entry.")).toBeVisible();
+    await openMenu(page);
     await page.getByRole("button", { name: "Sync now" }).click();
     await expect(status).toHaveText("1 change waiting to sync");
     await expect(status).not.toContainText("CANARY");

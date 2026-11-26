@@ -15,17 +15,19 @@ import {
 import { Button } from "../ui/components/Button";
 import { PAGE_HEADING_ATTRIBUTE } from "../ui/components/PageHeading";
 import { PageLayout } from "../ui/components/PageLayout";
-import { SyncStatus } from "../ui/components/SyncStatus";
+import { Menu } from "../ui/components/Menu";
+import { SyncNow, SyncStatus } from "../ui/components/SyncStatus";
 import {
   SessionControls,
   endRevokedDevice,
   useInactivityLock,
+  useSessionActions,
 } from "./SessionControls";
 import { Link, NavigationContext, type Navigation } from "./navigation";
 import { useOnline } from "./online";
 import { APP_NAME, resolve } from "./resolve";
 import { normalisePath } from "./router";
-import { SECONDARY_NAV, pathFor } from "./routes";
+import { MENU_NAV, pathFor } from "./routes";
 import {
   ServicesProvider,
   createServices,
@@ -46,34 +48,55 @@ function currentPath(): string {
   return normalisePath(window.location.pathname);
 }
 
+/**
+ * The top bar. Unlocked, it is one row: the way home, where sync stands,
+ * Lock, and the menu, which holds everything else about the account and
+ * the app. Lock is never inside the menu: it is always one press away
+ * (PRD §4.3).
+ */
 function Header(props: {
   readonly showHomeLink: boolean;
   readonly state: SessionState;
   readonly navigate: (path: string) => void;
 }): JSX.Element {
   const { sync } = useServices();
-  const unlocked = props.state === "unlocked";
+  const actions = useSessionActions(props.navigate);
+  if (props.state !== "unlocked") {
+    return (
+      <header class="app-header">
+        <span class="app-name">{APP_NAME}</span>
+        <div class="app-header__controls">
+          <SessionControls navigate={props.navigate} />
+        </div>
+      </header>
+    );
+  }
   return (
     <header class="app-header">
-      {props.showHomeLink && unlocked && (
+      {props.showHomeLink && (
         <Link href="/" label="Warmly home" class="home-link">
           {APP_NAME}
         </Link>
       )}
-      {!unlocked && <span class="app-name">{APP_NAME}</span>}
-      {unlocked && (
-        <nav aria-label="Secondary">
-          <ul class="secondary-nav">
-            {SECONDARY_NAV.map((item) => (
-              <li key={item.label}>
-                <Link href={item.path}>{item.label}</Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      )}
-      <SessionControls navigate={props.navigate} />
-      {unlocked && <SyncStatus sync={sync} />}
+      <SyncStatus sync={sync} />
+      <div class="app-header__controls">
+        <Button onClick={actions.lock}>Lock</Button>
+        <Menu label="Menu">
+          <nav aria-label="Secondary">
+            <ul class="menu__list">
+              {MENU_NAV.map((item) => (
+                <li key={item.label}>
+                  <Link href={item.path}>{item.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          <div class="menu__actions">
+            <SyncNow sync={sync} />
+            <Button onClick={actions.signOut}>Sign out</Button>
+          </div>
+        </Menu>
+      </div>
     </header>
   );
 }

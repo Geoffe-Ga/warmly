@@ -22,6 +22,7 @@ import {
 import {
   heading,
   onEntryPut,
+  openMenu,
   onEntryReload,
   renderApp,
   testServices,
@@ -290,7 +291,10 @@ describe("changes to an entry that were not saved (JR-006, DEV-005; ADR-0015)", 
       () => {
         window.dispatchEvent(new Event("pagehide"));
       },
-      () => userEvent.click(screen.getByRole("link", { name: "Settings" })),
+      async () => {
+        await openMenu();
+        await userEvent.click(screen.getByRole("link", { name: "Settings" }));
+      },
     ];
     for (const how of leave) {
       cleanup();

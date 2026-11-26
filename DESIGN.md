@@ -361,7 +361,9 @@ None. Warmly shows the user's own words and nothing else. Do not add stock image
 
 ### Top Navigation
 
-**`app-header`** — A wrapping row on `{colors.paper}` with no border or background of its own. The app name ("Warmly", weight 700) links home at the start; the secondary navigation sits at the end.
+**`app-header`** — One row on `{colors.paper}` with no border or background of its own, shown above every screen. Unlocked, it holds, in order: the app name ("Warmly", weight 700) linking home, where sync stands (`sync-status`), then a `{component.button-secondary}` "Lock" and the `menu` button side by side at the far end. On a screen narrower than 30rem the sync line drops to a row of its own under the bar. Locked, it is the app name and "Sign out". Lock is never inside the menu: it is always one press away.
+
+**`menu`** — A `{component.button-secondary}` "Menu" with `aria-expanded`, and while open a panel under the bar: `{colors.surface}`, the standard border and `{rounded.md}`, `{spacing.md}` of padding, as wide as its contents and never wider than the bar. The panel holds the secondary navigation as a list of `nav-link`s (Collections, Settings, Manage Devices, What Warmly is and is not, Privacy and its limits), then a row with "Sync now" and "Sign out". It is in the page only while open. It closes on Escape (focus returns to the button), on a press outside it and when one of its links is followed. Nothing in it moves or animates.
 
 **`nav-link`** — Underlined text link in `{colors.coral-text}`, at least 44px tall. **`nav-link-current`** — the current page (`aria-current="page"`) switches to `{colors.ink}`, weight 700 and a thicker underline, so the state is not carried by colour alone.
 
@@ -431,7 +433,7 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`print-sheet`** — What the print screen will print: the collection's name as a heading and its cards as a numbered list at `{typography.title}` size, then a note that paper is not protected by the app, and a `{component.button-primary}` "Print". On paper only the sheet is printed, in black on white whatever the screen colours are: the header, status lines, page heading, note and buttons are left out, and a card is not split across pages where that can be avoided. Card text only.
 
-**`sync-status`** — In the header while unlocked: one line in `{typography.small}` and `{colors.ink-muted}` ("All changes saved", "3 changes waiting to sync", "Couldn't sync. Your writing is saved on this device.", "Update Warmly to keep syncing. Your writing is saved on this device.", "Needs your attention") beside a `{component.button-secondary}` "Sync now". It is a state and a count, never private text.
+**`sync-status`** — In the top bar while unlocked: one line in `{typography.small}` and `{colors.ink-muted}` ("All changes saved", "3 changes waiting to sync", "Couldn't sync. Your writing is saved on this device.", "Update Warmly to keep syncing. Your writing is saved on this device.", "Needs your attention"), with a link to the review when something needs the person. It is a state and a count, never private text. The button that runs a sync now is in the `menu`.
 
 ### Status Banners
 

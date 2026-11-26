@@ -329,6 +329,16 @@ export const SECONDARY_NAV: readonly NavItem[] = [
 ];
 
 /**
+ * Every link in the menu: the secondary navigation, then the two pages
+ * that say what Warmly is and what is private.
+ */
+export const MENU_NAV: readonly NavItem[] = [
+  ...SECONDARY_NAV,
+  { label: "What Warmly is and is not", path: "/help" },
+  { label: "Privacy and its limits", path: "/privacy" },
+];
+
+/**
  * Build the concrete path for a route.
  *
  * @param id - The route to link to.

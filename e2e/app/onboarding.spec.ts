@@ -4,9 +4,10 @@ import { expect, test, type Page } from "../fixtures/test";
 
 import {
   ACCOUNT,
-  DEVICE_PASSPHRASE,
   declineDeviceTrust,
+  DEVICE_PASSPHRASE,
   onboard,
+  openMenu,
   trustThisDevice,
   unlockThisDevice,
 } from "./account";
@@ -179,6 +180,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
   }) => {
     await onboard(page);
 
+    await openMenu(page);
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/sign-in$/);
 
@@ -198,6 +200,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
     page,
   }) => {
     await onboard(page);
+    await openMenu(page);
     await page.getByRole("button", { name: "Sign out" }).click();
 
     await page.getByLabel("Email").fill(ACCOUNT.email);
@@ -223,6 +226,7 @@ test.describe("lock, unlock and sign out (AC-21, DEV-005)", () => {
   }) => {
     const newPassword = ["staple", "window", "orange"].join(" ");
     await onboard(page);
+    await openMenu(page);
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByRole("link", { name: "Forgot your password?" }).click();
     await page.getByLabel("Email").fill(ACCOUNT.email);

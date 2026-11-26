@@ -19,7 +19,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { ROUTES, pathFor, type RouteId } from "../../src/app/routes";
 import { expect, test, type Page } from "../fixtures/test";
 
-import { onboard, openInApp, unlockThisDevice } from "./account";
+import { onboard, openInApp, openMenu, unlockThisDevice } from "./account";
 import { parkStoredVersion } from "./conflict";
 
 const WCAG_22_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
@@ -37,6 +37,7 @@ const STATE_KINDS = [
   "loading",
   "error",
   "dialog",
+  "menu",
   "locked",
   "conflict",
   "offline",
@@ -195,6 +196,8 @@ const PLAN: readonly Swept[] = [
   ),
   sweeping("help", "locked", "signed in, locked"),
   sweeping("help", "error", "a browser that cannot add a device"),
+  sweeping("home", "menu", "the menu, open"),
+  sweeping("settings", "menu", "the menu, open, on its own page"),
   sweeping("home", "offline", "unlocked, no connection"),
   sweeping("locked", "offline", "locked, no connection"),
   sweeping("journal", "content", "an entry and a note"),
@@ -329,6 +332,34 @@ test.describe("the sweep (UI-001 to UI-008, AC-23)", () => {
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
       await sweep(page, route.id, "empty", "unlocked, nothing written");
     }
+  });
+
+  test("the menu, open", async ({ page }) => {
+    await onboard(page);
+    await openMenu(page);
+    await expect(
+      page.getByRole("navigation", { name: "Secondary" }),
+    ).toBeVisible();
+    await sweep(page, "home", "menu", "the menu, open");
+
+    // On one of its own pages, where a link in it is marked as current.
+    await page.getByRole("link", { name: "Settings" }).click();
+    await expect(page.getByRole("heading", { level: 1 })).toHaveText(
+      "Settings",
+    );
+    await openMenu(page);
+    await expect(page.getByRole("link", { name: "Settings" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    await sweep(page, "settings", "menu", "the menu, open, on its own page");
+
+    // It closes on Escape, and the focus goes back to its button.
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("navigation", { name: "Secondary" }),
+    ).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Menu" })).toBeFocused();
   });
 
   test("with no connection, unlocked and locked", async ({ page, context }) => {
