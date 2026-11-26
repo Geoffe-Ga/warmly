@@ -35,6 +35,7 @@ import {
   FINISH_EXPLAINED,
   NOTHING_TO_ASK_ABOUT,
   QUESTION_NEEDED,
+  SAVED_ELSEWHERE,
 } from "../../../src/ui/screens/reflect/Session";
 import {
   heading,
@@ -1140,5 +1141,39 @@ describe("an answer that has arrived is never lost (AI-014)", () => {
         pathFor("reflect-session", { id: newest?.id ?? "" }),
       );
     });
+    expect(await screen.findByText(SAVED_ELSEWHERE)).toBeTruthy();
+  });
+
+  it("is saved as a new reflection if its own was deleted on another device meanwhile, and the note is true of that too", async () => {
+    const { services } = await setUp();
+    const session = await services.reflect.start({
+      question: "What has gone well?",
+      answer: SAVED_ANSWER,
+    });
+    await renderApp(pathFor("reflect-session", { id: session.id }), services);
+    await screen.findByRole("heading", { name: "Ask more" });
+    // As sync would: the other device deletes this reflection.
+    const add = services.reflect.add.bind(services.reflect);
+    services.reflect.add = async (...args) => {
+      await services.reflect.remove(session.id);
+      return add(...args);
+    };
+
+    await askAndSend("And what was hard?");
+
+    await waitFor(async () => {
+      const [only] = await services.reflect.list();
+      expect(only?.id).toBeDefined();
+      expect(only?.id).not.toBe(session.id);
+    });
+    const [kept] = await services.reflect.list();
+    expect(await services.reflect.list()).toHaveLength(1);
+    expect(kept === undefined ? "" : firstQuestion(kept)).toBe(
+      "And what was hard?",
+    );
+    // The deleted one stays deleted.
+    expect(await services.reflect.get(session.id)).toBeUndefined();
+    expect(await screen.findByText(SAVED_ELSEWHERE)).toBeTruthy();
+    expect(SAVED_ELSEWHERE).toContain("finished or deleted on another device");
   });
 });

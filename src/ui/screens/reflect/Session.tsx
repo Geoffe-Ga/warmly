@@ -53,9 +53,13 @@ export const NOTHING_TO_ASK_ABOUT =
 export const ANSWER_NOT_SAVED =
   "The answer arrived, but Warmly couldn't save it on this device. It is shown below. Nothing was sent again. Keep this page open and try saving it.";
 
-/** Said when a reflection was finished elsewhere while an answer was on its way. */
+/**
+ * Said when a reflection was finished or deleted on another device while
+ * an answer was on its way. The screen cannot always tell which, and the
+ * result is the same, so it says both.
+ */
 export const SAVED_ELSEWHERE =
-  "That reflection was finished on another device while you were asking, so your question and its answer were saved as a new reflection.";
+  "That reflection was finished or deleted on another device while you were asking, so your question and its answer were saved as a new reflection.";
 
 /**
  * Store a question and its answer: in the session it was asked in, or in a
@@ -151,9 +155,17 @@ function Ask(props: {
   readonly session: ReflectSession | undefined;
   readonly entries: readonly JournalEntry[];
   readonly ready: boolean;
+  /**
+   * Told when an answer was saved as a new reflection because its own was
+   * finished or deleted elsewhere, with the new reflection's ID. This box
+   * is gone by the time the new reflection is shown, so the screen around
+   * it says so.
+   */
+  readonly onSavedElsewhere: (sessionId: string) => void;
 }): JSX.Element {
   const { ai, reflect } = useServices();
   const { navigate } = useContext(NavigationContext);
+  const { onSavedElsewhere } = props;
   const [question, setQuestion] = useState("");
   const [problem, setProblem] = useState<string>();
   const controller = useMemo(
@@ -178,7 +190,6 @@ function Ask(props: {
   // screen, until it is: an answer the person paid for is never dropped.
   const [unsaved, setUnsaved] = useState<Exchange>();
   const [saveProblem, setSaveProblem] = useState<string>();
-  const [note, setNote] = useState("");
 
   /** Store an answer with its question. Calls nothing: it is already here. */
   const save = useCallback(
@@ -189,7 +200,7 @@ function Ask(props: {
         setUnsaved(undefined);
         setQuestion("");
         if (stored.elsewhere) {
-          setNote(SAVED_ELSEWHERE);
+          onSavedElsewhere(stored.session.id);
         }
         if (stored.session.id !== sessionId) {
           navigate(pathFor("reflect-session", { id: stored.session.id }));
@@ -199,7 +210,7 @@ function Ask(props: {
         setSaveProblem(describeStorageError(error, "save") ?? ANSWER_NOT_SAVED);
       }
     },
-    [reflect, sessionId, navigate],
+    [reflect, sessionId, navigate, onSavedElsewhere],
   );
 
   useEffect(() => {
@@ -264,11 +275,6 @@ function Ask(props: {
         </div>
       </form>
       <AiRequestStatus controller={controller} />
-      {note !== "" && (
-        <p role="status" class="hint">
-          {note}
-        </p>
-      )}
       {unsaved !== undefined && saveProblem !== undefined && (
         <>
           <StatusBanner tone="error" label="Answer not saved yet">
@@ -402,6 +408,9 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
   const journal = useJournalEntries();
   const entries = journal.state === "ready" ? journal.entries : [];
   const [deleted, setDeleted] = useState(false);
+  // The reflection an answer was moved to, so the note is shown on that
+  // reflection only, and not on any other opened afterwards.
+  const [savedElsewhere, setSavedElsewhere] = useState<string>();
   const session =
     found.kind === "session" && !deleted ? found.session : undefined;
 
@@ -437,6 +446,11 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
           {journal.message}
         </StatusBanner>
       )}
+      {session !== undefined && session.id === savedElsewhere && (
+        <StatusBanner tone="info" label="Saved as a new reflection">
+          {SAVED_ELSEWHERE}
+        </StatusBanner>
+      )}
       {/* Saved answers wait for the journal: until it has loaded, an entry
           that is here would be shown as "no longer on this device". */}
       {session !== undefined && journal.state === "ready" && (
@@ -454,6 +468,7 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
           session={session}
           entries={entries}
           ready={journal.state === "ready"}
+          onSavedElsewhere={setSavedElsewhere}
         />
       )}
       {session !== undefined && (
