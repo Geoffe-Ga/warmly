@@ -1,5 +1,5 @@
 import type { ComponentChildren, JSX } from "preact";
-import { useEffect, useId, useRef, useState } from "preact/hooks";
+import { useId, useLayoutEffect, useRef, useState } from "preact/hooks";
 
 /**
  * A button that opens a panel under it: the app's menu.
@@ -22,16 +22,12 @@ export function Menu(props: {
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
 
-  useEffect(() => {
+  // Attached before the browser paints the open panel, so there is no
+  // moment in which the menu is showing and a press outside is missed.
+  useLayoutEffect(() => {
     if (!open) {
       return undefined;
     }
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        setOpen(false);
-        button.current?.focus();
-      }
-    };
     const onPress = (event: Event): void => {
       if (
         event.target instanceof Node &&
@@ -40,10 +36,8 @@ export function Menu(props: {
         setOpen(false);
       }
     };
-    document.addEventListener("keydown", onKey);
     document.addEventListener("pointerdown", onPress);
     return () => {
-      document.removeEventListener("keydown", onKey);
       document.removeEventListener("pointerdown", onPress);
     };
   }, [open]);
@@ -52,6 +46,16 @@ export function Menu(props: {
     <div
       class="menu"
       ref={root}
+      onKeyDown={(event) => {
+        // Escape closes the menu while focus is on its button or inside
+        // it. Handled here, on the menu, so it is in force from the first
+        // moment the panel is showing and never catches a key meant for
+        // something else on the page.
+        if (open && event.key === "Escape") {
+          setOpen(false);
+          button.current?.focus();
+        }
+      }}
       onFocusOut={(event) => {
         // Tabbing on out of the menu closes it. Only when focus has gone
         // to something else on the page: a press that moves focus nowhere
