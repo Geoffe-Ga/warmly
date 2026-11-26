@@ -318,6 +318,13 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   gave, never a clone, which is refused. The store compares it as part of
   the write, so nothing can change the record in between. Never go back
   to comparing content before a write.
+- Tabs of one account tell each other when a record is stored
+  (`src/storage/tab-channel.ts`, ADR-0017). The only message is the fixed
+  word `changed`: never put an ID, a hash, a count or anything the person
+  wrote on the channel. A message is only a reason to read the stored
+  rows again: never act on what one says, and never announce what was
+  read from another tab. A record that did not change keeps the very
+  copy held in memory, so open forms can still save (ADR-0016).
 - Storage failures are typed (`src/storage/errors.ts`): full, unavailable,
   blocked, newer. Everything that touches IndexedDB turns browser errors
   into these. A screen says what happened and what to do next with

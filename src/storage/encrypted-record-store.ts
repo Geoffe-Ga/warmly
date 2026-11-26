@@ -46,6 +46,12 @@ import type {
 import type { RemoteChange } from "../sync/protocol";
 import { queueOperation, type OutboxOperation } from "./outbox";
 import {
+  TAB_CHANGED,
+  holdsCurrent,
+  type TabChannel,
+  type TabChannelFactory,
+} from "./tab-channel";
+import {
   ConflictChangedError,
   RecordDeletedError,
   StaleRecordError,
@@ -133,6 +139,8 @@ interface Opened {
 interface Unlocked {
   readonly root: RootKey;
   readonly owner: string;
+  /** Reaches this account's other tabs, where the browser has a way. */
+  readonly channel: TabChannel | undefined;
   readonly opened: Promise<Opened>;
 }
 
@@ -561,17 +569,102 @@ function meet(
   return row.tombstone && !change.tombstone ? "conflict" : "applied";
 }
 
+/** A stored row that memory does not hold as it is now, read again. */
+interface FreshCopy {
+  readonly kind: RecordKind;
+  readonly row: StoredRecord;
+  /** The record, or nothing if it is deleted or cannot be read. */
+  readonly record: RecordKinds[RecordKind] | undefined;
+}
+
+/** Whether memory already holds a row as it is stored now. */
+function upToDate(
+  kind: RecordKind,
+  row: StoredRecord,
+  opened: Opened,
+): boolean {
+  return holdsCurrent(
+    opened.records[kind].get(row.id),
+    opened.unreadable[kind].has(row.id),
+    row,
+  );
+}
+
+/**
+ * Read one stored row again, if memory does not hold it as it is now.
+ *
+ * @returns The row decrypted, or `undefined` if there is nothing to take
+ *   in: the row is of a kind this version does not know, or is unchanged.
+ */
+async function freshCopy(
+  row: StoredRecord,
+  session: Pick<Unlocked, "root" | "owner">,
+  opened: Opened,
+): Promise<FreshCopy | undefined> {
+  const kind = KINDS.find((each) => FORMATS[each].type === row.type);
+  if (kind === undefined || upToDate(kind, row, opened)) {
+    return undefined;
+  }
+  const record = row.tombstone
+    ? undefined
+    : await decrypt(kind, row, session.root, session.owner);
+  return { kind, row, record };
+}
+
+/**
+ * Put a row read again into memory.
+ *
+ * A record that did not change keeps the very copy memory held, so a
+ * change based on it is still accepted (ADR-0016).
+ *
+ * @returns Whether memory changed.
+ */
+function takeCopy(copy: FreshCopy | undefined, opened: Opened): boolean {
+  // Checked again: a write of this tab's own may have landed while the
+  // rows were being decrypted, and it is the newer one.
+  if (copy === undefined || upToDate(copy.kind, copy.row, opened)) {
+    return false;
+  }
+  const { kind, row, record } = copy;
+  const records: Map<string, Held<RecordKinds[RecordKind]>> = opened.records[
+    kind
+  ];
+  const wasUnreadable = opened.unreadable[kind].has(row.id);
+  records.delete(row.id);
+  opened.unreadable[kind].delete(row.id);
+  if (row.tombstone) {
+    return true;
+  }
+  if (record === undefined) {
+    opened.unreadable[kind].add(row.id);
+    return !wasUnreadable;
+  }
+  records.set(row.id, { record, revision: row.localRevision });
+  return true;
+}
+
 /** A {@link RecordStore} that keeps encrypted records in IndexedDB. */
 export class EncryptedRecordStore implements RecordStore, SyncSource {
   readonly #databaseName: (owner: string) => string;
+  readonly #channel: TabChannelFactory;
   readonly #listeners = new Set<() => void>();
   #session: Unlocked | undefined;
+  /** The reading of other tabs' changes that is under way, if one is. */
+  #catchingUp: Promise<void> | undefined;
+  /** Another tab announced a change while one reading was under way. */
+  #behind = false;
 
   /**
    * @param databaseName - Gives the database name for an account.
+   * @param channel - Opens the way to the account's other tabs
+   *   (ADR-0017). Left out, tabs are not told of each other's changes.
    */
-  constructor(databaseName: (owner: string) => string) {
+  constructor(
+    databaseName: (owner: string) => string,
+    channel: TabChannelFactory = () => undefined,
+  ) {
     this.#databaseName = databaseName;
+    this.#channel = channel;
   }
 
   /**
@@ -583,11 +676,17 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
    */
   unlock(root: RootKey, owner: string): void {
     this.#end();
-    const opened = openStore(this.#databaseName(owner), { root, owner });
+    const name = this.#databaseName(owner);
+    const opened = openStore(name, { root, owner });
     // A failure is reported by whichever read or write waits on it. This
     // handler only stops it being reported as unhandled when nothing waits.
     opened.catch(() => undefined);
-    this.#session = { root, owner, opened };
+    const channel = this.#channel(name);
+    this.#session = { root, owner, opened, channel };
+    // Whatever a message says, it is only ever a reason to read.
+    channel?.listen(() => {
+      this.#catchUp();
+    });
     this.#changed();
   }
 
@@ -600,6 +699,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
   #end(): void {
     const session = this.#session;
     this.#session = undefined;
+    session?.channel?.close();
     void session?.opened.then(
       (opened) => {
         for (const kind of KINDS) {
@@ -616,6 +716,78 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
   #changed(): void {
     for (const listener of [...this.#listeners]) {
       listener();
+    }
+  }
+
+  /**
+   * Tell this tab's listeners and the account's other tabs that a stored
+   * record changed. Only for a change this tab stored itself: what was
+   * read from another tab is never announced again.
+   */
+  #stored(session: Unlocked): void {
+    this.#changed();
+    // A channel is closed when its tab locks, and a closed one cannot be
+    // posted to.
+    if (this.#session === session) {
+      session.channel?.post(TAB_CHANGED);
+    }
+  }
+
+  /**
+   * Read what other tabs have stored since this one last looked. One
+   * reading runs at a time; a message that arrives meanwhile asks for one
+   * more, however many arrive.
+   */
+  #catchUp(): void {
+    if (this.#catchingUp !== undefined) {
+      this.#behind = true;
+      return;
+    }
+    const reading = this.#takeIn()
+      // A database that cannot be read says so on the next read or write.
+      .catch(() => undefined)
+      .then(() => {
+        this.#catchingUp = undefined;
+        if (this.#behind) {
+          this.#behind = false;
+          this.#catchUp();
+        }
+      });
+    this.#catchingUp = reading;
+  }
+
+  /**
+   * Wait until every change another tab has announced so far has been
+   * read into memory.
+   *
+   * @returns When this tab is up to date with what it has been told.
+   */
+  async caughtUp(): Promise<void> {
+    while (this.#catchingUp !== undefined) {
+      await this.#catchingUp;
+    }
+  }
+
+  /** Bring memory up to date with the stored rows. */
+  async #takeIn(): Promise<void> {
+    const session = this.#session;
+    const opened = await this.#read();
+    if (session === undefined || opened === undefined || opened.superseded) {
+      return;
+    }
+    const { rows } = await readAll(opened.database);
+    const fresh = await Promise.all(
+      rows.map((row) => freshCopy(row, session, opened)),
+    );
+    if (this.#session !== session) {
+      return;
+    }
+    let changed = false;
+    for (const copy of fresh) {
+      changed = takeCopy(copy, opened) || changed;
+    }
+    if (changed) {
+      this.#changed();
     }
   }
 
@@ -789,7 +961,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
       if (settled.row !== undefined) {
         await this.#remember(opened, session, settled.row);
       }
-      this.#changed();
+      this.#stored(session);
     }
     return true;
   }
@@ -827,7 +999,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     }
     if (outcome.kind === "written" && this.#session === session) {
       apply(opened, outcome.revision);
-      this.#changed();
+      this.#stored(session);
     }
   }
 
@@ -1048,6 +1220,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     serverRevision: number,
     acknowledged: Acknowledged,
   ): Promise<void> {
+    const session = this.#session;
     const opened = await this.#read();
     if (opened === undefined) {
       throw new StoreLockedError();
@@ -1105,7 +1278,13 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
         };
       },
     );
-    this.#changed();
+    // What is waiting to be sent is counted from the stored rows, so the
+    // other tabs' status lines are told as well.
+    if (session === undefined) {
+      this.#changed();
+    } else {
+      this.#stored(session);
+    }
   }
 
   async applyPage(
@@ -1199,7 +1378,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
           ({ row, outcome }) => row !== undefined || outcome === "conflict",
         )
       ) {
-        this.#changed();
+        this.#stored(session);
       }
     }
     return written.map(({ outcome }) => outcome);
