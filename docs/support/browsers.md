@@ -26,6 +26,7 @@ The app looks at what the browser offers, never at its name or version
 | Needed | Used for | If it is missing |
 | --- | --- | --- |
 | WebCrypto (`crypto.subtle`, random values, UUIDs) | Encrypting everything before it is stored or sent | A notice on every screen says Warmly may not work here and names the supported browsers |
+| Ed25519 signatures in WebCrypto | Proving a new device knows the account's key when it is added (ADR-0005) | A notice of its own, saying Warmly cannot be set up here and this browser cannot be added to an account. Older browsers may lack it; the Chromium and WebKit builds the tests run on have it |
 | IndexedDB | Keeping encrypted records on the device | The same notice |
 | A service worker | Opening the app with no connection | No notice. Everything else works; the app needs a connection to open |
 

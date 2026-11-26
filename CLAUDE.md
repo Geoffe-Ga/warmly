@@ -278,6 +278,13 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   signs it with this device's key (ADR-0005). Never call `fetch` for the API
   anywhere else. Never edit `tests/fixtures/signing/v1.json`: a change to the
   signed message adds a new version beside it.
+- A new device proves it knows the root key by signing its registration
+  with the account's enrollment key, an Ed25519 key derived from the root
+  key (`src/devices/signing.ts`, ADR-0005). The server is given the public
+  half only. Never send or store anything that could make that signature,
+  and never accept a registration without the proof. Never edit
+  `tests/fixtures/enrollment/v2.json`: a change to the derivation or the
+  signed message is a new version beside it.
 - A device learns it was revoked from `device.revoked` on any request. The
   API client reports it through `services.revocation` and the app shell
   ends the session (`endRevokedDevice`). Never handle it in a screen, and

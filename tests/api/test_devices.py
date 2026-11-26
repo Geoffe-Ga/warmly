@@ -10,6 +10,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -404,7 +405,7 @@ def test_a_stolen_token_cannot_register_a_device(
     """Without the account root key there is no valid proof (D-06)."""
     guess = base64.b64encode(b"\x01" * 32).decode()
     wrong_secret = enrollment_proof(
-        OTHER_DEVICE_ID, new_device.public_key, base64.b64encode(b"\x09" * 32).decode()
+        OTHER_DEVICE_ID, new_device.public_key, Ed25519PrivateKey.generate()
     )
 
     for proof in (guess, wrong_secret, "bm9wZQ=="):
@@ -495,7 +496,7 @@ def test_an_account_without_keys_cannot_register_a_device(
     recovery_store: InMemoryRecoveryStore,
 ) -> None:
     """Until the account has created its keys there is nothing to prove against."""
-    recovery_store.verifiers.clear()
+    recovery_store.enrollment_keys.clear()
 
     response = _register(session_only, new_device)
 

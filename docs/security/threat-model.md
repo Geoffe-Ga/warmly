@@ -62,14 +62,20 @@ encrypted on the user's device and the backend stores ciphertext only.
   be device-signed. What it returns is useless without the 256-bit recovery
   key. Replacing the envelope does need a registered device's signature
   (ADR-0005).
-- **The server holds the device-enrollment verifier.** Someone who can read
-  the database and also holds a valid session token could register a device
-  of their own. They would hold no decryption key (ADR-0005). Replacing the
-  verifier with a public key is tracked in #84.
+- **The server holds only a public key for device enrollment.** A new
+  device proves it knows the account root key by signing with a key derived
+  from it; the server checks that against the public half. Someone who can
+  read the database and also holds a valid session token cannot register a
+  device, because nothing stored can make the signature (ADR-0005).
+  Reading the public half means exporting the derived key inside the page
+  for a moment, which leaves the private scalar in a string the page
+  cannot wipe. It is derived from the root key, which is in the page's
+  memory anyway while the app is unlocked, so this gives script in the
+  app's origin nothing it could not already reach.
 - **The first recovery envelope is created without a device signature.** No
   device can exist before it. A session token stolen between sign-up and
   the user confirming their recovery key could create the envelope and its
-  verifier first, and then register a device. The real user's own attempt
+  enrollment key first, and then register a device. The real user's own attempt
   would be refused at once, and the account holds nothing yet (ADR-0005).
 - **Approving a device you do not hold.** Pairing checks that two devices
   are talking to each other. It cannot check that the new device is yours.

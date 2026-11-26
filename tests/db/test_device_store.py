@@ -14,6 +14,7 @@ import psycopg
 import pytest
 import pytest_asyncio
 
+from tests.auth.devices import ENROLLMENT_KEY
 from tests.db.conftest import BROWSER_ROLES
 from warmly.db.database import Database
 from warmly.db.device_store import PostgresDeviceStore
@@ -269,7 +270,7 @@ async def test_the_enrollment_verifier_is_stored_with_the_first_envelope_only(
 ) -> None:
     """It is set on create, kept through rotation, and private to its owner."""
     recovery = PostgresRecoveryStore(db)
-    assert await recovery.enrollment_verifier(OWNER_A) is None
+    assert await recovery.enrollment_key(OWNER_A) is None
 
     await recovery.write(
         OWNER_A,
@@ -277,7 +278,7 @@ async def test_the_enrollment_verifier_is_stored_with_the_first_envelope_only(
             expected_version=0,
             format_version=1,
             wrapped_key="QUFBQQ==",
-            device_enrollment_verifier="dmVyaWZpZXI=",
+            device_enrollment_key=ENROLLMENT_KEY,
         ),
     )
     await recovery.write(
@@ -287,8 +288,8 @@ async def test_the_enrollment_verifier_is_stored_with_the_first_envelope_only(
         ),
     )
 
-    assert await recovery.enrollment_verifier(OWNER_A) == "dmVyaWZpZXI="
-    assert await recovery.enrollment_verifier(OWNER_B) is None
+    assert await recovery.enrollment_key(OWNER_A) == ENROLLMENT_KEY
+    assert await recovery.enrollment_key(OWNER_B) is None
 
 
 async def test_revoking_marks_the_device_and_writes_the_ledger(

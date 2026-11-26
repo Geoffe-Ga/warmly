@@ -32,11 +32,11 @@ export interface RecoveryEnvelopeWrite {
   /** The envelope format the bytes were written in. */
   readonly formatVersion: number;
   /**
-   * What a new device must prove it knows before it may register (see
-   * `deviceEnrollmentVerifier`). Sent once, with the first envelope, and
+   * The public key a new device's registration is checked against (see
+   * `deviceEnrollmentKey`). Sent once, with the first envelope, and
    * ignored when replacing one.
    */
-  readonly enrollmentVerifier: Uint8Array<ArrayBuffer>;
+  readonly enrollmentKey: Uint8Array<ArrayBuffer>;
 }
 
 /** Reads and replaces the signed-in account's recovery envelope. */
@@ -119,7 +119,7 @@ export class ApiRecoveryEnvelopeStore implements RecoveryEnvelopeStore {
       format_version: change.formatVersion,
       wrapped_key: toBase64(change.envelope),
       ...(creating
-        ? { device_enrollment_verifier: toBase64(change.enrollmentVerifier) }
+        ? { device_enrollment_key: toBase64(change.enrollmentKey) }
         : {}),
     };
     // Creating the first envelope cannot be signed: no device can register

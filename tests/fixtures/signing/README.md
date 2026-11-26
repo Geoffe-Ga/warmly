@@ -1,7 +1,9 @@
 # Request-signing fixtures
 
 `v1.json` holds requests signed by a browser-style key (WebCrypto ECDSA
-P-256), and one device-enrollment proof. Both the browser code
+P-256). Its `enrollment` block is the earlier, HMAC form of the
+device-enrollment proof, which nothing accepts any more; the current proof
+has its own fixture in `tests/fixtures/enrollment/`. Both the browser code
 (`tests/frontend/devices/signing.test.ts`) and the server code
 (`tests/auth/test_signing_fixture.py`) check the same file, so the two sides
 cannot drift apart on what is signed or how a signature is encoded

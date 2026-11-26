@@ -508,20 +508,20 @@
         "additionalProperties": false,
         "description": "Create or rotate the recovery envelope with compare-and-swap.",
         "properties": {
-          "device_enrollment_verifier": {
+          "device_enrollment_key": {
             "anyOf": [
               {
-                "maxLength": 4096,
-                "minLength": 1,
-                "pattern": "^[A-Za-z0-9+/]+={0,2}$",
+                "maxLength": 44,
+                "minLength": 44,
+                "pattern": "^[A-Za-z0-9+/]{43}=$",
                 "type": "string"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Required when creating the envelope (expected_version 0) and refused otherwise. A value derived one-way from the root key, which a new device must prove it knows before it can register.",
-            "title": "Device Enrollment Verifier"
+            "description": "Required when creating the envelope (expected_version 0) and refused otherwise. The public half of a key pair derived from the root key. A new device signs its registration with the private half, which the server never holds.",
+            "title": "Device Enrollment Key"
           },
           "expected_version": {
             "description": "Version being replaced; 0 when none exists yet.",
@@ -616,7 +616,7 @@
             "type": "string"
           },
           "enrollment_proof": {
-            "description": "Proof that the registering device knows the account root key: an HMAC over the device ID and public key.",
+            "description": "Proof that the registering device knows the account root key: an Ed25519 signature over the device ID and public key, made with the account's enrollment key.",
             "maxLength": 4096,
             "minLength": 1,
             "pattern": "^[A-Za-z0-9+/]+={0,2}$",
@@ -867,7 +867,7 @@
         ]
       },
       "post": {
-        "description": "Register the calling device's identity.\n\nA device cannot sign with a registered key before it has one, so this\nroute checks two other things instead:\n\n- the request is signed with the very key being registered, which proves\n  the caller holds the private key;\n- the enrollment proof, which proves the caller knows the account root\n  key. A stolen session token cannot produce it.\n\nArgs:\n    request: The device's ID, public key, encrypted name and proof.\n    http_request: The request, for its signature.\n    owner: The verified account.\n    devices: Where devices are kept.\n    recovery: Where the account's enrollment verifier is kept.\n\nReturns:\n    The registered device.\n\nRaises:\n    DeviceAuthorizationError: If the signature or the proof is not valid.\n    ProblemError: 409 if the account has no keys yet, or the device ID is\n        already registered.",
+        "description": "Register the calling device's identity.\n\nA device cannot sign with a registered key before it has one, so this\nroute checks two other things instead:\n\n- the request is signed with the very key being registered, which proves\n  the caller holds the private key;\n- the enrollment proof, which proves the caller knows the account root\n  key. A stolen session token cannot produce it.\n\nArgs:\n    request: The device's ID, public key, encrypted name and proof.\n    http_request: The request, for its signature.\n    owner: The verified account.\n    devices: Where devices are kept.\n    recovery: Where the account's enrollment public key is kept.\n\nReturns:\n    The registered device.\n\nRaises:\n    DeviceAuthorizationError: If the signature or the proof is not valid.\n    ProblemError: 409 if the account has no keys yet, or the device ID is\n        already registered.",
         "operationId": "register_device_v1_devices_post",
         "requestBody": {
           "content": {

@@ -71,3 +71,57 @@ export function missingFeatures(scope: unknown = globalThis): MissingFeature[] {
 export function cannotKeepWriting(missing: readonly MissingFeature[]): boolean {
   return missing.includes("encryption") || missing.includes("storage");
 }
+
+/**
+ * Said when the browser cannot make the signature that adds a device to
+ * an account. Without it an account cannot be set up here, and this
+ * browser cannot be added to an existing one. Fixed words.
+ */
+export const CANNOT_ADD_DEVICE =
+  "This browser cannot make the signature Warmly uses to add a device to an account, so you cannot set up Warmly here or add this browser to your account. Use a current version of Safari, Chrome, Edge or Firefox.";
+
+/** Tries making an Ed25519 key; the key is thrown away. */
+async function tryEd25519(
+  subtle: Pick<SubtleCrypto, "generateKey"> | undefined,
+): Promise<boolean> {
+  if (subtle === undefined) {
+    return false;
+  }
+  try {
+    await subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// What a browser offers does not change while the page is open, so the
+// page's own answer is worked out once.
+let ownAnswer: Promise<boolean> | undefined;
+
+/**
+ * Whether this browser can make the signatures the app needs to add a
+ * device to an account: Ed25519, which older browsers lack (ADR-0005).
+ *
+ * This can only be found out by trying, and trying takes a moment, so it
+ * is asked separately from {@link missingFeatures}.
+ *
+ * @param subtle - A WebCrypto interface to try instead of the page's own.
+ *   Given, it is tried every time; the page's own is tried once and the
+ *   answer kept.
+ * @returns Whether an Ed25519 key can be made.
+ */
+export function canSignEnrollment(
+  subtle?: Pick<SubtleCrypto, "generateKey">,
+): Promise<boolean> {
+  if (subtle !== undefined) {
+    return tryEd25519(subtle);
+  }
+  ownAnswer ??= tryEd25519(globalThis.crypto?.subtle);
+  return ownAnswer;
+}
+
+/** Forget the page's answer. For tests, which change what the page offers. */
+export function forgetSigningSupport(): void {
+  ownAnswer = undefined;
+}

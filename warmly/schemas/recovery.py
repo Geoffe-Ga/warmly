@@ -4,7 +4,7 @@ from typing import Self
 
 from pydantic import Field, model_validator
 
-from warmly.schemas.common import ApiModel, SmallCiphertext
+from warmly.schemas.common import ApiModel, EnrollmentPublicKey, SmallCiphertext
 
 # The newest recovery-envelope format this server knows. A client cannot store
 # an envelope in a format the server has never heard of.
@@ -31,22 +31,23 @@ class PutRecoveryEnvelopeRequest(ApiModel):
     )
     format_version: int = Field(ge=1, le=LATEST_RECOVERY_FORMAT)
     wrapped_key: SmallCiphertext
-    device_enrollment_verifier: SmallCiphertext | None = Field(
+    device_enrollment_key: EnrollmentPublicKey | None = Field(
         default=None,
         description=(
             "Required when creating the envelope (expected_version 0) and "
-            "refused otherwise. A value derived one-way from the root key, "
-            "which a new device must prove it knows before it can register."
+            "refused otherwise. The public half of a key pair derived from "
+            "the root key. A new device signs its registration with the "
+            "private half, which the server never holds."
         ),
     )
 
     @model_validator(mode="after")
-    def _verifier_only_on_create(self) -> Self:
-        """Require the verifier exactly when the envelope is being created."""
+    def _enrollment_key_only_on_create(self) -> Self:
+        """Require the key exactly when the envelope is being created."""
         creating = self.expected_version == 0
-        if creating != (self.device_enrollment_verifier is not None):
+        if creating != (self.device_enrollment_key is not None):
             msg = (
-                "device_enrollment_verifier is required when expected_version "
+                "device_enrollment_key is required when expected_version "
                 "is 0 and must be absent otherwise"
             )
             raise ValueError(msg)

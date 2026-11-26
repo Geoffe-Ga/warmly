@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from tests.api.cases import BYTES32, commitment
 from tests.auth.devices import (
-    ENROLLMENT_VERIFIER,
+    ENROLLMENT_KEY,
     NAME_CIPHERTEXT,
     DeviceAuth,
     TestDevice,
@@ -78,11 +78,11 @@ class InMemoryRecoveryStore:
     def __init__(self) -> None:
         """Start with no envelopes."""
         self.envelopes: dict[UUID, RecoveryEnvelope] = {}
-        self.verifiers: dict[UUID, str] = {}
+        self.enrollment_keys: dict[UUID, str] = {}
 
-    async def enrollment_verifier(self, owner_id: UUID) -> str | None:
+    async def enrollment_key(self, owner_id: UUID) -> str | None:
         """Return the verifier stored when the envelope was created."""
-        return self.verifiers.get(owner_id)
+        return self.enrollment_keys.get(owner_id)
 
     async def read(self, owner_id: UUID) -> RecoveryEnvelope | None:
         """Return the owner's envelope, if any."""
@@ -100,8 +100,8 @@ class InMemoryRecoveryStore:
             format_version=request.format_version,
             wrapped_key=request.wrapped_key,
         )
-        if request.device_enrollment_verifier is not None:
-            self.verifiers[owner_id] = request.device_enrollment_verifier
+        if request.device_enrollment_key is not None:
+            self.enrollment_keys[owner_id] = request.device_enrollment_key
         return self.envelopes[owner_id]
 
 
@@ -525,7 +525,7 @@ def recovery_store() -> InMemoryRecoveryStore:
     store.envelopes[UUID(OWNER_ID)] = RecoveryEnvelope(
         version=1, format_version=1, wrapped_key="c2VlZGVk"
     )
-    store.verifiers[UUID(OWNER_ID)] = ENROLLMENT_VERIFIER
+    store.enrollment_keys[UUID(OWNER_ID)] = ENROLLMENT_KEY
     return store
 
 

@@ -18,7 +18,7 @@ import type {
 } from "../api/recovery-envelope-store";
 import type { AuthClient, AuthSession } from "../auth/auth-client";
 import type { RootKeyAccess, RootKeyCredential } from "../devices/pairing";
-import { deviceEnrollmentVerifier } from "../devices/signing";
+import { deviceEnrollmentKey } from "../devices/signing";
 import {
   DeviceLockedOutError,
   DevicePassphraseError,
@@ -360,8 +360,9 @@ export class AccountVault implements KeyVault, RootKeyAccess {
       expectedVersion: pending.expectedVersion,
       envelope,
       formatVersion: RECOVERY_FORMAT_VERSION,
-      // One-way, so the server learns nothing about the root key from it.
-      enrollmentVerifier: await deviceEnrollmentVerifier(
+      // A public key: the server learns nothing about the root key from
+      // it, and cannot make a registration proof with it.
+      enrollmentKey: await deviceEnrollmentKey(
         await importRootKey(pending.rootKeyBytes),
       ),
     });

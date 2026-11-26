@@ -26,8 +26,8 @@ class RecoveryStore(Protocol):
     ) -> RecoveryEnvelope | None:
         """Create or replace the envelope; ``None`` if the version moved on."""
 
-    async def enrollment_verifier(self, owner_id: UUID) -> str | None:
-        """Return what a new device must prove it knows, or ``None``."""
+    async def enrollment_key(self, owner_id: UUID) -> str | None:
+        """Return the account's enrollment public key, or ``None``."""
 
 
 class DeviceStore(DeviceKeys, Protocol):

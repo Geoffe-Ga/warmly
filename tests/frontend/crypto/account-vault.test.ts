@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   RecoveryEnvelopeStore,
@@ -14,7 +14,7 @@ import {
 import { fromBase64, toBase64 } from "../../../src/crypto/encoding";
 import { VaultError } from "../../../src/crypto/key-vault";
 import { fingerprint, type RootKey } from "../../../src/crypto/root-key";
-import { deviceEnrollmentVerifier } from "../../../src/devices/signing";
+import { deviceEnrollmentKey } from "../../../src/devices/signing";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import {
   FAKE_RECOVERY_STORAGE_KEY,
@@ -242,7 +242,7 @@ describe("recovering on a new device (DEV-001 path B)", () => {
       expectedVersion: 0,
       envelope: (stolen as StoredRecoveryEnvelope).envelope,
       formatVersion: 1,
-      enrollmentVerifier: new Uint8Array(32),
+      enrollmentKey: new Uint8Array(32),
     });
 
     expect(await code(device().unlockWithRecoveryKey(key))).toBe(
@@ -664,7 +664,7 @@ describe("what the vault gives device registration (DEV-002, ADR-0005)", () => {
     };
   }
 
-  it("sends the enrollment verifier derived from the new root key with the first envelope", async () => {
+  it("sends the enrollment public key derived from the new root key with the first envelope", async () => {
     await signUp();
     const { store, writes } = recording();
     const vault = new AccountVault(auth, store);
@@ -675,23 +675,51 @@ describe("what the vault gives device registration (DEV-002, ADR-0005)", () => {
     const root = vault.rootKey() as RootKey;
     expect(writes).toHaveLength(1);
     expect(writes[0]?.expectedVersion).toBe(0);
-    expect(toBase64(writes[0]?.enrollmentVerifier ?? new Uint8Array())).toBe(
-      toBase64(await deviceEnrollmentVerifier(root)),
+    expect(toBase64(writes[0]?.enrollmentKey ?? new Uint8Array())).toBe(
+      toBase64(await deviceEnrollmentKey(root)),
     );
   });
 
-  it("the verifier is not the root key, the envelope or the fingerprint", async () => {
+  it("stores nothing and keeps the new keys when the browser cannot make the enrollment key", async () => {
+    await signUp();
+    const { store, writes } = recording();
+    const vault = new AccountVault(auth, store);
+    await vault.createAccountKeys();
+    // A browser without Ed25519 refuses to import the derived key.
+    const importKey = crypto.subtle.importKey.bind(crypto.subtle);
+    const refusing = vi
+      .spyOn(crypto.subtle, "importKey")
+      .mockImplementation((...args: Parameters<typeof importKey>) =>
+        args[0] === "pkcs8"
+          ? Promise.reject(new DOMException("no", "NotSupportedError"))
+          : importKey(...args),
+      );
+
+    await expect(vault.confirmRecoveryKey()).rejects.toBeInstanceOf(
+      DOMException,
+    );
+
+    // Nothing was uploaded, so no account is left half made on the server.
+    expect(writes).toEqual([]);
+
+    // The new keys are still pending, so the confirmation can be tried
+    // again: once signing works, the first envelope is stored.
+    refusing.mockRestore();
+    await vault.confirmRecoveryKey();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.expectedVersion).toBe(0);
+  });
+
+  it("sends a public key, not the root key, the envelope or the fingerprint", async () => {
     await signUp();
     const { store, writes } = recording();
     const vault = new AccountVault(auth, store);
     await vault.createAccountKeys();
     await vault.confirmRecoveryKey();
 
-    const verifier = toBase64(
-      writes[0]?.enrollmentVerifier ?? new Uint8Array(),
-    );
+    const verifier = toBase64(writes[0]?.enrollmentKey ?? new Uint8Array());
 
-    expect(writes[0]?.enrollmentVerifier).toHaveLength(32);
+    expect(writes[0]?.enrollmentKey).toHaveLength(32);
     expect(toBase64(writes[0]?.envelope ?? new Uint8Array())).not.toContain(
       verifier.slice(0, 16),
     );

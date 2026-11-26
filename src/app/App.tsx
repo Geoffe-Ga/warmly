@@ -34,7 +34,9 @@ import {
 } from "./services";
 import type { SessionState } from "./session";
 import {
+  CANNOT_ADD_DEVICE,
   UNSUPPORTED_BROWSER,
+  canSignEnrollment,
   cannotKeepWriting,
   missingFeatures,
 } from "./support";
@@ -114,13 +116,29 @@ function OfflineNotice(props: { readonly state: SessionState }): JSX.Element {
  * what Warmly is.
  */
 function UnsupportedNotice(): JSX.Element | null {
-  const unsupported = useMemo(() => cannotKeepWriting(missingFeatures()), []);
-  if (!unsupported) {
+  const missing = useMemo(() => cannotKeepWriting(missingFeatures()), []);
+  // Whether the browser can sign a device's enrollment is only found out
+  // by trying, so it arrives a moment after the first paint.
+  const [cannotSign, setCannotSign] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void canSignEnrollment().then((can) => {
+      if (current && !can) {
+        setCannotSign(true);
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
+  // Missing encryption or storage is the wider problem, so it is the one
+  // that is said when both are true.
+  if (!missing && !cannotSign) {
     return null;
   }
   return (
     <p role="alert" class="unsupported-notice">
-      {UNSUPPORTED_BROWSER}{" "}
+      {missing ? UNSUPPORTED_BROWSER : CANNOT_ADD_DEVICE}{" "}
       <Link href={pathFor("help")}>What Warmly is and is not</Link>
     </p>
   );

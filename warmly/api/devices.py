@@ -119,7 +119,7 @@ async def register_device(
         http_request: The request, for its signature.
         owner: The verified account.
         devices: Where devices are kept.
-        recovery: Where the account's enrollment verifier is kept.
+        recovery: Where the account's enrollment public key is kept.
 
     Returns:
         The registered device.
@@ -139,7 +139,7 @@ async def register_device(
         request.public_key, signed.message(), signed.signature
     ):
         raise DeviceAuthorizationError(NOT_AUTHORIZED)
-    expected = await recovery.enrollment_verifier(owner.id)
+    expected = await recovery.enrollment_key(owner.id)
     if expected is None:
         raise ProblemError(HTTPStatus.CONFLICT, ACCOUNT_NOT_READY_CODE)
     if not enrollment_proof_is_valid(

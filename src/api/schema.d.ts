@@ -41,7 +41,7 @@ export interface paths {
      *         http_request: The request, for its signature.
      *         owner: The verified account.
      *         devices: Where devices are kept.
-     *         recovery: Where the account's enrollment verifier is kept.
+     *         recovery: Where the account's enrollment public key is kept.
      *
      *     Returns:
      *         The registered device.
@@ -837,10 +837,10 @@ export interface components {
      */
     PutRecoveryEnvelopeRequest: {
       /**
-       * Device Enrollment Verifier
-       * @description Required when creating the envelope (expected_version 0) and refused otherwise. A value derived one-way from the root key, which a new device must prove it knows before it can register.
+       * Device Enrollment Key
+       * @description Required when creating the envelope (expected_version 0) and refused otherwise. The public half of a key pair derived from the root key. A new device signs its registration with the private half, which the server never holds.
        */
-      device_enrollment_verifier?: string | null;
+      device_enrollment_key?: string | null;
       /**
        * Expected Version
        * @description Version being replaced; 0 when none exists yet.
@@ -903,7 +903,7 @@ export interface components {
       device_id: string;
       /**
        * Enrollment Proof
-       * @description Proof that the registering device knows the account root key: an HMAC over the device ID and public key.
+       * @description Proof that the registering device knows the account root key: an Ed25519 signature over the device ID and public key, made with the account's enrollment key.
        */
       enrollment_proof: string;
       /** Name Ciphertext */

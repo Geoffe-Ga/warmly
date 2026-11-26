@@ -4,6 +4,7 @@ The store here is the in-memory double. The same rules are tested against
 PostgreSQL, including cross-owner access, in tests/db/test_recovery_store.py.
 """
 
+import base64
 from typing import Any
 from uuid import UUID
 
@@ -12,13 +13,15 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tests.api.conftest import InMemoryRecoveryStore
-from tests.auth.devices import ENROLLMENT_VERIFIER
+from tests.auth.devices import ENROLLMENT_KEY
 from tests.auth.tokens import OTHER_OWNER_ID, OWNER_ID, Signer
 from warmly.api.errors import PROBLEM_MEDIA_TYPE
 
 URL = "/v1/recovery-envelope"
 WRAPPED_A = "QUFBQQ=="
 WRAPPED_B = "QkJCQg=="
+# A second well-formed enrollment key, for a rotation that tries to send one.
+OTHER_ENROLLMENT_KEY = base64.b64encode(bytes(range(32, 64))).decode()
 
 
 def _put(client: TestClient, expected: int, wrapped: str = WRAPPED_A) -> dict[str, Any]:
@@ -29,7 +32,7 @@ def _put(client: TestClient, expected: int, wrapped: str = WRAPPED_A) -> dict[st
         "wrapped_key": wrapped,
     }
     if expected == 0:
-        body["device_enrollment_verifier"] = ENROLLMENT_VERIFIER
+        body["device_enrollment_key"] = ENROLLMENT_KEY
     response = client.put(URL, json=body)
     return {"status": response.status_code, **response.json()}
 
@@ -183,10 +186,10 @@ def test_a_malformed_envelope_is_refused_and_never_echoed(
     assert not empty.envelopes
 
 
-def test_creating_needs_the_enrollment_verifier_and_rotating_must_not_send_one(
+def test_creating_needs_the_enrollment_key_and_rotating_must_not_send_one(
     client: TestClient, empty: InMemoryRecoveryStore
 ) -> None:
-    """The verifier is set once, with the first envelope, and never replaced."""
+    """The key is set once, with the first envelope, and never replaced."""
     without = client.put(
         URL,
         json={"expected_version": 0, "format_version": 1, "wrapped_key": WRAPPED_A},
@@ -195,7 +198,7 @@ def test_creating_needs_the_enrollment_verifier_and_rotating_must_not_send_one(
     assert not empty.envelopes
 
     _put(client, 0, WRAPPED_A)
-    assert empty.verifiers[UUID(OWNER_ID)] == ENROLLMENT_VERIFIER
+    assert empty.enrollment_keys[UUID(OWNER_ID)] == ENROLLMENT_KEY
 
     with_one = client.put(
         URL,
@@ -203,11 +206,41 @@ def test_creating_needs_the_enrollment_verifier_and_rotating_must_not_send_one(
             "expected_version": 1,
             "format_version": 1,
             "wrapped_key": WRAPPED_B,
-            "device_enrollment_verifier": WRAPPED_B,
+            "device_enrollment_key": OTHER_ENROLLMENT_KEY,
         },
     )
     assert with_one.status_code == 422
-    assert empty.verifiers[UUID(OWNER_ID)] == ENROLLMENT_VERIFIER
+    assert empty.enrollment_keys[UUID(OWNER_ID)] == ENROLLMENT_KEY
+
+
+@pytest.mark.parametrize(
+    "not_a_key",
+    [
+        "",
+        "c2hvcnQ=",
+        base64.b64encode(bytes(31)).decode(),
+        base64.b64encode(bytes(33)).decode(),
+        base64.b64encode(bytes(64)).decode(),
+        ENROLLMENT_KEY.rstrip("="),
+        ENROLLMENT_KEY.replace("=", "!"),
+    ],
+)
+def test_the_enrollment_key_must_be_the_size_of_a_public_key(
+    client: TestClient, empty: InMemoryRecoveryStore, not_a_key: str
+) -> None:
+    """Anything but 32 bytes of base64 is refused before it is stored."""
+    response = client.put(
+        URL,
+        json={
+            "expected_version": 0,
+            "format_version": 1,
+            "wrapped_key": WRAPPED_A,
+            "device_enrollment_key": not_a_key,
+        },
+    )
+
+    assert response.status_code == 422
+    assert not empty.envelopes
 
 
 def test_creating_needs_only_the_session_but_rotating_needs_a_device(
