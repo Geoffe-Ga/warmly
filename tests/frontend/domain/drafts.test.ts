@@ -8,7 +8,9 @@ import {
   completedFrom,
   currentDraft,
   draftFrom,
+  draftSaver,
   isBlank,
+  type DraftSaverDeps,
   type EntryContent,
   type SaveState,
 } from "../../../src/domain/journal/drafts";
@@ -328,5 +330,98 @@ describe("what counts as text (JR-002)", () => {
   it("counts an invisible character that is not white space, by decision", () => {
     expect(hasText("​")).toBe(true);
     expect(hasText("﻿")).toBe(false);
+  });
+});
+
+describe("the function that stores the compose form as a draft (JR-004)", () => {
+  /** A saver over a list that stands in for the store, and what it was told. */
+  function setUp(overrides: Partial<DraftSaverDeps> = {}) {
+    const stored: JournalEntry[] = [];
+    const refusals: unknown[] = [];
+    let current: JournalEntry | undefined;
+    const save = draftSaver({
+      put: (draft) => {
+        stored.push(draft);
+        return Promise.resolve();
+      },
+      current: () => current,
+      stored: (draft) => {
+        current = draft;
+      },
+      finishing: () => false,
+      refused: (error) => {
+        refusals.push(error);
+      },
+      ...overrides,
+    });
+    return { save, stored, refusals, current: () => current };
+  }
+
+  it("starts a draft from the first content that is worth keeping", async () => {
+    const form = setUp();
+
+    await form.save(CONTENT);
+
+    expect(form.stored).toHaveLength(1);
+    expect(form.stored[0]?.status).toBe("draft");
+    expect(form.stored[0]?.responses.good).toBe("half a thought");
+    expect(form.current()).toBe(form.stored[0]);
+  });
+
+  it("does not start a draft for a blank form", async () => {
+    const form = setUp();
+
+    await form.save(BLANK);
+
+    expect(form.stored).toEqual([]);
+    expect(form.current()).toBeUndefined();
+  });
+
+  it("writes later content onto the same draft, and saves a form that was emptied", async () => {
+    const form = setUp();
+    await form.save(CONTENT);
+    const first = form.current();
+
+    await form.save(BLANK);
+
+    expect(form.stored).toHaveLength(2);
+    expect(form.stored[1]?.id).toBe(first?.id);
+    expect(form.stored[1]?.createdAt).toBe(first?.createdAt);
+    expect(form.stored[1]?.responses.good).toBe("");
+  });
+
+  it("saves nothing once the form is being finished", async () => {
+    let finishing = false;
+    const form = setUp({ finishing: () => finishing });
+    await form.save(CONTENT);
+    finishing = true;
+
+    await form.save({ ...CONTENT, feelings: ["sad"] });
+
+    expect(form.stored).toHaveLength(1);
+  });
+
+  it("tells why a save was refused, rejects, and keeps building on the last stored draft", async () => {
+    const failure = new Error("synthetic");
+    let fail = false;
+    const kept: JournalEntry[] = [];
+    const form = setUp({
+      put: (draft) => {
+        if (fail) {
+          return Promise.reject(failure);
+        }
+        kept.push(draft);
+        return Promise.resolve();
+      },
+    });
+    await form.save(CONTENT);
+    const before = form.current();
+    fail = true;
+
+    await expect(form.save({ ...CONTENT, feelings: [] })).rejects.toBe(failure);
+
+    expect(form.refusals).toEqual([failure]);
+    expect(form.current()).toBe(before);
+    expect(kept).toHaveLength(1);
   });
 });

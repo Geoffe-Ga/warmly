@@ -20,7 +20,7 @@ import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
-import { DELETE_WARNING } from "../journal/Entry";
+import { DELETE_WARNING } from "../journal/shared";
 import {
   ChangeError,
   FailedNotice,

@@ -32,7 +32,7 @@ import {
   SegmentHighlight,
 } from "../../components/SegmentHighlight";
 import { StatusBanner } from "../../components/StatusBanner";
-import { DELETE_WARNING } from "../journal/Entry";
+import { DELETE_WARNING } from "../journal/shared";
 import { useJournalEntries } from "../journal/shared";
 import {
   CardTypePicker,

@@ -25,7 +25,7 @@ import { TextArea, TextField } from "../../components/Field";
 import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
-import { DELETE_WARNING } from "../journal/Entry";
+import { DELETE_WARNING } from "../journal/shared";
 import {
   CardTypePicker,
   ChangeError,

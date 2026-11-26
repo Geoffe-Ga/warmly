@@ -113,6 +113,55 @@ export function currentDraft(
     );
 }
 
+/** What a draft saver needs from the form it saves for. */
+export interface DraftSaverDeps {
+  /** Store a draft. Rejects if it cannot be stored. */
+  readonly put: (draft: JournalEntry) => Promise<void>;
+  /** The stored draft the form writes to; `undefined` before there is one. */
+  readonly current: () => JournalEntry | undefined;
+  /** Told the draft that was just stored, so the next save builds on it. */
+  readonly stored: (draft: JournalEntry) => void;
+  /**
+   * Whether the form is being finished. Nothing is saved as a draft from
+   * then on: the draft is turning into the finished entry.
+   */
+  readonly finishing: () => boolean;
+  /** Told what a refused save threw, before the save rejects. */
+  readonly refused: (error: unknown) => void;
+}
+
+/**
+ * Make the function an {@link Autosave} calls to store the compose form
+ * as a draft (PRD JR-004).
+ *
+ * It saves nothing while the form is being finished, and nothing for a
+ * blank form that has no draft yet: an empty draft is not worth keeping.
+ * Otherwise it writes onto the form's own draft, or starts one. It never
+ * calls AI or the network.
+ *
+ * @param deps - See {@link DraftSaverDeps}.
+ * @returns The save function. It rejects when the draft could not be
+ *   stored, after telling `refused` why.
+ */
+export function draftSaver(
+  deps: DraftSaverDeps,
+): (latest: EntryContent) => Promise<void> {
+  return async (latest) => {
+    const existing = deps.current();
+    if (deps.finishing() || (existing === undefined && isBlank(latest))) {
+      return;
+    }
+    const next = await draftFrom(latest, existing);
+    try {
+      await deps.put(next);
+    } catch (error) {
+      deps.refused(error);
+      throw error;
+    }
+    deps.stored(next);
+  };
+}
+
 /** How long after the last change a draft is saved. */
 export const AUTOSAVE_DELAY_MS = 800;
 

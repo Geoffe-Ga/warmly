@@ -6,7 +6,7 @@ import type { DomainEvents } from "../../../src/domain/events";
 import { PROMPTS, type JournalEntry } from "../../../src/domain/journal/types";
 import { ANSWER_NEEDED } from "../../../src/domain/journal/validation";
 import { StaleRecordError } from "../../../src/storage/record-store";
-import { DELETE_WARNING } from "../../../src/ui/screens/journal/Entry";
+import { DELETE_WARNING } from "../../../src/ui/screens/journal/shared";
 import {
   CANNOT_OPEN,
   formatEntryDate,

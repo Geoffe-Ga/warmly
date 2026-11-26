@@ -24,8 +24,7 @@ import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { ActionForm, useAction } from "../../components/ActionForm";
 import { DependentsWarning } from "./dependents";
-import { DELETE_WARNING } from "./Entry";
-import { formatEntryDate } from "./shared";
+import { DELETE_WARNING, formatEntryDate } from "./shared";
 
 /** The path part that means "one not yet written". */
 export const NEW_AFTER = "new";

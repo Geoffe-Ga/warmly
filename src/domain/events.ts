@@ -39,6 +39,17 @@ export type DomainEventListener<K extends DomainEventType> = (
   event: DomainEvents[K],
 ) => void | Promise<void>;
 
+/**
+ * What each failed listener threw when an event was announced; empty when
+ * all succeeded.
+ *
+ * Announcing never rejects, so a caller that ignores this is choosing to:
+ * the change it is announcing is already stored, and a listener that
+ * failed must not make it look as if it was not. Whatever depends on the
+ * change checks again on unlock, by content hash.
+ */
+export type ListenerFailures = readonly unknown[];
+
 /** Announces events to whoever has asked to hear them. */
 export interface EventBus {
   /**
@@ -67,7 +78,7 @@ export interface EventBus {
   emit<K extends DomainEventType>(
     type: K,
     event: DomainEvents[K],
-  ): Promise<readonly unknown[]>;
+  ): Promise<ListenerFailures>;
 }
 
 /**
