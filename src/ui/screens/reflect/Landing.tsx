@@ -101,7 +101,7 @@ export function Landing(): JSX.Element {
           <li>
             <Link
               href={pathFor("reflect-session", { id: NEW_SESSION })}
-              class="action"
+              class="button button--primary"
             >
               Ask a question
             </Link>

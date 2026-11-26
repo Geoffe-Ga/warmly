@@ -101,7 +101,7 @@ function DraftLink(props: { readonly draft: JournalEntry }): JSX.Element {
     <nav aria-label="Draft">
       <ul class="action-list">
         <li>
-          <Link href={pathFor("journal-new")} class="action">
+          <Link href={pathFor("journal-new")} class="button button--primary">
             Carry on with your draft from{" "}
             {formatEntryDate(props.draft.entryDate)}
           </Link>
@@ -205,19 +205,22 @@ export function Timeline(): JSX.Element {
 
   return (
     <PageLayout title="Journal" lead="Your entries, newest first.">
-      {draft === undefined ? (
-        <p>
-          <Link href={pathFor("journal-new")}>Write a new entry</Link>
-        </p>
-      ) : (
-        <DraftLink draft={draft} />
-      )}
-      <p>
+      <div class="button-row">
+        {draft === undefined ? (
+          <Link href={pathFor("journal-new")} class="button button--primary">
+            Write a new entry
+          </Link>
+        ) : (
+          <DraftLink draft={draft} />
+        )}
         {/* Opened only by choosing to: nothing leads here by itself. */}
-        <Link href={pathFor("after-conversation", { id: NEW_AFTER })}>
+        <Link
+          href={pathFor("after-conversation", { id: NEW_AFTER })}
+          class="button button--secondary"
+        >
           Write about a conversation you had
         </Link>
-      </p>
+      </div>
       <JournalBrowser journal={journal} hasDraft={draft !== undefined} />
     </PageLayout>
   );

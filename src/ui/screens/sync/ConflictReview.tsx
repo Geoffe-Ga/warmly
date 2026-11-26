@@ -1,7 +1,6 @@
 import type { JSX } from "preact";
 import { useCallback, useEffect, useRef, useState } from "preact/hooks";
 
-import { Link } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import type { EntryContent } from "../../../domain/journal/drafts";
@@ -204,11 +203,7 @@ export function ConflictReview(): JSX.Element {
     </StatusBanner>
   );
 
-  const back = (
-    <p>
-      <Link href={pathFor("journal")}>Back to your journal</Link>
-    </p>
-  );
+  const back = { href: pathFor("journal"), label: "Back to your journal" };
 
   if (merging !== undefined && content !== undefined) {
     const finished =
@@ -221,6 +216,7 @@ export function ConflictReview(): JSX.Element {
     };
     return (
       <PageLayout
+        back={back}
         title="Write one version from both"
         lead={`Your entry from ${formatEntryDate(merging.mine.entryDate)}.`}
       >
@@ -281,7 +277,7 @@ export function ConflictReview(): JSX.Element {
 
   if (found.kind !== "list") {
     return (
-      <PageLayout title="Changed in two places">
+      <PageLayout back={back} title="Changed in two places">
         <StatusBanner
           tone={found.kind === "failed" ? "error" : "info"}
           label={
@@ -290,7 +286,6 @@ export function ConflictReview(): JSX.Element {
         >
           {found.kind === "failed" ? found.message : "Getting your entries."}
         </StatusBanner>
-        {back}
       </PageLayout>
     );
   }
@@ -298,6 +293,7 @@ export function ConflictReview(): JSX.Element {
   const { conflicts } = found;
   return (
     <PageLayout
+      back={back}
       title="Changed in two places"
       lead={
         conflicts.length + cardsWaiting === 0
@@ -389,7 +385,6 @@ export function ConflictReview(): JSX.Element {
         );
       })}
       <CardConflicts onCount={setCardsWaiting} />
-      {back}
     </PageLayout>
   );
 }

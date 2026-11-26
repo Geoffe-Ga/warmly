@@ -1,7 +1,6 @@
 import type { JSX } from "preact";
 import { useLayoutEffect, useState } from "preact/hooks";
 
-import { Link } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import { readingText } from "../../../domain/cards/types";
@@ -120,22 +119,23 @@ export function Present(props: { readonly params: RouteParams }): JSX.Element {
   const open = loaded.kind === "ready" ? loaded.value : undefined;
 
   return (
-    <PageLayout title="Presentation">
+    <PageLayout
+      back={
+        open === undefined
+          ? { href: pathFor("prepare"), label: "Back to your collections" }
+          : {
+              href: pathFor("collection", { id: open.collection.id }),
+              label: "Close and go back to the collection",
+            }
+      }
+      title="Presentation"
+    >
       {loaded.kind === "loading" && <LoadingNotice />}
       {loaded.kind === "failed" && <FailedNotice />}
       {loaded.kind === "ready" && open === undefined && (
         <MissingNotice what="collection" />
       )}
       {open !== undefined && <Deck key={open.collection.id} {...open} />}
-      <p>
-        {open === undefined ? (
-          <Link href={pathFor("prepare")}>Back to your collections</Link>
-        ) : (
-          <Link href={pathFor("collection", { id: open.collection.id })}>
-            Close and go back to the collection
-          </Link>
-        )}
-      </p>
     </PageLayout>
   );
 }

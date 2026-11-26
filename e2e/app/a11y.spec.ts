@@ -341,8 +341,14 @@ test.describe("the sweep (UI-001 to UI-008, AC-23)", () => {
       page.getByRole("navigation", { name: "Secondary" }),
     ).toBeVisible();
     await sweep(page, "home", "menu", "the menu, open");
+    // The sweep ends by moving keyboard focus into the page, and focus
+    // leaving the menu closes it.
+    await expect(
+      page.getByRole("navigation", { name: "Secondary" }),
+    ).toHaveCount(0);
 
     // On one of its own pages, where a link in it is marked as current.
+    await openMenu(page);
     await page.getByRole("link", { name: "Settings" }).click();
     await expect(page.getByRole("heading", { level: 1 })).toHaveText(
       "Settings",
@@ -355,6 +361,10 @@ test.describe("the sweep (UI-001 to UI-008, AC-23)", () => {
     await sweep(page, "settings", "menu", "the menu, open, on its own page");
 
     // It closes on Escape, and the focus goes back to its button.
+    await openMenu(page);
+    await expect(
+      page.getByRole("navigation", { name: "Secondary" }),
+    ).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(
       page.getByRole("navigation", { name: "Secondary" }),

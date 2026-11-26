@@ -12,6 +12,7 @@ import {
 } from "../../../domain/journal/types";
 import { deleteEntry } from "../../../domain/journal/delete";
 import { Button } from "../../components/Button";
+import { DangerZone } from "../../components/DangerZone";
 import { Card } from "../../components/Card";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
@@ -280,20 +281,18 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
     }
   }, [isMarked]);
 
-  const back = (
-    <p>
-      <Link href={pathFor("journal")}>Back to your journal</Link>
-    </p>
-  );
+  const back = { href: pathFor("journal"), label: "Back to your journal" };
 
   if (found.kind !== "entry") {
     const notice = NOTICES[found.kind];
     return (
-      <PageLayout title={deleted ? "Entry deleted" : "Journal entry"}>
+      <PageLayout
+        back={back}
+        title={deleted ? "Entry deleted" : "Journal entry"}
+      >
         <StatusBanner tone={notice.tone} label={notice.label}>
           {found.kind === "failed" ? found.message : notice.text}
         </StatusBanner>
-        {back}
       </PageLayout>
     );
   }
@@ -302,6 +301,7 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
   const what = entry.status === "draft" ? "draft" : "entry";
   return (
     <PageLayout
+      back={back}
       title={formatEntryDate(entry.entryDate)}
       lead={
         entry.status === "draft"
@@ -334,31 +334,38 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
           <p>{entry.feelings.join(", ")}</p>
         </Card>
       )}
-      <p>
+      <div class="button-row">
         {entry.status === "draft" ? (
-          <Link href={pathFor("journal-new")}>Carry on writing</Link>
+          <Link href={pathFor("journal-new")} class="button button--secondary">
+            Carry on writing
+          </Link>
         ) : (
-          <Link href={pathFor("journal-edit", { id: entry.id })}>
+          <Link
+            href={pathFor("journal-edit", { id: entry.id })}
+            class="button button--secondary"
+          >
             Edit this entry
           </Link>
         )}
-      </p>
-      {action.error !== undefined && (
-        <StatusBanner tone="error" label="Couldn't delete">
-          {action.error}
-        </StatusBanner>
-      )}
-      <div class="button-row">
-        <Button
-          variant="danger"
-          disabled={action.busy}
-          onClick={() => {
-            setConfirming(true);
-          }}
-        >
-          Delete this {what}
-        </Button>
       </div>
+      <DangerZone>
+        {action.error !== undefined && (
+          <StatusBanner tone="error" label="Couldn't delete">
+            {action.error}
+          </StatusBanner>
+        )}
+        <div class="button-row">
+          <Button
+            variant="danger"
+            disabled={action.busy}
+            onClick={() => {
+              setConfirming(true);
+            }}
+          >
+            Delete this {what}
+          </Button>
+        </div>
+      </DangerZone>
       <ConfirmDialog
         open={confirming}
         title={`Delete this ${what} for good?`}
@@ -381,7 +388,6 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
           <DependentsWarning entryId={entry.id} doing="delete" />
         )}
       </ConfirmDialog>
-      {back}
     </PageLayout>
   );
 }

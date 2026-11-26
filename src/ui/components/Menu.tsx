@@ -5,8 +5,9 @@ import { useEffect, useId, useRef, useState } from "preact/hooks";
  * A button that opens a panel under it: the app's menu.
  *
  * The panel is in the page only while it is open. It closes on Escape
- * (focus goes back to the button), on a press anywhere outside it, and
- * when a link inside it is followed. Nothing here moves or animates.
+ * (focus goes back to the button), on a press anywhere outside it, when
+ * keyboard focus moves on out of it, and when a link inside it is
+ * followed. Nothing here moves or animates.
  *
  * @param props - The button's words and what the open panel holds.
  * @returns The button and, while open, the panel.
@@ -48,7 +49,21 @@ export function Menu(props: {
   }, [open]);
 
   return (
-    <div class="menu" ref={root}>
+    <div
+      class="menu"
+      ref={root}
+      onFocusOut={(event) => {
+        // Tabbing on out of the menu closes it. Only when focus has gone
+        // to something else on the page: a press that moves focus nowhere
+        // (as on a button in Safari) is handled by the press itself.
+        if (
+          event.relatedTarget instanceof Node &&
+          root.current?.contains(event.relatedTarget) !== true
+        ) {
+          setOpen(false);
+        }
+      }}
+    >
       <button
         ref={button}
         type="button"

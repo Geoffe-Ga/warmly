@@ -10,7 +10,6 @@ import {
 import type { GeneratedCard } from "../../../ai/contracts";
 import type { CardsRequest } from "../../../ai/provider";
 import { AiRequestController } from "../../../ai/request-controller";
-import { Link } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import {
@@ -352,7 +351,18 @@ export function SelectEntries(props: {
   );
 
   return (
-    <PageLayout title="Suggest cards" lead={SUGGEST_LEAD}>
+    <PageLayout
+      back={
+        id === undefined
+          ? { href: pathFor("prepare"), label: "Back to your collections" }
+          : {
+              href: pathFor("collection", { id }),
+              label: "Back to the collection",
+            }
+      }
+      title="Suggest cards"
+      lead={SUGGEST_LEAD}
+    >
       {loaded.kind === "loading" && <LoadingNotice />}
       {loaded.kind === "failed" && <FailedNotice />}
       {loaded.kind === "ready" && open === undefined && (
@@ -376,15 +386,6 @@ export function SelectEntries(props: {
             collectionGone={collectionGone}
           />
         ))}
-      <p>
-        {id === undefined ? (
-          <Link href={pathFor("prepare")}>Back to your collections</Link>
-        ) : (
-          <Link href={pathFor("collection", { id })}>
-            Back to the collection
-          </Link>
-        )}
-      </p>
     </PageLayout>
   );
 }

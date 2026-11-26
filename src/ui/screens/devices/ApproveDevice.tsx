@@ -1,7 +1,6 @@
 import type { JSX } from "preact";
 import { useEffect, useRef, useState } from "preact/hooks";
 
-import { Link } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import {
@@ -173,6 +172,7 @@ export function ApproveDevice(): JSX.Element {
 
   return (
     <PageLayout
+      back={{ href: pathFor("devices"), label: "Back to Manage Devices" }}
       title="Approve a new device"
       lead="Let a device you are signing in on open your journal, without typing your recovery key there."
     >
@@ -238,9 +238,6 @@ export function ApproveDevice(): JSX.Element {
           </Button>
         </div>
       )}
-      <p>
-        <Link href={pathFor("devices")}>Back to Manage Devices</Link>
-      </p>
     </PageLayout>
   );
 }

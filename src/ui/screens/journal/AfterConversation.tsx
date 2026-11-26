@@ -1,7 +1,7 @@
 import type { JSX } from "preact";
 import { useContext, useEffect, useRef, useState } from "preact/hooks";
 
-import { Link, NavigationContext } from "../../../app/navigation";
+import { NavigationContext } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import {
@@ -17,6 +17,7 @@ import {
 } from "../../../domain/post-conversation/types";
 import { StaleRecordError } from "../../../storage/record-store";
 import { Button } from "../../components/Button";
+import { DangerZone } from "../../components/DangerZone";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TextArea } from "../../components/Field";
 import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
@@ -260,7 +261,11 @@ function AfterForm(props: {
           <Button type="submit" variant="primary" disabled={action.busy}>
             {record === undefined ? "Save" : "Save changes"}
           </Button>
-          {record !== undefined && (
+        </div>
+      </ActionForm>
+      {record !== undefined && (
+        <DangerZone>
+          <div class="button-row">
             <Button
               variant="danger"
               disabled={action.busy}
@@ -270,9 +275,9 @@ function AfterForm(props: {
             >
               Delete this
             </Button>
-          )}
-        </div>
-      </ActionForm>
+          </div>
+        </DangerZone>
+      )}
       {record !== undefined && (
         <ConfirmDialog
           open={confirming}
@@ -327,14 +332,10 @@ export function AfterConversation(props: {
     }
   }, [deleted]);
 
-  const back = (
-    <p>
-      <Link href={pathFor("journal")}>Back to your journal</Link>
-    </p>
-  );
+  const back = { href: pathFor("journal"), label: "Back to your journal" };
   if (found.kind === "loading") {
     return (
-      <PageLayout title="After a conversation">
+      <PageLayout back={back} title="After a conversation">
         <StatusBanner tone="info" label="Loading">
           Getting what you wrote.
         </StatusBanner>
@@ -343,7 +344,7 @@ export function AfterConversation(props: {
   }
   if (found.kind === "missing" || found.kind === "deleted") {
     return (
-      <PageLayout title="After a conversation">
+      <PageLayout back={back} title="After a conversation">
         <StatusBanner
           tone={deleted ? "success" : "info"}
           label={deleted ? "Deleted" : "Not here"}
@@ -352,13 +353,13 @@ export function AfterConversation(props: {
             ? "It has been removed from this device."
             : "This isn't on this device. It may have been deleted."}
         </StatusBanner>
-        {back}
       </PageLayout>
     );
   }
   const record = found.kind === "here" ? found.record : undefined;
   return (
     <PageLayout
+      back={back}
       title="After a conversation"
       lead={
         record === undefined
@@ -374,7 +375,6 @@ export function AfterConversation(props: {
           setFound({ kind: "deleted" });
         }}
       />
-      {back}
     </PageLayout>
   );
 }

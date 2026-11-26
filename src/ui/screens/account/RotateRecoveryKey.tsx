@@ -36,14 +36,14 @@ export function RotateRecoveryKey(): JSX.Element {
 
   if (done) {
     return (
-      <PageLayout title={TITLE}>
+      <PageLayout
+        back={{ href: pathFor("settings"), label: "Back to settings" }}
+        title={TITLE}
+      >
         <StatusBanner tone="success" label="Recovery key replaced">
           Your new key is the only one that works now. The old key can be thrown
           away.
         </StatusBanner>
-        <p>
-          <Link href={pathFor("settings")}>Back to settings</Link>
-        </p>
       </PageLayout>
     );
   }
@@ -51,6 +51,7 @@ export function RotateRecoveryKey(): JSX.Element {
   if (newKey === undefined) {
     return (
       <PageLayout
+        back={{ href: pathFor("settings"), label: "Back to settings" }}
         title={TITLE}
         lead="First, enter the recovery key you have now."
       >
@@ -96,6 +97,7 @@ export function RotateRecoveryKey(): JSX.Element {
 
   return (
     <PageLayout
+      back={{ href: pathFor("settings"), label: "Back to settings" }}
       title={TITLE}
       lead="Write the new key down or store it in a password manager before you continue."
     >
