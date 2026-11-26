@@ -277,10 +277,10 @@ textarea.field__control {
 /* Choices: a group of checkboxes */
 
 .choices {
-  display: grid;
-  /* The column may be narrower than its longest word, which then breaks */
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-1);
+  /* A plain block, not a grid: Safari does not lay a legend out again
+     when a grid fieldset gets narrower, for example when a phone is
+     turned, and the page then scrolls sideways. */
+  display: block;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -288,7 +288,15 @@ textarea.field__control {
 }
 
 .choices legend {
+  /* A long question wraps inside the group */
+  box-sizing: border-box;
+  max-width: 100%;
   padding: 0;
+  overflow-wrap: anywhere;
+}
+
+.choices > * + * {
+  margin-top: var(--space-1);
 }
 
 .choices__list {
@@ -380,8 +388,10 @@ textarea.field__control {
   margin: 0;
 }
 
-/* Offline notice: one line under the header; empty while online */
-.offline-notice {
+/* Offline notice: one line under the header; empty while online.
+   The unsupported-browser notice has the same shape. */
+.offline-notice,
+.unsupported-notice {
   margin: 0 0 var(--space-3);
   padding: var(--space-2) var(--space-3);
   border-left: var(--space-2) solid var(--color-border-strong);
@@ -456,7 +466,9 @@ textarea.field__control {
 .versions {
   display: grid;
   gap: var(--space-3);
-  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  /* Side by side where there is room for two; never wider than the page,
+     however large the text is */
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
   margin-bottom: var(--space-3);
 }
 
@@ -484,6 +496,24 @@ textarea.field__control {
 
 .conflict {
   margin-bottom: var(--space-5);
+}
+
+/* Status list: a label with a sentence or two under it */
+
+.status-list {
+  display: grid;
+  /* The column may be narrower than its longest word, which then breaks */
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.status-list dt {
+  font-weight: 700;
+}
+
+.status-list dd {
+  margin: var(--space-1) 0 0;
 }
 
 /* Detail list: short label and value pairs inside a card */
@@ -635,6 +665,8 @@ textarea.field__control {
    above its words, so the kind is never told by colour alone */
 .segments {
   display: grid;
+  /* The column may be narrower than its longest word, which then breaks */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
   margin: 0;
   padding: 0;
@@ -643,6 +675,8 @@ textarea.field__control {
 
 .segment {
   display: grid;
+  /* The column may be narrower than its longest word, which then breaks */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
   width: 100%;
   min-height: var(--touch-target);
@@ -681,6 +715,8 @@ textarea.field__control {
 
 .segment-detail__options {
   display: grid;
+  /* The column may be narrower than its longest word, which then breaks */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
   margin: 0;
   padding: 0;
@@ -689,6 +725,8 @@ textarea.field__control {
 
 .segment-detail__sources {
   display: grid;
+  /* The column may be narrower than its longest word, which then breaks */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-2);
   margin: 0;
   padding-left: var(--space-4);

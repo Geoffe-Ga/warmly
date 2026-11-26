@@ -119,7 +119,7 @@ function UnsupportedNotice(): JSX.Element | null {
     return null;
   }
   return (
-    <p role="alert" class="offline-notice">
+    <p role="alert" class="unsupported-notice">
       {UNSUPPORTED_BROWSER}{" "}
       <Link href={pathFor("help")}>What Warmly is and is not</Link>
     </p>

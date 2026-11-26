@@ -33,4 +33,6 @@ artefact.
   empties it. A test that reloads and then expects "All changes saved" must
   make its records after the reload.
 - Run axe on every screen and state a test puts on show.
+- A new route, or a new kind of state, must be added to the plan in
+  `app/a11y.spec.ts`. The suite fails until it is.
 - Never retry or skip a failing test to get green. Find the cause.

@@ -208,6 +208,21 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   decrypts each entry once (`tests/frontend/perf/scale.test.ts`). Raising
   either needs a reason in the PR. Never add a wall-clock time limit as a
   test: it fails for reasons that are not the code's.
+- Every route and every kind of state is in the accessibility sweep
+  (`e2e/app/a11y.spec.ts`): a new route, or a new kind of state, fails the
+  suite until it is added to the plan there. Never turn an axe rule off.
+  `docs/accessibility.md` says what is checked by machine and what no
+  person has checked yet: never claim WCAG conformance or screen-reader
+  testing that has not been done.
+- Colour comes only from the tokens in `src/styles.css`. A component
+  never sets a colour (a test scans `src/` for it). A grid that holds text
+  uses `minmax(0, 1fr)` so a long word wraps instead of widening the
+  page, and a `fieldset` is never a grid (Safari does not re-wrap its
+  legend when it narrows).
+- Settings shows one status summary (`StatusSummary`, PRD UI-008). Each
+  line is a state, a count or fixed words, never anything the person
+  wrote, and never more than the app does. `DELETING_STATUS` must say the
+  same as `DELETE_WARNING`.
 - `no-console` is an ESLint error, because logs must never contain journal content.
 - The Content Security Policy lives in `config/security-headers.ts`. Never add
   `unsafe-inline`, `unsafe-eval` or a wildcard; a new `connect-src` origin needs a
