@@ -1,0 +1,21 @@
+# What the secret scan (scripts/release/secret-scan.sh) may pass over.
+#
+# Everything here is public test material, not a secret:
+# - `.secrets.baseline` is detect-secrets' own list of hashes of the test
+#   vectors below.
+# - `tests/fixtures/` holds published test vectors (RFC 9180) and keys made
+#   up for fixtures. No real account, device or provider uses any of them.
+#
+# Adding a path here hides it from the scan. Never add a path that could
+# hold a real key.
+title = "Warmly secret scan"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Public test vectors and the detect-secrets baseline"
+paths = [
+  '''^\.secrets\.baseline$''',
+  '''^tests/fixtures/''',
+]

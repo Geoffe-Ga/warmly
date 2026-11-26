@@ -101,6 +101,8 @@ docs/support/            Supported browsers, budgets and the manual checks
 scripts/<gate>.sh        Runs the gate for Python, then TypeScript
 scripts/python/          Python-only gates
 scripts/typescript/      TypeScript-only gates
+scripts/release/         The release gate, the policy guard and the scans
+release/                 required-checks.yml: what a release must pass
 .claude/docs/            Detailed principles, standards, workflow, testing, tools
 .claude/skills/, .claude/agents/   Skills and subagents
 ```
@@ -187,6 +189,25 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   exception to `KNOWN_DIFFERENCES` with its reason.
 - Database tests need `WARMLY_TEST_DATABASE_URL` (see README). They fail when it is
   missing; never mark them to skip.
+- A commit may be released only if the Release Gate passes
+  (`scripts/release/gate.py`, `docs/runbooks/release-gates.md`): every
+  check in `release/required-checks.yml` must be there, finished and
+  successful. Missing, skipped, cancelled, neutral and still running all
+  block. Never make the gate treat anything but `success` as a pass. A
+  job the manifest names never has an `if:` on the job itself, and never
+  has `continue-on-error` on the job or on any of its steps. (A step may
+  have an `if:`, as the steps that upload reports after a failure do.)
+  The gate is the one job that runs `if: always()`, so it can report a
+  failure. A test holds all of this.
+- Never remove a check from that manifest, delete a file under one of its
+  `paths`, or weaken a threshold to get green. The Release Policy Guard
+  (`scripts/release/policy.py`) fails such a pull request unless a person
+  has put the `release-policy-change` label on it. An agent never adds
+  that label. Adding checks, paths and thresholds is always allowed.
+- A scan that could not run is a failure (exit code 2 from
+  `scripts/release/secret-scan.sh` and `sast.sh`; no report from Bandit).
+  `.gitleaks.toml` allows only public test vectors: never add a path that
+  could hold a real key. New CI jobs pin their actions by commit.
 
 ## Frontend conventions
 

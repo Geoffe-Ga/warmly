@@ -1,0 +1,204 @@
+# The checks a commit must pass before it may be released (PRD §10, REL-001 to
+# REL-004; AC-24).
+#
+# `scripts/release/gate.py` reads this file and the results GitHub holds
+# for a commit. It allows a release only when every check below is there,
+# finished and successful. Missing, skipped, cancelled, neutral, timed out
+# and still running all count as failure.
+#
+# Each check names the CI job that runs it (`job`, exactly as the job's
+# name appears on a pull request) and, where it is a suite of tests, the
+# files or folders that make it up (`paths`). A check lists only files its
+# own job runs: pytest files under a Quality Checks job, Vitest files
+# under Frontend Quality, Playwright specs under E2E. Shared fixtures
+# (`tests/fixtures/`) may be listed by any job that reads them. A test
+# holds this.
+#
+# Removing a check, deleting a test file under a `paths` entry, or
+# lowering a threshold fails `scripts/release/policy.py` on the pull
+# request, unless a person has put the `release-policy-change` label on
+# it. Adding to this file needs no label.
+version: 1
+
+checks:
+  - id: python-lint
+    title: Python lint, format and layering (Ruff, import-linter)
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001]
+  - id: python-types
+    title: Python types (mypy)
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001]
+  - id: python-tests
+    title: Backend tests with coverage (pytest)
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001]
+    paths: [tests/api, tests/auth, tests/db]
+  - id: python-tests-3-11
+    title: Backend checks on Python 3.11
+    job: Quality Checks (Python 3.11)
+    prd: [REL-001]
+  - id: python-tests-3-13
+    title: Backend checks on Python 3.13
+    job: Quality Checks (Python 3.13)
+    prd: [REL-001]
+  - id: api-contract
+    title: The committed API contract matches the code
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001]
+    paths: [tests/api/test_contract.py]
+  - id: isolation-suite
+    title: A second account attacks every route (isolation matrix)
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001, AC-05, AC-27]
+    paths: [tests/security]
+  - id: revocation-backend
+    title: A removed device is refused on every request
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001, AC-20]
+    paths: [tests/api/test_revocation.py, tests/db/test_device_store.py]
+  - id: sync-conflict-and-deletion-backend
+    title: Sync keeps both versions and never brings back a deletion
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001, AC-16, AC-17]
+    paths:
+      - tests/db/test_sync_store.py
+      - tests/db/test_deletion_ledger.py
+      - tests/fixtures/sync/scenarios-v1.json
+  - id: recovery-backend
+    title: The recovery envelope is stored once and replaced only in turn
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001, AC-18]
+    paths: [tests/api/test_recovery.py, tests/db/test_recovery_store.py]
+  - id: database-migrations
+    title: Database migrations apply forward from nothing
+    job: Quality Checks (Python 3.12)
+    prd: [REL-001, REL-004]
+    paths: [tests/db/test_migrations.py]
+  - id: python-sast
+    title: Static security analysis of the backend (Bandit)
+    job: Quality Checks (Python 3.12)
+    prd: [REL-002]
+  - id: dependency-scan
+    title: Known-vulnerable Python dependencies (pip-audit)
+    job: Quality Checks (Python 3.12)
+    prd: [REL-002]
+  - id: frontend-dependency-scan
+    title: Known-vulnerable npm dependencies, high and critical (npm audit)
+    job: Frontend Quality (TypeScript)
+    prd: [REL-002]
+  - id: frontend-lint-and-types
+    title: TypeScript lint, format and types
+    job: Frontend Quality (TypeScript)
+    prd: [REL-001]
+  - id: frontend-tests
+    title: Frontend unit tests with coverage (Vitest)
+    job: Frontend Quality (TypeScript)
+    prd: [REL-001]
+    paths: [tests/frontend]
+  - id: crypto-fixture-compatibility
+    title: Today's code still opens every released encrypted fixture
+    job: Frontend Quality (TypeScript)
+    prd: [REL-001, REL-004]
+    paths:
+      - tests/frontend/crypto
+      - tests/fixtures/crypto/v1
+      - tests/fixtures/hpke
+      - tests/fixtures/signing/v1.json
+      - tests/fixtures/pairing/v1.json
+  - id: indexeddb-migration
+    title: Every released on-device database still opens
+    job: Frontend Quality (TypeScript)
+    prd: [REL-001, REL-004]
+    paths: [tests/frontend/storage, tests/fixtures/idb]
+  - id: sync-conflict-and-deletion-frontend
+    title: The sync engine keeps both versions and every deletion
+    job: Frontend Quality (TypeScript)
+    prd: [REL-001, AC-16, AC-17]
+    paths: [tests/frontend/sync]
+  - id: source-invalidation-frontend
+    title: The rules for what goes when an entry changes
+    job: Frontend Quality (TypeScript)
+    prd: [REL-001, AC-12]
+    paths: [tests/frontend/deps]
+  - id: recovery
+    title: A new device opens the journal with the recovery key
+    job: E2E + Accessibility (Playwright, axe-core)
+    prd: [REL-001, AC-18]
+    paths: [e2e/app/recovery.spec.ts]
+  - id: revocation
+    title: A removed device loses its keys and keeps its records
+    job: E2E + Accessibility (Playwright, axe-core)
+    prd: [REL-001, AC-20]
+    paths: [e2e/app/revocation.spec.ts, e2e/app/devices.spec.ts]
+  - id: sync-conflict-and-deletion
+    title: The person settles a record changed in two places
+    job: E2E + Accessibility (Playwright, axe-core)
+    prd: [REL-001, AC-16, AC-17]
+    paths:
+      - e2e/app/sync.spec.ts
+      - e2e/app/conflicts.spec.ts
+  - id: source-invalidation
+    title: What was built from an entry goes when the entry changes
+    job: E2E + Accessibility (Playwright, axe-core)
+    prd: [REL-001, AC-12]
+    paths: [e2e/app/invalidation.spec.ts]
+  - id: e2e-and-accessibility
+    title: Every flow in two browsers, with axe on every screen
+    job: E2E + Accessibility (Playwright, axe-core)
+    prd: [REL-001, AC-23]
+    paths: [e2e/app, e2e/production, e2e/pwa]
+  - id: secret-scan
+    title: No secret in any commit (gitleaks)
+    job: Secret Scan (gitleaks)
+    prd: [REL-002]
+  - id: sast
+    title: Static security analysis of all the app's code (Semgrep)
+    job: SAST (Semgrep)
+    prd: [REL-002]
+
+# Numbers that may go up freely and may come down only with the label.
+# `pattern` is a regular expression with one group, the number. `keep`
+# says which direction is safe: `at-least` (a floor, such as coverage) or
+# `at-most` (a ceiling, such as a size budget).
+thresholds:
+  - id: python-coverage
+    file: pyproject.toml
+    pattern: '"--cov-fail-under=(\d+)"'
+    keep: at-least
+  - id: python-coverage-report
+    file: pyproject.toml
+    pattern: 'fail_under = (\d+)'
+    keep: at-least
+  - id: python-coverage-ci
+    file: .github/workflows/ci.yml
+    pattern: '--cov-fail-under=(\d+) '
+    keep: at-least
+  - id: python-branch-coverage-ci
+    file: .github/workflows/ci.yml
+    pattern: 'BRANCH_PERCENT < (\d+)"'
+    keep: at-least
+  - id: python-docstrings
+    file: .github/workflows/ci.yml
+    pattern: 'interrogate -vv --fail-under=(\d+)'
+    keep: at-least
+  - id: frontend-line-coverage
+    file: vite.config.ts
+    pattern: 'lines: (\d+),'
+    keep: at-least
+  - id: frontend-function-coverage
+    file: vite.config.ts
+    pattern: 'functions: (\d+),'
+    keep: at-least
+  - id: frontend-statement-coverage
+    file: vite.config.ts
+    pattern: 'statements: (\d+),'
+    keep: at-least
+  - id: frontend-branch-coverage
+    file: vite.config.ts
+    pattern: 'branches: (\d+),'
+    keep: at-least
+  - id: first-visit-download-kb
+    file: e2e/production/budget.spec.ts
+    pattern: 'INITIAL_BUDGET_BYTES = (\d+) \* 1024'
+    keep: at-most
