@@ -14,6 +14,7 @@ import { ServicesProvider } from "../../../src/app/services";
 import {
   AiDisclosureDialog,
   CANNOT_DESCRIBE,
+  NOT_EVERYTHING,
   describeSent,
 } from "../../../src/ui/components/AiDisclosureDialog";
 import { NO_PROVIDER } from "../../../src/ui/screens/settings/AiProvider";
@@ -48,6 +49,7 @@ function request(count = 14): ReflectRequest {
 const DISCLOSURE: Disclosure = {
   provider: "Example AI",
   entries: 14,
+  omitted: 0,
   also: "your question",
   estimatedTokens: 900,
   large: false,
@@ -109,6 +111,15 @@ describe("what a request sends, in words (AI-015)", () => {
   ] as const)("%i entries with %s", (entries, also, text) => {
     expect(describeSent({ ...DISCLOSURE, entries, also })).toBe(text);
   });
+
+  it("says how many of how many when some entries do not fit (RF-004)", () => {
+    expect(describeSent({ ...DISCLOSURE, entries: 140, omitted: 4860 })).toBe(
+      "140 of your 5,000 journal entries and your question",
+    );
+    expect(describeSent({ ...DISCLOSURE, entries: 1, omitted: 1 })).toBe(
+      "1 of your 2 journal entries and your question",
+    );
+  });
 });
 
 describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
@@ -143,6 +154,35 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
 
     open();
     expect(screen.getByRole("alertdialog").textContent).not.toContain("large");
+  });
+
+  it("says that not everything is sent, only when entries were left out (RF-004, AC-09)", () => {
+    open({
+      request: {
+        ...request(),
+        coverage: { omittedEntryCount: 986, truncated: true },
+      },
+    });
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toContain(
+      "This sends 14 of your 1,000 journal entries and your question to Example AI",
+    );
+    expect(dialog.textContent).toContain(NOT_EVERYTHING);
+    cleanup();
+
+    open();
+    expect(screen.getByRole("alertdialog").textContent).not.toContain(
+      NOT_EVERYTHING,
+    );
+  });
+
+  it("counts nothing as left out for a request that is not a question", () => {
+    const gateway = new AiGateway(exampleAi());
+
+    expect(
+      gateway.disclose({ kind: "cards", topic: "Synthetic", entries: [] })
+        .omitted,
+    ).toBe(0);
   });
 
   it("starts on the choice that sends nothing", () => {
@@ -340,6 +380,7 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
           alias: `E${String(index + 1)}`,
           responses: entry.responses,
         })),
+        partial: false,
       },
     ]);
   });

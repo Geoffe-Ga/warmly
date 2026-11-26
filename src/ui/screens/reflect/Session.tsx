@@ -15,6 +15,7 @@ import { Link, NavigationContext } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import type { JournalEntry } from "../../../domain/journal/types";
+import { EntryTooLargeError } from "../../../domain/reflect/context";
 import {
   InvalidQuestionError,
   MAX_QUESTION,
@@ -40,7 +41,7 @@ import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { describeStorageError } from "../../storage-messages";
 import { DELETE_WARNING } from "../journal/Entry";
-import { useJournalEntries } from "../journal/shared";
+import { formatEntryDate, useJournalEntries } from "../journal/shared";
 import { NEW_SESSION } from "./Landing";
 
 /** Said when the question box is empty or the question is too long. */
@@ -49,6 +50,18 @@ export const QUESTION_NEEDED = `Write your question first, up to ${MAX_QUESTION.
 /** Said when there is no finished entry to ask about. */
 export const NOTHING_TO_ASK_ABOUT =
   "You have no finished journal entries yet, so there is nothing to ask about. Write an entry first.";
+
+/**
+ * Said when one entry alone is too long for a request (decision D-18).
+ *
+ * @param date - The entry's day, as shown elsewhere, if the entry is known.
+ * @returns What happened and what the person can do.
+ */
+export function entryTooLong(date: string | undefined): string {
+  const which =
+    date === undefined ? "One of your entries" : `Your entry for ${date}`;
+  return `${which} is too long to send in one request, so nothing was sent. Warmly sends whole entries only, and never part of one. If you shorten that entry, you can ask again.`;
+}
 
 /** Said when an answer arrived but could not be stored. */
 export const ANSWER_NOT_SAVED =
@@ -169,6 +182,7 @@ function Ask(props: {
   const { onSavedElsewhere } = props;
   const [question, setQuestion] = useState("");
   const [problem, setProblem] = useState<string>();
+  const [tooLong, setTooLong] = useState<JournalEntry>();
   const controller = useMemo(
     () =>
       new AiRequestController<ReflectRequest, ReflectionAnswer>(
@@ -260,24 +274,41 @@ function Ask(props: {
         onSubmit={(event) => {
           event.preventDefault();
           setProblem(undefined);
+          setTooLong(undefined);
           if (!hasEntries) {
             setProblem(NOTHING_TO_ASK_ABOUT);
             return;
           }
           try {
             // Nothing is sent here: this opens the dialog that asks first.
-            controller.ask(reflectRequest(question, props.entries));
+            // Choosing which entries fit is done here, on the device.
+            controller.ask(
+              reflectRequest(question, props.entries, ai.sizing()),
+            );
           } catch (error) {
-            if (!(error instanceof InvalidQuestionError)) {
+            if (error instanceof EntryTooLargeError) {
+              const entry = props.entries.find(
+                (each) => each.id === error.entryId,
+              );
+              setTooLong(entry);
+              setProblem(
+                entryTooLong(
+                  entry === undefined
+                    ? undefined
+                    : formatEntryDate(entry.entryDate),
+                ),
+              );
+            } else if (error instanceof InvalidQuestionError) {
+              setProblem(QUESTION_NEEDED);
+            } else {
               throw error;
             }
-            setProblem(QUESTION_NEEDED);
           }
         }}
       >
         <TextArea
           label="What would you like to ask about your journal?"
-          hint="In your own words. Your finished entries are sent with it, to the AI provider you connected, only after you agree."
+          hint="In your own words. Your finished entries are sent with it, as many as fit in one request, to the AI provider you connected, only after you agree."
           value={question}
           onInput={setQuestion}
           rows={3}
@@ -285,6 +316,14 @@ function Ask(props: {
         {problem !== undefined && (
           <StatusBanner tone="error" label="Not sent">
             {problem}
+            {tooLong !== undefined && (
+              <>
+                {" "}
+                <Link href={pathFor("journal-entry", { id: tooLong.id })}>
+                  Open that entry
+                </Link>
+              </>
+            )}
           </StatusBanner>
         )}
         <div class="button-row">

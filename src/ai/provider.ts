@@ -34,7 +34,10 @@ export interface SourceEntry {
 export interface RequestCoverage {
   /** How many entries were left out to fit the provider's limits. */
   readonly omittedEntryCount: number;
-  /** Whether any included entry was shortened. */
+  /**
+   * Whether the journal was cut down to fit: true exactly when entries
+   * were left out. An entry is sent whole or not at all, never shortened.
+   */
   readonly truncated: boolean;
 }
 
@@ -82,6 +85,13 @@ export interface ReflectPrompt {
   readonly kind: "reflect";
   readonly question: string;
   readonly sources: readonly AliasedSource[];
+  /**
+   * Whether these are only some of the journal's entries. A provider must
+   * tell its model so, so that the answer does not speak for the whole
+   * journal (PRD AC-09). The app says so itself as well, beside the
+   * answer, whatever the model writes.
+   */
+  readonly partial: boolean;
 }
 
 /** A cards request as a provider is given it. */

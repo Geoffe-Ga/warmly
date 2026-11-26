@@ -374,6 +374,14 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   changed stays listed and shows none of that entry's words. No real
   provider is connected, so no real reflection can exist yet; do not
   connect one (#44, #45) before #51 has landed.
+- Which entries a Reflect request sends is decided only by `selectContext`
+  (`src/domain/reflect/context.ts`, ADR-0009), on the device, from sizes
+  given by `services.ai.sizing()`: never call AI or the network to choose,
+  never use a clock or randomness, and never send part of an entry. When
+  entries are left out, the request says how many, the dialog says "N of
+  your M", and `CitedAnswer` says so above the answer from what the app
+  sent, whatever the model wrote. Changing `SHARES` or `ESTIMATE_MARGIN`
+  needs a new decision.
 - A Reflect session and all its questions and answers are one private
   record (kind `reflect-session`, envelope type 4), changed only through
   `ReflectSessions` (`src/domain/reflect/sessions.ts`), reached as

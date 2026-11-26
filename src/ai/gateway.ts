@@ -24,7 +24,7 @@
  * never logged, stored or sent anywhere else.
  */
 import { untilAborted } from "./abort";
-import { budgetFor, withinBudget } from "./budget";
+import { budgetFor, withinBudget, type Budget } from "./budget";
 import { consumeConsent, sealRequest, type ConsentToken } from "./consent";
 import type {
   GeneratedCard,
@@ -70,12 +70,27 @@ export interface Disclosure {
   readonly provider: string;
   /** How many journal entries are included. */
   readonly entries: number;
+  /**
+   * How many finished entries were left out because they do not fit in
+   * one request (PRD RF-004). Zero when everything is included.
+   */
+  readonly omitted: number;
   /** What else is included, in the person's own words elsewhere on screen. */
   readonly also: "your question" | "your topic" | "the wording you chose";
   /** About how many tokens the request carries. */
   readonly estimatedTokens: number;
   /** Whether the request is a large one, worth pointing out (AI-016). */
   readonly large: boolean;
+}
+
+/** The limits on a request, and a way to size one without sending it. */
+export interface Sizing {
+  readonly budget: Budget;
+  /**
+   * @param request - A request that will not be sent as it is.
+   * @returns About how many tokens it would carry.
+   */
+  readonly estimate: (request: AiRequest) => number;
 }
 
 /** Which provider is connected, for Settings to show. */
@@ -157,9 +172,35 @@ export class AiGateway {
     return {
       provider: provider.name,
       entries: request.entries.length,
+      omitted:
+        request.kind === "reflect"
+          ? (request.coverage?.omittedEntryCount ?? 0)
+          : 0,
       also: ALSO[request.kind],
       estimatedTokens,
       large: estimatedTokens >= LARGE_REQUEST_TOKENS,
+    };
+  }
+
+  /**
+   * What is needed to choose how much of a journal fits in one request
+   * (PRD RF-004): the limits, and a way to size a request. Sizing sends
+   * nothing, makes no network call and does not seal the request.
+   *
+   * @returns The limits and the sizing function, or `undefined` when no
+   *   provider is connected.
+   */
+  sizing(): Sizing | undefined {
+    const provider = this.#provider;
+    if (provider === undefined) {
+      return undefined;
+    }
+    return {
+      budget: budgetFor(provider.capabilities()),
+      estimate: (request) =>
+        provider.estimateTokens(
+          promptFor(request, buildManifest(request.entries)),
+        ),
     };
   }
 

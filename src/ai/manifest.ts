@@ -121,7 +121,12 @@ export function promptFor(request: AiRequest, manifest: Manifest): AiPrompt {
   const sources = aliased(manifest);
   switch (request.kind) {
     case "reflect":
-      return { kind: "reflect", question: request.question, sources };
+      return {
+        kind: "reflect",
+        question: request.question,
+        sources,
+        partial: request.coverage?.truncated === true,
+      };
     case "cards":
       return { kind: "cards", topic: request.topic, sources };
     case "segment-alternatives":
