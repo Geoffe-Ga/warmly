@@ -31,7 +31,16 @@ interface Deps {
   readonly records: RecordStore;
 }
 
-function cleanText(text: string): string {
+/**
+ * Check the words of a card and trim the spaces at their ends. The same
+ * limits apply however the words arrive: typed by the person, or picked
+ * from AI's suggestions.
+ *
+ * @param text - The words.
+ * @returns The words, trimmed.
+ * @throws InvalidCardTextError if they are empty or too long.
+ */
+export function cleanCardText(text: string): string {
   const clean = text.trim();
   // Counted as the person sees them: an emoji is one character.
   if (clean === "" || [...clean].length > MAX_CARD_TEXT) {
@@ -60,7 +69,7 @@ export async function createCard(
   draft: CardDraft,
   now: Date = new Date(),
 ): Promise<ConversationCard | undefined> {
-  const text = cleanText(draft.text);
+  const text = cleanCardText(draft.text);
   const collection = await deps.records.get("card-collection", collectionId);
   if (collection === undefined) {
     return undefined;
@@ -108,7 +117,7 @@ export async function editCard(
   draft: CardDraft,
   now: Date = new Date(),
 ): Promise<ConversationCard | undefined> {
-  const text = cleanText(draft.text);
+  const text = cleanCardText(draft.text);
   const existing = await deps.records.get("conversation-card", cardId);
   if (existing === undefined) {
     return undefined;

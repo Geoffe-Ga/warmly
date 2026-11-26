@@ -13,7 +13,7 @@
  * nothing calls AI.
  */
 import type { RecordStore } from "../../storage/record-store";
-import { InvalidCardTextError, MAX_CARD_TEXT } from "./cards";
+import { InvalidCardTextError, cleanCardText } from "./cards";
 import type { CardSegment, CardType, ConversationCard } from "./types";
 
 /** One part as the person left it in the form. */
@@ -138,11 +138,7 @@ function cleanParts(
       // Not in the form, or left exactly as it was: nothing changes.
       kept.push(segment);
     } else if (text.trim() !== "") {
-      // Counted as the person sees them: an emoji is one character.
-      if ([...text.trim()].length > MAX_CARD_TEXT) {
-        throw new InvalidCardTextError();
-      }
-      kept.push(plain(segment, text.trim()));
+      kept.push(plain(segment, cleanCardText(text)));
     }
   }
   if (kept.length === 0) {

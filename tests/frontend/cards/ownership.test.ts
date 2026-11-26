@@ -292,6 +292,46 @@ describe("the first saved change makes an AI card the person's own (CC-008, D-15
     expect(changed?.segments[0]).toEqual(card.segments[0]);
   });
 
+  it("holds a picked wording to the same limits as typed words, and stores it trimmed", async () => {
+    const { records, card } = await setUp();
+
+    await expect(
+      chooseAlternative({ records }, card.id, "s2", "   "),
+    ).rejects.toBeInstanceOf(InvalidCardTextError);
+    await expect(
+      chooseAlternative({ records }, card.id, "s2", "x".repeat(4001)),
+    ).rejects.toBeInstanceOf(InvalidCardTextError);
+    expect(await records.get("conversation-card", card.id)).toEqual(card);
+
+    const changed = await chooseAlternative(
+      { records },
+      card.id,
+      "s2",
+      "  I felt close to you.  ",
+    );
+    expect(changed?.segments[1]?.text).toBe("I felt close to you.");
+  });
+
+  it("keeps the full list of what was sent while a note without a quote remains", async () => {
+    const { records, card } = await setUp();
+
+    // The quoted part is rewritten; the inferred part, which quotes
+    // nothing, keeps its note.
+    const changed = await rewriteParts({ records }, card.id, {
+      type: card.type,
+      parts: parts(card, { s1: "Thank you for dinner." }),
+    });
+
+    expect(changed?.sourceEntryIds).toEqual([]);
+    expect(changed?.sources).toEqual(card.sources);
+    expect(changed !== undefined && hasAiNotes(changed)).toBe(true);
+    // It is still found by the entries it was drafted from.
+    const index = await buildIndex(records, DEPENDENCY_RULES);
+    expect(
+      (card.sources ?? []).map(({ entryId }) => index.of(entryId).length),
+    ).toEqual([1, 1]);
+  });
+
   it("moving a card in its collection is not a change to the card", async () => {
     const { records, card, collectionId } = await setUp();
     await createCard({ records }, collectionId, {

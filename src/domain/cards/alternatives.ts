@@ -16,6 +16,7 @@ import type {
 } from "../../ai/provider";
 import type { RecordStore } from "../../storage/record-store";
 import type { JournalEntry } from "../journal/types";
+import { cleanCardText } from "./cards";
 import { owned } from "./ownership";
 import type { ConversationCard } from "./types";
 
@@ -101,6 +102,8 @@ export function alternativesRequest(
  * @param now - The current time.
  * @returns The changed card, or `undefined` if the card or the part is no
  *   longer here.
+ * @throws InvalidCardTextError if the wording is empty or too long: the
+ *   same limits as for words the person types.
  */
 export async function chooseAlternative(
   deps: { readonly records: RecordStore },
@@ -109,6 +112,7 @@ export async function chooseAlternative(
   text: string,
   now: Date = new Date(),
 ): Promise<ConversationCard | undefined> {
+  const words = cleanCardText(text);
   const card = await deps.records.get("conversation-card", cardId);
   if (
     card === undefined ||
@@ -123,7 +127,7 @@ export async function chooseAlternative(
     card.type,
     card.segments.map((segment) =>
       segment.id === segmentId
-        ? { id: segment.id, category: segment.category, text }
+        ? { id: segment.id, category: segment.category, text: words }
         : segment,
     ),
     now.toISOString(),
