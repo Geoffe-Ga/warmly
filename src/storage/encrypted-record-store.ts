@@ -831,22 +831,38 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     }
   }
 
-  put<K extends RecordKind>(kind: K, record: RecordKinds[K]): Promise<void> {
+  put<K extends RecordKind>(
+    kind: K,
+    record: RecordKinds[K],
+    basedOn?: RecordKinds[K],
+  ): Promise<void> {
     const { type, schemaVersion } = FORMATS[kind];
     return this.#write(
-      async ({ root, owner }, opened) => ({
-        type,
-        id: record.id,
-        schemaVersion,
-        // Read before encrypting, which takes a moment: the check must be
-        // against the copy this write was based on.
-        expectedRevision: opened.records[kind].get(record.id)?.revision ?? 0,
-        envelope: await sealJson(
-          root,
-          { owner, recordId: record.id, type },
-          record,
-        ),
-      }),
+      async ({ root, owner }, opened) => {
+        // Both read here, in one step, before encrypting (which takes a
+        // moment): which copy this store holds, and its revision.
+        const held = opened.records[kind].get(record.id);
+        if (basedOn !== undefined && held?.record !== basedOn) {
+          // The copy the caller's change was made to is not the one held
+          // now: sync or a reload has replaced it since. A copy is only
+          // ever replaced when the stored record changed (ADR-0016).
+          throw new StaleRecordError();
+        }
+        return {
+          type,
+          id: record.id,
+          schemaVersion,
+          // Compared again inside the write's transaction, so a change
+          // that lands while this one is being encrypted, here or in
+          // another tab, is caught there.
+          expectedRevision: held?.revision ?? 0,
+          envelope: await sealJson(
+            root,
+            { owner, recordId: record.id, type },
+            record,
+          ),
+        };
+      },
       (opened, revision) => {
         // A row that could not be read is never written over, so there is
         // nothing to remove from `unreadable` here.

@@ -1,6 +1,6 @@
 # ADR-0015: Unsaved edits to a finished entry
 
-- **Status:** Accepted
+- **Status:** Accepted. One consequence is superseded by [ADR-0016](0016-write-based-on-a-read.md): how the edit screen tells that the entry changed under the form.
 - **Date:** 2026-11-26
 - **PRD references:** §3.2 [JR-006], §4.3 [DEV-005], §5.1 [SYNC-001]; AC-21
 - **Decision register:** D-12

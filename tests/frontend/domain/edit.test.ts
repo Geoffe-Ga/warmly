@@ -287,7 +287,7 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
           responses: { ...ORIGINAL.responses, good: "typed here" },
           feelings: ORIGINAL.feelings,
         },
-        { seen: ORIGINAL },
+        { seen: entry },
       ),
     ).rejects.toThrow(StaleRecordError);
 
@@ -310,7 +310,7 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
           responses: { ...ORIGINAL.responses, good: "typed here" },
           feelings: ORIGINAL.feelings,
         },
-        { seen: ORIGINAL },
+        { seen: entry },
       ),
     ).rejects.toThrow(StaleRecordError);
   });
@@ -325,7 +325,7 @@ describe("editing an entry in place (JR-006, AC-06)", () => {
         responses: { ...ORIGINAL.responses, good: "typed here" },
         feelings: ORIGINAL.feelings,
       },
-      { seen: ORIGINAL },
+      { seen: entry },
     );
 
     expect(edited.responses.good).toBe("typed here");

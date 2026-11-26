@@ -8,7 +8,6 @@
  * for a journal entry (ADR-0010).
  */
 import { StaleRecordError, type RecordStore } from "../../storage/record-store";
-import { sameValue } from "../same";
 import {
   afterContentHash,
   canSaveAfter,
@@ -60,11 +59,12 @@ export interface AfterEditOptions {
   /** The current time. */
   readonly now?: Date;
   /**
-   * What the reflection said when the person was shown it. If it says
-   * something else by the time the edit is saved, the edit is refused
-   * (no last-write-wins, invariant 5).
+   * The reflection as the person was shown it: the very object the record
+   * store gave the screen. If the store holds a different copy by the time
+   * the edit is saved, it was changed in between and the edit is refused
+   * (no last-write-wins, invariant 5; ADR-0016).
    */
-  readonly seen?: AfterResponses;
+  readonly seen?: PostConversationReflection;
 }
 
 /**
@@ -91,10 +91,7 @@ export async function editAfter(
   if (existing === undefined) {
     throw new AfterNotFoundError();
   }
-  if (
-    options.seen !== undefined &&
-    !sameValue(existing.responses, options.seen)
-  ) {
+  if (options.seen !== undefined && options.seen !== existing) {
     // Not what the person was shown: sync or another tab changed it while
     // the form was open. It is not replaced by words written without
     // seeing it.
@@ -109,7 +106,7 @@ export async function editAfter(
     contentHash: await afterContentHash(responses),
     updatedAt: (options.now ?? new Date()).toISOString(),
   };
-  await records.put("post-conversation", changed);
+  await records.put("post-conversation", changed, existing);
   return changed;
 }
 

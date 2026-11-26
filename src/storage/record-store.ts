@@ -100,10 +100,25 @@ export interface RecordStore {
   /**
    * Add a record, or replace the one with the same ID.
    *
+   * A caller that is replacing a record it showed to the person passes
+   * that record as `basedOn`: the very object this store gave it (from
+   * `get`, `list` or `reload`) or the object it last stored. The write is
+   * then refused unless the stored record is still that one. The
+   * comparison is part of the write itself, so nothing can change the
+   * record between the check and the write (ADR-0016).
+   *
+   * @param kind - The kind of record.
+   * @param record - The record as it should now be.
+   * @param basedOn - The copy of the record this change was made to.
    * @throws StaleRecordError if the stored record has changed since this
-   *   store last read it.
+   *   store last read it, or is no longer the `basedOn` copy. Nothing is
+   *   stored.
    */
-  put<K extends RecordKind>(kind: K, record: RecordKinds[K]): Promise<void>;
+  put<K extends RecordKind>(
+    kind: K,
+    record: RecordKinds[K],
+    basedOn?: RecordKinds[K],
+  ): Promise<void>;
   /**
    * Read one record again from where it is stored, in case it was changed
    * elsewhere, for example in another tab. Used after a write was refused
@@ -269,11 +284,20 @@ export class MemoryRecordStore implements RecordStore {
     return Promise.resolve([...this.#kind(kind).values()]);
   }
 
-  put<K extends RecordKind>(kind: K, record: RecordKinds[K]): Promise<void> {
+  put<K extends RecordKind>(
+    kind: K,
+    record: RecordKinds[K],
+    basedOn?: RecordKinds[K],
+  ): Promise<void> {
     if (this.#deleted.has(`${kind}/${record.id}`)) {
       // As in the real store: a deleted record never comes back under
       // its ID.
       return Promise.reject(new RecordDeletedError());
+    }
+    if (basedOn !== undefined && this.#kind(kind).get(record.id) !== basedOn) {
+      // As in the real store: the copy this change was made to is no
+      // longer the one that is stored.
+      return Promise.reject(new StaleRecordError());
     }
     this.#kind(kind).set(record.id, record);
     this.#changed();

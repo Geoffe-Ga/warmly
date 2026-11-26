@@ -312,7 +312,12 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   edit a released step or an existing dump. Never write over a tombstone.
   A `put` based on an out-of-date copy is refused (`StaleRecordError`):
   never catch it and write again without reading the newer record. Offer
-  the person the newer version (`RecordStore.reload`) instead.
+  the person the newer version (`RecordStore.reload`) instead. A change to
+  a record the person was shown passes that copy as `basedOn`
+  (`put(kind, record, basedOn)`, ADR-0016): the very object the store
+  gave, never a clone, which is refused. The store compares it as part of
+  the write, so nothing can change the record in between. Never go back
+  to comparing content before a write.
 - Storage failures are typed (`src/storage/errors.ts`): full, unavailable,
   blocked, newer. Everything that touches IndexedDB turns browser errors
   into these. A screen says what happened and what to do next with
@@ -600,22 +605,18 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   (`src/domain/journal/drafts.ts`). The compose form saves through
   `useDraft`, which registers its flush with `services.lockHooks` and also
   flushes when the page is hidden or closed. Only the person finishing the
-  entry makes it complete. Autosave never calls AI or the network. Before
-  a draft is saved or finished, `useDraft` checks that the stored draft is
-  still what the form last read or stored (`refuseIfChanged`); if sync or
-  another tab changed it, the save is refused and the form offers the
-  latest version. Never write a draft without that check. It is a read
-  followed by a write, not one step, so it narrows the gap and does not
-  close it; the same is true of `seen`.
+  entry makes it complete. Autosave never calls AI or the network. A
+  draft is saved and finished with the draft the form last read or stored
+  as `basedOn`; if sync or another tab changed it, the store refuses the
+  write and the form offers the latest version.
 - A completed entry is changed only through `editEntry`
   (`src/domain/journal/edit.ts`): it keeps the ID, creation time and day,
   applies the completion rule, and keeps no copy of the old text. A
-  screen passes what the entry said when the person was shown it (`seen`),
-  and the edit is refused (`StaleRecordError`) if the entry says something
-  else by then: sync can change an entry under an open form, and the
-  store's own stale-copy check does not catch that. `editAfter`,
-  `editCard` and `rewriteParts` take `seen` the same way: a form that
-  replaces a record's words always passes what it was filled from. When the
+  screen passes the entry it showed the person (`seen`: the object the
+  store gave it), and the edit is refused (`StaleRecordError`) if the
+  store holds a different copy by then: sync can change an entry under an
+  open form. `editAfter`, `editCard` and `rewriteParts` take `seen` the
+  same way. When the
   content hash changes it announces `journal.changed` on `services.events`
   (`src/domain/events.ts`) after the entry is stored. Events carry IDs and
   hashes only, never text, and stay in memory on this device. An event is

@@ -8,7 +8,6 @@
  * The words are the person's: nothing here corrects, scores or blocks them.
  */
 import { StaleRecordError, type RecordStore } from "../../storage/record-store";
-import { sameValue } from "../same";
 import { readingText, type CardType, type ConversationCard } from "./types";
 
 /** The longest a card's text may be, in characters. */
@@ -100,30 +99,27 @@ export interface CardEditOptions {
   /** The current time. */
   readonly now?: Date;
   /**
-   * The card as the person was shown it. If its kind or its parts are
-   * different by the time the change is saved, the change is refused
-   * (no last-write-wins, invariant 5).
+   * The card as the person was shown it: the very object the record
+   * store gave the screen. If the store holds a different copy by the time
+   * the change is saved, the card was changed in between and the change is
+   * refused (no last-write-wins, invariant 5; ADR-0016).
    */
   readonly seen?: ConversationCard;
 }
 
 /**
- * Refuse a change to a card that is no longer what the person was shown:
- * sync or another tab changed it while the form was open.
+ * Refuse a change to a card that is no longer the one the person was
+ * shown: sync or another tab changed it while the form was open.
  *
- * @param existing - The card as it is stored now.
+ * @param existing - The card as the store holds it now.
  * @param seen - The card as the form was filled from it, if known.
- * @throws StaleRecordError if its kind or its parts have changed.
+ * @throws StaleRecordError if the store holds a different copy.
  */
 export function refuseIfChanged(
   existing: ConversationCard,
   seen: ConversationCard | undefined,
 ): void {
-  if (
-    seen !== undefined &&
-    (existing.type !== seen.type ||
-      !sameValue(existing.segments, seen.segments))
-  ) {
+  if (seen !== undefined && seen !== existing) {
     throw new StaleRecordError();
   }
 }
@@ -182,7 +178,7 @@ export async function editCard(
     createdAt: existing.createdAt,
     updatedAt: (options.now ?? new Date()).toISOString(),
   };
-  await deps.records.put("conversation-card", changed);
+  await deps.records.put("conversation-card", changed, existing);
   return changed;
 }
 

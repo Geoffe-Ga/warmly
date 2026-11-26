@@ -200,6 +200,6 @@ export async function rewriteParts(
     segments,
     (options.now ?? new Date()).toISOString(),
   );
-  await deps.records.put("conversation-card", changed);
+  await deps.records.put("conversation-card", changed, card);
   return changed;
 }

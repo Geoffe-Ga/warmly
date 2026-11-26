@@ -5,6 +5,10 @@
  * counts as not being there, because that is what it becomes when a
  * record is stored and read back.
  *
+ * Nothing in the app compares records this way any more: a write names
+ * the copy it was made to and the store compares that (ADR-0016). This is
+ * kept, with its test, as a plain helper.
+ *
  * @param left - One value.
  * @param right - The other.
  * @returns Whether they are the same all the way down.

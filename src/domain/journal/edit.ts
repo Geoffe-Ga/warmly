@@ -34,11 +34,12 @@ export interface EditOptions {
   /** The current time. */
   readonly now?: Date;
   /**
-   * What the entry said when the person was shown it. If it says something
-   * else by the time the edit is saved, the edit is refused
-   * (no last-write-wins, invariant 5).
+   * The entry as the person was shown it: the very object the record
+   * store gave the screen. If the store holds a different copy by the time
+   * the edit is saved, the entry was changed in between and the edit is
+   * refused (no last-write-wins, invariant 5; ADR-0016).
    */
-  readonly seen?: EntryContent;
+  readonly seen?: JournalEntry;
 }
 
 function sameContent(entry: JournalEntry, content: EntryContent): boolean {
@@ -88,10 +89,11 @@ export async function editEntry(
   if (existing?.status !== "complete") {
     throw new EntryNotFoundError();
   }
-  if (options.seen !== undefined && !sameContent(existing, options.seen)) {
-    // The entry is not what the person was shown: it was changed by sync
-    // or in another tab while the form was open. It is not replaced by
-    // words written without seeing it.
+  if (options.seen !== undefined && options.seen !== existing) {
+    // The entry is not the one the person was shown: it was changed by
+    // sync or in another tab while the form was open. It is not replaced
+    // by words written without seeing it. Checked here as well as in the
+    // write, so that an edit that changes nothing is refused too.
     throw new StaleRecordError();
   }
   if (!canComplete(content.responses)) {
@@ -101,7 +103,9 @@ export async function editEntry(
     return existing;
   }
   const edited = await completedFrom(content, existing, options.now);
-  await deps.records.put("journal-entry", edited);
+  // The store refuses this write if the entry is no longer `existing`,
+  // whatever happened while the new entry was being prepared.
+  await deps.records.put("journal-entry", edited, existing);
   if (edited.contentHash !== existing.contentHash) {
     await deps.events.emit("journal.changed", {
       entryId: id,
