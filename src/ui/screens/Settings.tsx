@@ -9,6 +9,7 @@ import { Card } from "../components/Card";
 import { PageLayout } from "../components/PageLayout";
 import { StatusBanner } from "../components/StatusBanner";
 import { AiProviderCard } from "./settings/AiProvider";
+import { StatusSummary } from "./settings/StatusSummary";
 
 /**
  * What Settings says about whether the browser will keep the data saved on
@@ -67,6 +68,7 @@ export function Settings(): JSX.Element {
 
   return (
     <PageLayout title="Settings" lead="Your account and your recovery key.">
+      <StatusSummary />
       <Card heading="Recovery key">
         <p>
           Your recovery key opens your journal on a new device. If you think

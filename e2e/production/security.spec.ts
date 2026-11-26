@@ -1,14 +1,11 @@
 import { cspHeader, securityHeaders } from "../../config/security-headers";
 import { ROUTES, pathFor } from "../../src/app/routes";
 
+import { OWN_ICON } from "../fixtures/icons";
 import { expect, test } from "../fixtures/test";
 
 const SAMPLE_PARAMS = { id: "sample-1", cardId: "sample-2" };
 const EXPECTED = securityHeaders();
-/** The app's own icons: the only images the service worker may cache. */
-// (The precache list names files without a leading slash; a cached
-// address has one.)
-const OWN_ICON = /^\/?(icon-[a-z0-9-]+|apple-touch-icon)\.png$/;
 
 test.describe("security headers (SEC-007)", () => {
   for (const route of ROUTES) {

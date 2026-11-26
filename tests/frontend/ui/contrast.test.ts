@@ -72,6 +72,29 @@ describe("design tokens (UI-001, WCAG 2.2 AA)", () => {
     expect(rules.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
   });
 
+  it("sets no colour in a component: every colour comes from the stylesheet's tokens", () => {
+    const sources = import.meta.glob<string>("../../../src/**/*.{ts,tsx}", {
+      eager: true,
+      query: "?raw",
+      import: "default",
+    });
+    const found: string[] = [];
+    for (const [path, source] of Object.entries(sources)) {
+      // A hex colour, an rgb() or hsl() colour, or an inline style that
+      // sets one. Hashes and IDs are longer than a colour and are not hit.
+      const hits =
+        source.match(
+          /["'`]#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})["'`]|\b(?:rgb|rgba|hsl|hsla)\(|style=\{\{[^}]*(?:color|background)/g,
+        ) ?? [];
+      for (const hit of hits) {
+        found.push(`${path}: ${hit}`);
+      }
+    }
+
+    expect(Object.keys(sources).length).toBeGreaterThan(50);
+    expect(found).toEqual([]);
+  });
+
   it("defines no dark colour scheme (light theme only)", () => {
     expect(css).not.toMatch(/prefers-color-scheme/);
     expect(css).toMatch(/color-scheme:\s*light/);

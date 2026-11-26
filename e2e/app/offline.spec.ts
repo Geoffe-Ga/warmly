@@ -8,6 +8,7 @@
  */
 import AxeBuilder from "@axe-core/playwright";
 
+import { OWN_ICON } from "../fixtures/icons";
 import { expect, test, type Page } from "../fixtures/test";
 
 import { onboard, unlockThisDevice } from "./account";
@@ -100,7 +101,7 @@ test.describe("offline", () => {
       );
       // The only images cached are the app's own icons.
       if (url.pathname.endsWith(".png")) {
-        expect(url.pathname).toMatch(/^\/(icon-|apple-touch-icon)/);
+        expect(url.pathname).toMatch(OWN_ICON);
       }
       expect(entry.body).not.toContain("CANARY");
       expect(entry.body).not.toContain("synthetic offline answer");

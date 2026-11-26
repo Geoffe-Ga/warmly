@@ -68,7 +68,11 @@ test.describe("the AI disclosure", () => {
     await onboard(page);
     await page.getByRole("link", { name: "Settings" }).click();
 
-    const card = page.locator(".card", { hasText: "AI provider" });
+    // The status summary names the provider too; this is the card headed
+    // "AI provider".
+    const card = page.locator(".card", {
+      has: page.getByRole("heading", { name: "AI provider" }),
+    });
     await expect(card).toContainText("Connected: Test provider");
     await expect(card).toContainText("it sends nothing anywhere");
     await expect(card).toContainText("only ever happens when you ask");
