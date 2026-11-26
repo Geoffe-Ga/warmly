@@ -368,7 +368,13 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   answer is shown with `CitedAnswer`, which shows answer text as text and
   reads cited words from the entry as it is now, and only if its content
   hash still matches. Sessions are in memory for now (`services.reflect`)
-  and are dropped by `dropSecrets`.
+  and are dropped by `dropSecrets`. An answer records every entry that
+  was sent for it, with its hash then (`ReflectionAnswer.sources`), cited
+  or not. **Not built yet (issue #51):** deleting a reflection when one
+  of those entries is edited or deleted (invariant 6). Until then a
+  reflection whose entry changed stays listed and shows none of that
+  entry's words. No real provider is connected, so no real reflection can
+  exist yet; do not connect one (#44, #45) before #51 has landed.
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

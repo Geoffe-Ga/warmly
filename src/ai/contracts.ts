@@ -174,6 +174,13 @@ export interface GeneratedCard {
   readonly sourceEntryIds: readonly string[];
 }
 
+/** One entry an answer was built from: which entry, and its hash then. */
+export interface SentSource {
+  readonly entryId: string;
+  /** The entry's content hash when it was sent. */
+  readonly sourceHash: string;
+}
+
 /** A checked answer to a Reflect question. */
 export interface ReflectionAnswer {
   readonly markdown: string;
@@ -181,6 +188,14 @@ export interface ReflectionAnswer {
     readonly claimId: string;
     readonly evidence: readonly SourceRef[];
   }[];
+  /**
+   * Every entry that was sent to get this answer, cited or not, with its
+   * content hash at the time (PRD DEP-002). An answer rests on all of
+   * them, so this is what says later whether any has been changed or
+   * deleted since. Worked out by the app from the request, never taken
+   * from the provider.
+   */
+  readonly sources: readonly SentSource[];
   readonly coverage: RequestCoverage & {
     readonly includedEntryIds: readonly string[];
   };

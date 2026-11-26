@@ -62,6 +62,7 @@ function answer(
   return {
     markdown,
     citations,
+    sources: [],
     coverage: { includedEntryIds: [], omittedEntryCount: 0, truncated: false },
   };
 }

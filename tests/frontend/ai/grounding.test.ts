@@ -200,6 +200,18 @@ describe("a grounded Reflect answer (AI-012, AC-07, AC-26)", () => {
     }
   });
 
+  it("records every entry that was sent with its hash, cited or not (DEP-002)", () => {
+    const answer = groundReflection(
+      { markdown: "Nothing cited.", citations: [] },
+      MANIFEST,
+    );
+
+    expect(answer.sources).toEqual([
+      { entryId: E1.id, sourceHash: E1.contentHash },
+      { entryId: E2.id, sourceHash: E2.contentHash },
+    ]);
+  });
+
   it("reports which entries were sent and what the request left out", () => {
     expect(groundReflection(RESPONSE, MANIFEST).coverage).toEqual({
       includedEntryIds: [E1.id, E2.id],

@@ -108,6 +108,10 @@ export function groundReflection(
       claimId: citation.claimId,
       evidence: citation.evidence.map((cited) => resolve(cited, manifest)),
     })),
+    sources: manifest.sources.map((source) => ({
+      entryId: source.entryId,
+      sourceHash: source.sourceHash,
+    })),
     coverage: {
       includedEntryIds: manifest.sources.map((source) => source.entryId),
       omittedEntryCount: coverage.omittedEntryCount,

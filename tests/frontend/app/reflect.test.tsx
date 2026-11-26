@@ -18,6 +18,7 @@ import {
 } from "../../../src/domain/reflect/request";
 import { MemoryReflectSessions } from "../../../src/domain/reflect/sessions";
 import { firstQuestion } from "../../../src/domain/reflect/types";
+import { SOURCE_CHANGED } from "../../../src/ui/components/CitedAnswer";
 import {
   NOTHING_TO_ASK_ABOUT,
   QUESTION_NEEDED,
@@ -167,6 +168,7 @@ describe("the Reflect landing page (RF-001, RF-002)", () => {
         answer: {
           markdown: "Plenty.",
           citations: [],
+          sources: [],
           coverage: {
             includedEntryIds: [],
             omittedEntryCount: 0,
@@ -270,6 +272,13 @@ describe("asking a question (RF-002, RF-003, SEC-009)", () => {
     expect(window.location.pathname).toBe(
       pathFor("reflect-session", { id: stored?.id ?? "" }),
     );
+    // The answer records every entry it was built from, with its hash
+    // then, so a later change to any of them can be found (DEP-002).
+    const kept = stored?.messages[1];
+    expect(kept?.role === "answer" ? kept.answer.sources : []).toEqual([
+      { entryId: FIRST.id, sourceHash: FIRST.contentHash },
+      { entryId: SECOND.id, sourceHash: SECOND.contentHash },
+    ]);
     // The address holds an ID, never the question.
     expect(window.location.href).not.toMatch(/gone|well/);
     expect(screen.getByLabelText(BOX)).toHaveProperty("value", "");
@@ -380,6 +389,41 @@ describe("asking a question (RF-002, RF-003, SEC-009)", () => {
   });
 });
 
+describe("a reflection whose entry has changed (DEP-003; engine in #51)", () => {
+  // The engine that deletes such a reflection is issue #51. Until it
+  // lands, this is what protects the person: the reflection is still
+  // listed, but it never shows the entry's old words or its new ones as
+  // if they had been cited. When #51 lands, the first expectation changes
+  // to "the reflection is gone".
+  it("is still here until the invalidation engine lands, and shows none of the entry's words as cited", async () => {
+    const { services } = await setUp();
+    await renderApp(NEW, services);
+    await askAndSend("What has gone well?");
+    await screen.findByRole("heading", { name: "Answer" });
+    const [stored] = await services.reflect.list();
+    cleanup();
+
+    await services.records.put("journal-entry", {
+      ...FIRST,
+      responses: { ...FIRST.responses, good: "Rewritten since." },
+      contentHash: "9".repeat(64),
+      updatedAt: "2026-11-20T10:00:00.000Z",
+    });
+    await renderApp(
+      pathFor("reflect-session", { id: stored?.id ?? "" }),
+      services,
+    );
+    const answer = (
+      await screen.findByRole("heading", { name: "Answer" })
+    ).closest(".card") as HTMLElement;
+
+    expect(await services.reflect.list()).toHaveLength(1);
+    expect(answer.textContent).toContain(SOURCE_CHANGED);
+    expect(answer.textContent).not.toContain("We cooked together 1.");
+    expect(answer.textContent).not.toContain("Rewritten since.");
+  });
+});
+
 describe("a saved reflection (RF-001, RF-006)", () => {
   it("says so when it is not here, and offers the way back", async () => {
     const { services, provider } = await setUp();
@@ -464,6 +508,7 @@ describe("sessions held in memory (RF-006)", () => {
   const ANSWER = {
     markdown: "Synthetic.",
     citations: [],
+    sources: [],
     coverage: { includedEntryIds: [], omittedEntryCount: 0, truncated: false },
   };
 

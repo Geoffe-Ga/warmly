@@ -240,6 +240,7 @@ describe("one attempt, no retry, no other provider (AI-014, invariant 2)", () =>
           ],
         },
       ],
+      sources: [{ entryId: ENTRY.id, sourceHash: ENTRY.contentHash }],
       coverage: {
         includedEntryIds: [ENTRY.id],
         omittedEntryCount: 0,
