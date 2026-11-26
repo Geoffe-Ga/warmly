@@ -216,7 +216,7 @@ describe("one card (CC-007)", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        "Drafted by AI from journal entries you picked. It can be wrong. It is removed if one of those entries is changed or deleted.",
+        "Drafted by AI from journal entries you picked. It can be wrong. Until you change it, it is removed if one of those entries is changed or deleted.",
       ),
     ).toBeTruthy();
     // Conversation mode comes first: the words and nothing about them.
@@ -1015,7 +1015,7 @@ describe("changing and deleting a card (CC-010)", () => {
     );
   });
 
-  it("offers no way to change a card that AI drafted and the person has not taken over, but lets them delete it", async () => {
+  it("lets a card AI drafted be deleted", async () => {
     const services = await unlocked();
     await renderApp(
       pathFor("card", { id: SEED.sunday, cardId: SEED.thanks }),
@@ -1023,8 +1023,6 @@ describe("changing and deleting a card (CC-010)", () => {
     );
 
     await screen.findByText(/Drafted by AI/);
-    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
-
     const user = userEvent.setup();
     await user.click(screen.getByRole("button", { name: "Delete this card" }));
     await user.click(

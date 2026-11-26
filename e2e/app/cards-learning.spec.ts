@@ -163,7 +163,13 @@ test.describe("a card AI drafted, in two modes", () => {
     await expect(page.locator(".card-reading").first()).toHaveText(
       "Another test alternative.",
     );
-    await expect(panel).toContainText("This is a suggested addition.");
+    // Picking it made the card the person's own. The panel stays where it
+    // was and says what happened.
+    await expect(panel).toContainText("These are your own words.");
+    await expect(panel).toContainText(
+      "This part now uses the wording you picked. Choosing it makes this card yours.",
+    );
+    await expect(page.getByText("Written by you.")).toBeVisible();
     await expect(panel.getByTestId("source-excerpt")).toHaveCount(0);
     await expect(options).toHaveCount(0);
     await expectNoViolations(page);

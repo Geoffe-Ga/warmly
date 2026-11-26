@@ -29,6 +29,19 @@ export interface Dependent {
   readonly kind: RecordKind;
   readonly id: string;
   readonly sources: readonly DerivedSource[];
+  /**
+   * What happens to it when one of its sources changes or is deleted.
+   * `delete` removes the record. `strip` keeps it and has
+   * {@link Dependent.strip} remove what was built from the sources, for a
+   * record that is the person's own by now.
+   */
+  readonly action: "delete" | "strip";
+  /**
+   * For `strip`: change the record so that nothing in it rests on its
+   * sources any more. Afterwards it must have no sources, so that it is
+   * not found stale again.
+   */
+  readonly strip?: (records: RecordStore) => Promise<void>;
 }
 
 /** How one kind of derived record says what it was built from. */
@@ -60,6 +73,7 @@ export function ruleFor<K extends RecordKind>(
         kind,
         id: record.id,
         sources: sources(record),
+        action: "delete" as const,
       })),
   };
 }

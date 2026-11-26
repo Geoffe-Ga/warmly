@@ -366,12 +366,26 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   hashes, and no others. What comes back cites nothing (ADR-0008) and is
   shown as suggestions. It lives in component state only: never store a
   suggestion that was not picked. A picked wording replaces that part
-  through `chooseAlternative`, which drops the part's quotes and
-  explanation and marks it `suggestion`. The words a real provider is
+  through `chooseAlternative`, which is a change like any other: the
+  part loses its AI notes and the card becomes the person's own. The words a real provider is
   given are `alternativesTexts` (`src/ai/prompts/alternatives.ts`).
-- An unedited AI card is a derived record (`CARD_RULE`,
-  `src/domain/cards/dependencies.ts`): it is deleted when any entry sent
-  for it is changed or deleted. A `user_owned` card depends on nothing.
+- A card AI drafted becomes the person's own (`user_owned`) the first
+  time any change to it is saved (decision D-15): through `rewriteParts`
+  (`src/domain/cards/ownership.ts`), `editCard` or `chooseAlternative`.
+  Saving with nothing changed, and moving a card, are not changes. The
+  step is one-way: never set a card back to `ai_generated`. A part whose
+  words change loses its quotes, kind of evidence and explanation at
+  once; build the result with `owned`, which also drops every reference
+  to the journal once no part has AI notes left (PRD DEP-004). Any card
+  can be rewritten part by part or as one text. Never check, soften,
+  score or refuse the person's wording.
+- `CARD_RULE` (`src/domain/cards/dependencies.ts`) says what happens to
+  a card when an entry sent for it is changed or deleted. An unedited AI
+  card is deleted. A `user_owned` card is never deleted: if it still
+  carries AI notes they are all taken out (`withoutAiNotes`) and its
+  words are kept; if it carries none it depends on nothing. A dependent's
+  `action` is `delete` or `strip`; only deletions are counted in the
+  notice and in the warning before an entry is edited.
 - A manual card is `user_owned` with no AI fields; making, changing,
   moving or deleting one never calls AI or the network (PRD CC-010). Never
   correct, score or block what the person writes on a card. Reordering

@@ -8,7 +8,7 @@
  * The words are the person's: nothing here corrects, scores or blocks them.
  */
 import type { RecordStore } from "../../storage/record-store";
-import type { CardType, ConversationCard } from "./types";
+import { readingText, type CardType, type ConversationCard } from "./types";
 
 /** The longest a card's text may be, in characters. */
 export const MAX_CARD_TEXT = 4000;
@@ -86,18 +86,20 @@ export async function createCard(
 }
 
 /**
- * Change one of the person's own cards: its kind, its words, or both.
+ * Rewrite a whole card as one text: its kind, its words, or both.
  *
- * The card becomes one plain part holding the new words. A card drafted by
- * AI and not yet the person's is left alone here: taking one over has its
- * own rules.
+ * The card becomes one plain part holding the new words, and it is the
+ * person's own from then on (decision D-15). Everything the AI said about
+ * a card it drafted goes with the old parts: the quotes, the explanations
+ * and every reference to the journal (PRD DEP-004). A card drafted by AI
+ * that is saved with exactly the words and kind it already has is left as
+ * it is, so pressing Save on its own changes nothing.
  *
  * @param deps - The record store.
  * @param cardId - The card's ID.
  * @param draft - Its kind and its words.
  * @param now - The current time.
- * @returns The changed card, or `undefined` if it is not here or is not
- *   the person's own.
+ * @returns The card as it now is, or `undefined` if it is not here.
  * @throws InvalidCardTextError if the text is empty or too long.
  */
 export async function editCard(
@@ -108,12 +110,21 @@ export async function editCard(
 ): Promise<ConversationCard | undefined> {
   const text = cleanText(draft.text);
   const existing = await deps.records.get("conversation-card", cardId);
-  if (existing?.authorship !== "user_owned") {
+  if (existing === undefined) {
     return undefined;
   }
+  if (
+    existing.authorship === "ai_generated" &&
+    draft.type === existing.type &&
+    text === readingText(existing)
+  ) {
+    return existing;
+  }
   const changed: ConversationCard = {
-    ...existing,
+    id: existing.id,
+    collectionId: existing.collectionId,
     type: draft.type,
+    authorship: "user_owned",
     segments: [
       {
         id: existing.segments[0]?.id ?? crypto.randomUUID(),
@@ -121,6 +132,8 @@ export async function editCard(
         text,
       },
     ],
+    sourceEntryIds: [],
+    createdAt: existing.createdAt,
     updatedAt: now.toISOString(),
   };
   await deps.records.put("conversation-card", changed);

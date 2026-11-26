@@ -15,6 +15,7 @@ import {
   chooseAlternative,
 } from "../../../domain/cards/alternatives";
 import { deleteCard, editCard } from "../../../domain/cards/cards";
+import { hasAiNotes, rewriteParts } from "../../../domain/cards/ownership";
 import {
   provenanceOf,
   type Provenance,
@@ -26,7 +27,10 @@ import { TextArea } from "../../components/Field";
 import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { SegmentDetail } from "../../components/SegmentDetail";
-import { SegmentHighlight } from "../../components/SegmentHighlight";
+import {
+  CATEGORY_LABELS,
+  SegmentHighlight,
+} from "../../components/SegmentHighlight";
 import { StatusBanner } from "../../components/StatusBanner";
 import { DELETE_WARNING } from "../journal/Entry";
 import { useJournalEntries } from "../journal/shared";
@@ -43,9 +47,21 @@ import {
 /** Who the wording belongs to, said plainly. */
 const AUTHORSHIP = {
   ai_generated:
-    "Drafted by AI from journal entries you picked. It can be wrong. It is removed if one of those entries is changed or deleted.",
+    "Drafted by AI from journal entries you picked. It can be wrong. Until you change it, it is removed if one of those entries is changed or deleted.",
   user_owned: "Written by you.",
 } as const;
+
+/** Said of a card that is the person's own but began as an AI draft. */
+export const STILL_HAS_NOTES =
+  "This card is yours. Some parts still show what the AI said about them. Those notes are removed if a journal entry the card was drafted from is changed or deleted; your words are kept.";
+
+/** Who the card belongs to and what that means, in one line. */
+function whoseIsIt(card: ConversationCard): string {
+  if (card.authorship === "ai_generated") {
+    return AUTHORSHIP.ai_generated;
+  }
+  return hasAiNotes(card) ? STILL_HAS_NOTES : AUTHORSHIP.user_owned;
+}
 
 /** The two ways to look at a card AI drafted. */
 type Mode = "conversation" | "learning";
@@ -176,30 +192,36 @@ function LearningParts(props: {
 }
 
 /**
- * A card AI drafted, in one of two modes (PRD CC-005, CC-006; AC-11).
- * Conversation mode is the card's words and nothing else. Learning mode
- * adds the parts as buttons. The mode is kept only while the screen is
- * open, and it always starts in conversation mode. Neither mode calls AI.
+ * What a card says and whose it is.
+ *
+ * A card that carries anything the AI said is shown in one of two modes
+ * (PRD CC-005, CC-006; AC-11). Conversation mode is the card's words and
+ * nothing else. Learning mode adds the parts as buttons. The mode is kept
+ * only while the screen is open, and it always starts in conversation
+ * mode. Neither mode calls AI.
+ *
+ * Learning mode is for anything the AI said that is still on the card,
+ * whoever the card belongs to now. A person who is in learning mode when
+ * the last of the AI's notes goes, for example by picking a wording in an
+ * open panel, stays in it: the panel, what it says happened and their
+ * place on the page are kept. A card with nothing from AI on it, looked
+ * at plainly, has no mode to pick.
  */
-function DraftedBody(props: { readonly card: ConversationCard }): JSX.Element {
-  const { card } = props;
-  const [mode, setMode] = useState<Mode>("conversation");
-  return (
-    <>
-      <Card heading={CARD_TYPE_LABELS[card.type]}>
-        <p class="card-reading">{readingText(card)}</p>
-        <p class="hint">{AUTHORSHIP[card.authorship]}</p>
-      </Card>
-      <ModePicker value={mode} onChange={setMode} />
-      {mode === "learning" && <LearningParts card={card} />}
-    </>
-  );
-}
-
 function CardBody(props: { readonly card: ConversationCard }): JSX.Element {
   const { card } = props;
-  if (card.authorship === "ai_generated") {
-    return <DraftedBody card={card} />;
+  const [mode, setMode] = useState<Mode>("conversation");
+  const drafted = card.authorship === "ai_generated" || hasAiNotes(card);
+  if (drafted || mode === "learning") {
+    return (
+      <>
+        <Card heading={CARD_TYPE_LABELS[card.type]}>
+          <p class="card-reading">{readingText(card)}</p>
+          <p class="hint">{whoseIsIt(card)}</p>
+        </Card>
+        <ModePicker value={mode} onChange={setMode} />
+        {mode === "learning" && <LearningParts card={card} />}
+      </>
+    );
   }
   return (
     <>
@@ -221,52 +243,13 @@ function CardBody(props: { readonly card: ConversationCard }): JSX.Element {
   );
 }
 
-/**
- * Deleting a card that AI drafted. It cannot be changed here yet, but it
- * is the person's to remove at any time.
- */
-function DeleteDrafted(props: {
-  readonly card: ConversationCard;
-  readonly onDeleted: () => void;
-}): JSX.Element {
-  const { records } = useServices();
-  const change = useChange();
-  const [confirming, setConfirming] = useState(false);
-  return (
-    <Card heading="Delete this card">
-      <ChangeError change={change} />
-      <div class="button-row">
-        <Button
-          variant="danger"
-          disabled={change.busy}
-          onClick={() => {
-            setConfirming(true);
-          }}
-        >
-          Delete this card
-        </Button>
-      </div>
-      <ConfirmDialog
-        open={confirming}
-        title="Delete this card?"
-        confirmLabel="Delete card"
-        destructive
-        onCancel={() => {
-          setConfirming(false);
-        }}
-        onConfirm={() => {
-          setConfirming(false);
-          change.run(async () => {
-            await deleteCard({ records }, props.card.id);
-            props.onDeleted();
-          });
-        }}
-      >
-        <p>{DELETE_WARNING}</p>
-      </ConfirmDialog>
-    </Card>
-  );
-}
+/** Said above the form for a card that is still as AI drafted it. */
+export const OWNERSHIP_NOTE =
+  "Saving any change makes this card yours. It is then kept even if the journal entries it was drafted from change. A part you change loses what the AI said about it.";
+
+/** Said above the boxes when a card's parts are changed one by one. */
+export const PARTS_HINT =
+  "In your own words. Nothing checks or changes them. Empty a box to remove that part.";
 
 function EditCard(props: {
   readonly card: ConversationCard;
@@ -275,8 +258,17 @@ function EditCard(props: {
   const { records } = useServices();
   const { card } = props;
   const change = useChange();
+  const several = card.segments.length > 1;
+  // A card with several parts starts with a box for each. The whole card
+  // can be rewritten as one text instead, at any time.
+  const [whole, setWhole] = useState(!several);
   const [type, setType] = useState(card.type);
   const [text, setText] = useState(readingText(card));
+  const [texts, setTexts] = useState<Readonly<Record<string, string>>>(() =>
+    Object.fromEntries(
+      card.segments.map((segment) => [segment.id, segment.text]),
+    ),
+  );
   const [saved, setSaved] = useState("");
   const [confirming, setConfirming] = useState(false);
 
@@ -289,18 +281,48 @@ function EditCard(props: {
           event.preventDefault();
           setSaved("");
           change.run(async () => {
-            await editCard({ records }, card.id, { type, text });
+            if (whole) {
+              await editCard({ records }, card.id, { type, text });
+            } else {
+              await rewriteParts({ records }, card.id, {
+                type,
+                parts: card.segments.map((segment) => ({
+                  id: segment.id,
+                  text: texts[segment.id] ?? segment.text,
+                })),
+              });
+            }
             setSaved("Saved.");
           });
         }}
       >
-        <TextArea
-          label="What do you want to say?"
-          hint="In your own words. Nothing checks or changes them."
-          value={text}
-          onInput={setText}
-          rows={4}
-        />
+        {card.authorship === "ai_generated" && (
+          <p class="hint">{OWNERSHIP_NOTE}</p>
+        )}
+        {whole ? (
+          <TextArea
+            label="What do you want to say?"
+            hint="In your own words. Nothing checks or changes them."
+            value={text}
+            onInput={setText}
+            rows={4}
+          />
+        ) : (
+          <>
+            <p class="hint">{PARTS_HINT}</p>
+            {card.segments.map((segment, index) => (
+              <TextArea
+                key={segment.id}
+                label={`Part ${String(index + 1)}: ${CATEGORY_LABELS[segment.category]}`}
+                value={texts[segment.id] ?? ""}
+                onInput={(value) => {
+                  setTexts((was) => ({ ...was, [segment.id]: value }));
+                }}
+                rows={3}
+              />
+            ))}
+          </>
+        )}
         <CardTypePicker value={type} onChange={setType} />
         <ChangeError change={change} />
         <p role="status" class="hint">
@@ -310,6 +332,17 @@ function EditCard(props: {
           <Button type="submit" variant="primary" disabled={change.busy}>
             Save changes
           </Button>
+          {several && (
+            <Button
+              disabled={change.busy}
+              onClick={() => {
+                setSaved("");
+                setWhole(!whole);
+              }}
+            >
+              {whole ? "Change the parts one by one" : "Rewrite as one text"}
+            </Button>
+          )}
           <Button
             variant="danger"
             disabled={change.busy}
@@ -345,9 +378,11 @@ function EditCard(props: {
 
 /**
  * One card: what it says, what kind it is and who wrote it (PRD CC-005 to
- * CC-007, CC-010). The person's own card can be changed or deleted here.
- * A card AI drafted can be read plainly, or in learning mode, where each
- * part shows what it rests on. Opening, changing or deleting a card, and
+ * CC-010). Any card can be changed or deleted here: part by part, or
+ * rewritten as one text. Saving a change to a card AI drafted makes it
+ * the person's own (decision D-15). A card that still carries anything
+ * the AI said can be read plainly, or in learning mode, where each part
+ * shows what it rests on. Opening, changing or deleting a card, and
  * switching mode or opening a part, never call AI.
  *
  * @param props - The route's parameters: `id` names the collection and
@@ -395,23 +430,14 @@ export function CardScreen(props: {
       {card !== undefined && (
         <>
           <CardBody card={card} />
-          {card.authorship === "user_owned" ? (
-            <EditCard
-              // A newer version from elsewhere starts the form afresh.
-              key={`${card.id}/${card.updatedAt}`}
-              card={card}
-              onDeleted={() => {
-                setDeleted(true);
-              }}
-            />
-          ) : (
-            <DeleteDrafted
-              card={card}
-              onDeleted={() => {
-                setDeleted(true);
-              }}
-            />
-          )}
+          <EditCard
+            // A newer version from elsewhere starts the form afresh.
+            key={`${card.id}/${card.updatedAt}`}
+            card={card}
+            onDeleted={() => {
+              setDeleted(true);
+            }}
+          />
         </>
       )}
       <p>

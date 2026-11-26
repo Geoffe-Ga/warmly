@@ -25,10 +25,11 @@ import type { JournalEntry } from "../../../src/domain/journal/types";
 import { MemoryRecordStore } from "../../../src/storage/record-store";
 import {
   OPTIONS_ARE_SUGGESTIONS,
-  SUGGESTED,
+  OWN_WORDS,
   WORDING_NOT_SAVED,
   WORDING_USED,
 } from "../../../src/ui/components/SegmentDetail";
+import { STILL_HAS_NOTES } from "../../../src/ui/screens/prepare/CardScreen";
 import {
   renderApp,
   testServices,
@@ -229,7 +230,7 @@ describe("the words a provider is given", () => {
 });
 
 describe("putting a picked wording in place", () => {
-  it("changes that part only, and marks it as a suggestion with nothing behind it", async () => {
+  it("changes that part only, drops what the AI said about it, and makes the card the person's own", async () => {
     const records = new MemoryRecordStore();
     await records.put("conversation-card", CARD);
 
@@ -246,14 +247,14 @@ describe("putting a picked wording in place", () => {
         id: "s1",
         category: "appreciation",
         text: "Thank you for Sunday's dinner.",
-        evidenceKind: "suggestion",
-        evidence: [],
       },
       CARD.segments[1],
     ]);
     expect(changed?.updatedAt).toBe("2026-11-05T09:00:00.000Z");
-    // What the card was drafted from is unchanged, so it is still removed
-    // if one of those entries changes.
+    expect(changed?.authorship).toBe("user_owned");
+    // The other part still has the AI's notes, so the card still records
+    // what it was drafted from: those notes go if one of the entries
+    // changes.
     expect(changed?.sources).toEqual(CARD.sources);
     expect(await records.get("conversation-card", CARD.id)).toEqual(changed);
   });
@@ -433,7 +434,7 @@ describe("asking on the card screen (AC-11, AC-15)", () => {
     expect(provider.calls).toHaveLength(2);
   });
 
-  it("puts a picked wording in place, labelled as a suggestion, and updates the card's words", async () => {
+  it("puts a picked wording in place, updates the card's words, and the card becomes the person's own", async () => {
     const { services } = await setUp();
     await renderApp(PATH, services);
     await openPart();
@@ -448,18 +449,43 @@ describe("asking on the card screen (AC-11, AC-15)", () => {
         "I loved cooking with you. Another test alternative.",
       ),
     ).toBeTruthy();
-    expect(screen.getByText(SUGGESTED)).toBeTruthy();
+    // The picked part has nothing from the AI's notes left on it.
+    expect(screen.getByText(OWN_WORDS)).toBeTruthy();
+    expect(screen.getByText(STILL_HAS_NOTES)).toBeTruthy();
     expect(screen.queryByText("A test alternative.")).toBeNull();
     const card = await services.records.get("conversation-card", CARD.id);
     expect(card?.segments[1]).toEqual({
       id: "s2",
       category: "feeling",
       text: "Another test alternative.",
-      evidenceKind: "suggestion",
-      evidence: [],
     });
     expect(card?.segments[0]).toEqual(CARD.segments[0]);
-    expect(card?.authorship).toBe("ai_generated");
+    expect(card?.authorship).toBe("user_owned");
+  });
+
+  it("keeps the panel, and says what happened, when the pick leaves the card with nothing of the AI's", async () => {
+    const { services } = await setUp();
+    // A card with one part: once that part is replaced, no AI notes remain.
+    await services.records.put("conversation-card", {
+      ...CARD,
+      segments: CARD.segments.filter((segment) => segment.id === "s2"),
+    });
+    await renderApp(PATH, services);
+    await openPart();
+    await press("Generate more options");
+    await press(SEND);
+
+    await press("Use this wording: A test alternative.");
+
+    expect(await screen.findByText(WORDING_USED)).toBeTruthy();
+    const panel = within(
+      screen.getByRole("region", { name: "About this part" }),
+    );
+    expect(panel.getByText(OWN_WORDS)).toBeTruthy();
+    expect(await screen.findByText("Written by you.")).toBeTruthy();
+    expect(
+      (await services.records.get("conversation-card", CARD.id))?.authorship,
+    ).toBe("user_owned");
   });
 
   it("keeps the card unchanged when the request fails, and tries again only when asked", async () => {

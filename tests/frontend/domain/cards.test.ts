@@ -646,17 +646,42 @@ describe("changing and deleting a card (CC-010)", () => {
     expect(changed?.segments[0]?.id).toMatch(/^[0-9a-f-]{36}$/);
   });
 
-  it("leaves alone a card that is not here, or that AI drafted and the person has not taken over", async () => {
-    const { records, store } = await seeded();
-    const drafted = await store.card(SEED.sunday, SEED.thanks);
+  it("does nothing for a card that is not here", async () => {
+    const { records } = await seeded();
 
     expect(
       await editCard({ records }, "nope", { type: "other", text: "Text" }),
     ).toBeUndefined();
-    expect(
-      await editCard({ records }, SEED.thanks, { type: "other", text: "Text" }),
-    ).toBeUndefined();
+  });
+
+  it("leaves a card AI drafted as it is when it is saved with nothing changed (D-15)", async () => {
+    const { records, store } = await seeded();
+    const drafted = await store.card(SEED.sunday, SEED.thanks);
+
+    const same = await editCard({ records }, SEED.thanks, {
+      type: "appreciation",
+      text: "I loved cooking with you on Sunday. It made me feel close to you.",
+    });
+
+    expect(same).toEqual(drafted);
     expect(await store.card(SEED.sunday, SEED.thanks)).toEqual(drafted);
+  });
+
+  it("makes a card AI drafted the person's own when it is rewritten, with no AI notes left (CC-008)", async () => {
+    const { records, store } = await seeded();
+
+    await editCard({ records }, SEED.thanks, { type: "other", text: "Text" });
+
+    const now = await store.card(SEED.sunday, SEED.thanks);
+    expect(now?.authorship).toBe("user_owned");
+    expect(now?.sourceEntryIds).toEqual([]);
+    expect(now?.segments).toHaveLength(1);
+    expect(now?.segments[0]).toMatchObject({ category: "other", text: "Text" });
+    expect(Object.keys(now?.segments[0] ?? {}).sort()).toEqual([
+      "category",
+      "id",
+      "text",
+    ]);
   });
 
   it("deletes a card and takes it out of its collection's list", async () => {
