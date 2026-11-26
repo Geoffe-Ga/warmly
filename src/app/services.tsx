@@ -44,6 +44,7 @@ import {
 import type { RootKey } from "../crypto/root-key";
 import { recordsDatabaseName } from "../storage/db";
 import { EncryptedRecordStore } from "../storage/encrypted-record-store";
+import { browserTabChannel } from "../storage/tab-channel";
 import {
   browserPersistence,
   type StoragePersistence,
@@ -349,7 +350,7 @@ export function createServices(): Services {
     import.meta.env.MODE !== "production"
       ? recordsDatabaseName(owner, tabRecordsPrefix())
       : recordsDatabaseName(owner);
-  const records = new EncryptedRecordStore(databaseName);
+  const records = new EncryptedRecordStore(databaseName, browserTabChannel);
   const invalidation = new Invalidator(records, DEPENDENCY_RULES);
   const auth = createAuthClient(
     import.meta.env,

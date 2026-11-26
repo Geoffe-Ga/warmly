@@ -1,6 +1,6 @@
 # ADR-0014: The local encrypted record store
 
-- **Status:** Accepted
+- **Status:** Accepted. Its limit that tabs do not see each other's changes live is lifted by [ADR-0017](0017-tabs-tell-each-other.md).
 - **Date:** 2026-11-25
 - **PRD references:** §5.1 [SYNC-001, SYNC-002], §7, §10 [REL-004], §13.6; AC-03
 - **Decision register:** D-09, D-12
