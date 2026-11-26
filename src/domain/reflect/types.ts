@@ -55,3 +55,93 @@ export function firstQuestion(session: ReflectSession): string {
   const first = session.messages.find((each) => each.role === "question");
   return first?.role === "question" ? first.text : "";
 }
+
+function isText(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isWhole(value: unknown): boolean {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isListOf(value: unknown, item: (each: unknown) => boolean): boolean {
+  return Array.isArray(value) && value.every(item);
+}
+
+function isSourceRef(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isText(value["entryId"]) &&
+    (value["responseKey"] === "good" ||
+      value["responseKey"] === "improve" ||
+      value["responseKey"] === "loved") &&
+    isWhole(value["start"]) &&
+    isWhole(value["end"]) &&
+    isText(value["sourceHash"])
+  );
+}
+
+function isCitation(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isText(value["claimId"]) &&
+    isListOf(value["evidence"], isSourceRef)
+  );
+}
+
+function isCoverage(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isListOf(value["includedEntryIds"], isText) &&
+    isWhole(value["omittedEntryCount"]) &&
+    typeof value["truncated"] === "boolean"
+  );
+}
+
+function isSentSource(value: unknown): boolean {
+  return (
+    isObject(value) && isText(value["entryId"]) && isText(value["sourceHash"])
+  );
+}
+
+function isAnswer(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isText(value["markdown"]) &&
+    isListOf(value["citations"], isCitation) &&
+    // Without the entries it was built from, an answer could never be
+    // found stale, so a record that lacks them is not a session.
+    isListOf(value["sources"], isSentSource) &&
+    isCoverage(value["coverage"])
+  );
+}
+
+function isMessage(value: unknown): boolean {
+  if (!isObject(value) || !isText(value["id"]) || !isText(value["at"])) {
+    return false;
+  }
+  return value["role"] === "question"
+    ? isText(value["text"])
+    : value["role"] === "answer" && isAnswer(value["answer"]);
+}
+
+/**
+ * Check that a value read back from storage has the shape of a session.
+ *
+ * @param value - What was decrypted.
+ * @returns Whether it is a Reflect session.
+ */
+export function isReflectSession(value: unknown): value is ReflectSession {
+  return (
+    isObject(value) &&
+    isText(value["id"]) &&
+    (value["status"] === "active" || value["status"] === "finished") &&
+    isListOf(value["messages"], isMessage) &&
+    isText(value["createdAt"]) &&
+    isText(value["updatedAt"])
+  );
+}

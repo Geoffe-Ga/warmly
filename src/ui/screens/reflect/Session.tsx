@@ -1,5 +1,12 @@
 import type { JSX } from "preact";
-import { useContext, useEffect, useMemo, useState } from "preact/hooks";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "preact/hooks";
 
 import type { ReflectionAnswer } from "../../../ai/contracts";
 import type { ReflectRequest } from "../../../ai/provider";
@@ -13,6 +20,11 @@ import {
   MAX_QUESTION,
   reflectRequest,
 } from "../../../domain/reflect/request";
+import {
+  SessionFinishedError,
+  type Exchange,
+  type ReflectSessions,
+} from "../../../domain/reflect/sessions";
 import type { ReflectSession } from "../../../domain/reflect/types";
 import {
   AiRequestStatus,
@@ -21,9 +33,13 @@ import {
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { CitedAnswer } from "../../components/CitedAnswer";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { TextArea } from "../../components/Field";
+import { PAGE_HEADING_ATTRIBUTE } from "../../components/PageHeading";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
+import { describeStorageError } from "../../storage-messages";
+import { DELETE_WARNING } from "../journal/Entry";
 import { useJournalEntries } from "../journal/shared";
 import { NEW_SESSION } from "./Landing";
 
@@ -33,6 +49,44 @@ export const QUESTION_NEEDED = `Write your question first, up to ${MAX_QUESTION.
 /** Said when there is no finished entry to ask about. */
 export const NOTHING_TO_ASK_ABOUT =
   "You have no finished journal entries yet, so there is nothing to ask about. Write an entry first.";
+
+/** Said when an answer arrived but could not be stored. */
+export const ANSWER_NOT_SAVED =
+  "The answer arrived, but Warmly couldn't save it on this device. It is shown below. Nothing was sent again. Keep this page open and try saving it.";
+
+/**
+ * Said when a reflection was finished or deleted on another device while
+ * an answer was on its way. The screen cannot always tell which, and the
+ * result is the same, so it says both.
+ */
+export const SAVED_ELSEWHERE =
+  "That reflection was finished or deleted on another device while you were asking, so your question and its answer were saved as a new reflection.";
+
+/**
+ * Store a question and its answer: in the session it was asked in, or in a
+ * new one if there is none, or if that one has gone or was finished
+ * meanwhile on another device. The answer is never thrown away.
+ */
+async function storeExchange(
+  reflect: ReflectSessions,
+  sessionId: string | undefined,
+  exchange: Exchange,
+): Promise<{ session: ReflectSession; elsewhere: boolean }> {
+  if (sessionId === undefined) {
+    return { session: await reflect.start(exchange), elsewhere: false };
+  }
+  try {
+    const added = await reflect.add(sessionId, exchange);
+    if (added !== undefined) {
+      return { session: added, elsewhere: false };
+    }
+  } catch (error) {
+    if (!(error instanceof SessionFinishedError)) {
+      throw error;
+    }
+  }
+  return { session: await reflect.start(exchange), elsewhere: true };
+}
 
 /** What the screen knows about the session it was asked for. */
 type Found =
@@ -102,9 +156,17 @@ function Ask(props: {
   readonly session: ReflectSession | undefined;
   readonly entries: readonly JournalEntry[];
   readonly ready: boolean;
+  /**
+   * Told when an answer was saved as a new reflection because its own was
+   * finished or deleted elsewhere, with the new reflection's ID. This box
+   * is gone by the time the new reflection is shown, so the screen around
+   * it says so.
+   */
+  readonly onSavedElsewhere: (sessionId: string) => void;
 }): JSX.Element {
-  const { ai, reflect } = useServices();
+  const { ai, reflect, lockHooks } = useServices();
   const { navigate } = useContext(NavigationContext);
+  const { onSavedElsewhere } = props;
   const [question, setQuestion] = useState("");
   const [problem, setProblem] = useState<string>();
   const controller = useMemo(
@@ -125,27 +187,69 @@ function Ask(props: {
     [controller],
   );
 
-  // A checked answer is stored with its question, then shown in the
-  // session. Storing calls nothing: the answer is already here.
+  // An answer that has arrived but is not stored yet. It is kept here, on
+  // screen, until it is: an answer the person paid for is never dropped.
+  const [unsaved, setUnsaved] = useState<Exchange>();
+  const [saveProblem, setSaveProblem] = useState<string>();
+
+  /** Store an answer with its question. Calls nothing: it is already here. */
+  const save = useCallback(
+    async (exchange: Exchange): Promise<void> => {
+      setSaveProblem(undefined);
+      try {
+        const stored = await storeExchange(reflect, sessionId, exchange);
+        setUnsaved(undefined);
+        setQuestion("");
+        if (stored.elsewhere) {
+          onSavedElsewhere(stored.session.id);
+        }
+        if (stored.session.id !== sessionId) {
+          navigate(pathFor("reflect-session", { id: stored.session.id }));
+        }
+      } catch (error) {
+        // Never the error's own text.
+        setSaveProblem(describeStorageError(error, "save") ?? ANSWER_NOT_SAVED);
+      }
+    },
+    [reflect, sessionId, navigate, onSavedElsewhere],
+  );
+
   useEffect(() => {
     if (state.phase !== "done") {
       return;
     }
-    const exchange = { question: state.request.question, answer: state.result };
+    const exchange = {
+      // Made once, so storing it again after a failure never copies it.
+      id: crypto.randomUUID(),
+      question: state.request.question,
+      answer: state.result,
+    };
     controller.reset();
-    setQuestion("");
-    void (
-      sessionId === undefined
-        ? reflect.start(exchange)
-        : reflect.add(sessionId, exchange)
-    ).then((stored) => {
-      if (stored !== undefined && stored.id !== sessionId) {
-        navigate(pathFor("reflect-session", { id: stored.id }));
-      }
-    });
-  }, [state, controller, reflect, sessionId, navigate]);
+    setUnsaved(exchange);
+    void save(exchange);
+  }, [state, controller, save]);
 
-  const busy = state.phase === "running" || state.phase === "awaiting-consent";
+  // An answer that is here but not stored yet is stored before the keys
+  // are dropped, when the app locks (ADR-0004). It needs the keys, and the
+  // screen goes away with them.
+  const waiting = useRef<Exchange | undefined>(undefined);
+  useEffect(() => {
+    waiting.current = unsaved;
+  }, [unsaved]);
+  useEffect(
+    () =>
+      lockHooks.register(async () => {
+        if (waiting.current !== undefined) {
+          await storeExchange(reflect, sessionId, waiting.current);
+        }
+      }),
+    [lockHooks, reflect, sessionId],
+  );
+
+  const busy =
+    state.phase === "running" ||
+    state.phase === "awaiting-consent" ||
+    unsaved !== undefined;
   const hasEntries = props.entries.some((entry) => entry.status === "complete");
 
   return (
@@ -194,6 +298,111 @@ function Ask(props: {
         </div>
       </form>
       <AiRequestStatus controller={controller} />
+      {unsaved !== undefined && saveProblem !== undefined && (
+        <>
+          <StatusBanner tone="error" label="Answer not saved yet">
+            {saveProblem}
+            <div class="button-row">
+              <Button
+                onClick={() => {
+                  void save(unsaved);
+                }}
+              >
+                Save the answer
+              </Button>
+            </div>
+          </StatusBanner>
+          <CitedAnswer answer={unsaved.answer} entries={props.entries} />
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** Said when a reflection is finished and can only be read. */
+export const FINISHED =
+  "This reflection is finished. You can read it, but not add to it. To ask something else, start a new one.";
+
+/** Asked before a reflection is finished. */
+export const FINISH_EXPLAINED =
+  "A finished reflection stays here to read, but you can't ask more in it, and it can't be opened again for questions. Nothing is sent anywhere when you finish.";
+
+/** Finish and Delete for one reflection. */
+function Manage(props: {
+  readonly session: ReflectSession;
+  readonly onDeleted: () => void;
+}): JSX.Element {
+  const { reflect } = useServices();
+  const { session } = props;
+  const [asking, setAsking] = useState<"finish" | "delete">();
+  const [problem, setProblem] = useState(false);
+  const act = (work: () => Promise<unknown>): void => {
+    setAsking(undefined);
+    setProblem(false);
+    work().catch(() => {
+      setProblem(true);
+    });
+  };
+
+  return (
+    <Card heading={session.status === "active" ? "Finish or delete" : "Delete"}>
+      {problem && (
+        <StatusBanner tone="error" label="Not saved">
+          Warmly couldn't save that. Nothing was changed. Try again in a moment.
+        </StatusBanner>
+      )}
+      <div class="button-row">
+        {session.status === "active" && (
+          <Button
+            onClick={() => {
+              setAsking("finish");
+            }}
+          >
+            Finish Reflection
+          </Button>
+        )}
+        <Button
+          variant="danger"
+          onClick={() => {
+            setAsking("delete");
+          }}
+        >
+          Delete this reflection
+        </Button>
+      </div>
+      <ConfirmDialog
+        open={asking === "finish"}
+        title="Finish this reflection?"
+        confirmLabel="Finish Reflection"
+        onCancel={() => {
+          setAsking(undefined);
+        }}
+        onConfirm={() => {
+          act(() => reflect.finish(session.id));
+        }}
+      >
+        <p>{FINISH_EXPLAINED}</p>
+      </ConfirmDialog>
+      <ConfirmDialog
+        open={asking === "delete"}
+        title="Delete this reflection?"
+        confirmLabel="Delete reflection"
+        destructive
+        onCancel={() => {
+          setAsking(undefined);
+        }}
+        onConfirm={() => {
+          act(async () => {
+            await reflect.remove(session.id);
+            props.onDeleted();
+          });
+        }}
+      >
+        <p>
+          Its questions and answers are deleted. Your journal entries are not.
+        </p>
+        <p>{DELETE_WARNING}</p>
+      </ConfirmDialog>
     </Card>
   );
 }
@@ -208,6 +417,11 @@ function Ask(props: {
  * says what will be sent and to whom. A new reflection is stored once its
  * first answer has arrived and been checked.
  *
+ * A reflection stays open until the person presses Finish Reflection:
+ * leaving the screen or the app does not finish it (RF-007). A finished
+ * one can be read but not added to. Either kind can be deleted for good,
+ * after a confirmation. Finishing and deleting call no AI.
+ *
  * @param props - The route's parameters; `id` names the session, or is
  *   `new` for one not yet started.
  * @returns The session screen.
@@ -216,19 +430,38 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
   const found = useSession(props.params["id"]);
   const journal = useJournalEntries();
   const entries = journal.state === "ready" ? journal.entries : [];
-  const session = found.kind === "session" ? found.session : undefined;
+  const [deleted, setDeleted] = useState(false);
+  // The reflection an answer was moved to, so the note is shown on that
+  // reflection only, and not on any other opened afterwards.
+  const [savedElsewhere, setSavedElsewhere] = useState<string>();
+  const session =
+    found.kind === "session" && !deleted ? found.session : undefined;
+
+  useEffect(() => {
+    // The button that had focus has gone with the reflection.
+    if (deleted) {
+      document
+        .querySelector<HTMLElement>(`[${PAGE_HEADING_ATTRIBUTE}]`)
+        ?.focus();
+    }
+  }, [deleted]);
 
   return (
     <PageLayout title="Reflection">
-      {found.kind === "loading" && (
+      {(found.kind === "loading" ||
+        (session !== undefined && journal.state === "loading")) && (
         <StatusBanner tone="info" label="Loading">
           Getting your reflection.
         </StatusBanner>
       )}
-      {found.kind === "missing" && (
+      {deleted && (
+        <StatusBanner tone="success" label="Deleted">
+          The reflection has been removed from this device.
+        </StatusBanner>
+      )}
+      {found.kind === "missing" && !deleted && (
         <StatusBanner tone="info" label="Not here">
-          This reflection isn't on this device. Reflections are not kept after
-          the app locks yet.
+          This reflection isn't on this device. It may have been deleted.
         </StatusBanner>
       )}
       {journal.state === "failed" && (
@@ -236,8 +469,20 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
           {journal.message}
         </StatusBanner>
       )}
-      {session !== undefined && (
+      {session !== undefined && session.id === savedElsewhere && (
+        <StatusBanner tone="info" label="Saved as a new reflection">
+          {SAVED_ELSEWHERE}
+        </StatusBanner>
+      )}
+      {/* Saved answers wait for the journal: until it has loaded, an entry
+          that is here would be shown as "no longer on this device". */}
+      {session !== undefined && journal.state === "ready" && (
         <Messages session={session} entries={entries} />
+      )}
+      {session?.status === "finished" && (
+        <StatusBanner tone="info" label="Finished">
+          {FINISHED}
+        </StatusBanner>
       )}
       {(found.kind === "new" || session?.status === "active") && (
         <Ask
@@ -246,6 +491,15 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
           session={session}
           entries={entries}
           ready={journal.state === "ready"}
+          onSavedElsewhere={setSavedElsewhere}
+        />
+      )}
+      {session !== undefined && (
+        <Manage
+          session={session}
+          onDeleted={() => {
+            setDeleted(true);
+          }}
         />
       )}
       <p>

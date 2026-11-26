@@ -7,6 +7,7 @@
  */
 import type { CardCollection, ConversationCard } from "../domain/cards/types";
 import type { JournalEntry } from "../domain/journal/types";
+import type { ReflectSession } from "../domain/reflect/types";
 
 /** Every kind of record, and the type stored under it. */
 export interface RecordKinds {
@@ -15,6 +16,8 @@ export interface RecordKinds {
   readonly "card-collection": CardCollection;
   /** One conversation card. */
   readonly "conversation-card": ConversationCard;
+  /** One Reflect session, with all of its questions and answers. */
+  readonly "reflect-session": ReflectSession;
 }
 
 /** An empty map for every kind of record. */
@@ -23,6 +26,7 @@ function emptyRecords(): { [K in RecordKind]: Map<string, RecordKinds[K]> } {
     "journal-entry": new Map(),
     "card-collection": new Map(),
     "conversation-card": new Map(),
+    "reflect-session": new Map(),
   };
 }
 

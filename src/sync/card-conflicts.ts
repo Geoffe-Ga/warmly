@@ -1,6 +1,6 @@
 /**
- * Collections and cards that were changed in two places (PRD SYNC-005,
- * invariant 5; ADR-0006).
+ * Collections, cards and Reflect sessions that were changed in two places
+ * (PRD SYNC-005, invariant 5; ADR-0006).
  *
  * The rules are the journal's: both versions are kept until the person
  * chooses, nothing is merged or chosen for them, and a deleted record never
@@ -13,6 +13,7 @@
  */
 import { keptCardsCollection } from "../domain/cards/collections";
 import type { CardCollection, ConversationCard } from "../domain/cards/types";
+import type { ReflectSession } from "../domain/reflect/types";
 import type {
   Keep,
   RecordConflict,
@@ -44,8 +45,18 @@ export interface CardConflict extends Base {
   readonly theirs?: ConversationCard;
 }
 
-/** A collection or a card waiting for the person to choose a version. */
-export type CardsConflict = CollectionConflict | CardConflict;
+/** A Reflect session with two versions. */
+export interface SessionConflict extends Base {
+  readonly record: "reflect-session";
+  readonly mine?: ReflectSession;
+  readonly theirs?: ReflectSession;
+}
+
+/**
+ * A collection, a card or a Reflect session waiting for the person to
+ * choose a version. (The name is from when this covered cards only.)
+ */
+export type CardsConflict = CollectionConflict | CardConflict | SessionConflict;
 
 function kindOf(found: RecordConflict<unknown>): ConflictKind {
   if (found.mine !== undefined && found.theirs !== undefined) {
@@ -75,18 +86,20 @@ function describe<R extends CardsConflict["record"], T>(
  * The collections and cards waiting for the person to choose a version.
  *
  * @param records - The record store.
- * @returns Collections first, then cards.
+ * @returns Collections first, then cards, then Reflect sessions.
  */
 export async function listCardConflicts(
   records: RecordStore,
 ): Promise<CardsConflict[]> {
-  const [collections, cards] = await Promise.all([
+  const [collections, cards, sessions] = await Promise.all([
     records.conflicts("card-collection"),
     records.conflicts("conversation-card"),
+    records.conflicts("reflect-session"),
   ]);
   return [
     ...collections.map((found) => describe("card-collection", found)),
     ...cards.map((found) => describe("conversation-card", found)),
+    ...sessions.map((found) => describe("reflect-session", found)),
   ];
 }
 
@@ -142,7 +155,8 @@ async function homeFor(
  * A kept card goes back into its collection if that is still here, and
  * otherwise into a collection called "Kept cards". A kept collection keeps
  * its name and starts with no cards: its cards were deleted with it on the
- * other device, and any that were changed here are settled one by one.
+ * other device, and any that were changed here are settled one by one. A
+ * kept Reflect session keeps all of its questions and answers.
  *
  * The copy is stored first, so if anything fails the words exist twice,
  * never not at all.
@@ -168,6 +182,13 @@ export async function keepAsNew(
       ...conflict.mine,
       id,
       cardIds: [],
+      updatedAt: at,
+    });
+  } else if (conflict.record === "reflect-session") {
+    // The same questions and answers, as a separate reflection.
+    await records.put("reflect-session", {
+      ...conflict.mine,
+      id,
       updatedAt: at,
     });
   } else {

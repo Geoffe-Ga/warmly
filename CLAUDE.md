@@ -23,8 +23,8 @@ it and no real provider is connected. A sync engine sends the outbox
 and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Collections and manual conversation cards can be made, edited, reordered,
 printed, presented and deleted; they are encrypted records that sync like
 journal entries. Reflect has its landing and session screens, answered by
-the stand-in provider outside production, with sessions held in memory
-only. Other routes render accessible placeholders.
+the stand-in provider outside production; sessions are encrypted records
+that sync, can be finished into a read-only state and can be deleted. Other routes render accessible placeholders.
 
 ---
 
@@ -317,7 +317,7 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   them only through `src/domain/cards/collections.ts` and `cards.ts`. A
   collection and each card are separate records (kinds `card-collection`
   and `conversation-card`, envelope types 2 and 3: never reuse a type
-  number). A card never holds text copied from a journal entry, only
+  number; 4 is a Reflect session). A card never holds text copied from a journal entry, only
   references (PRD DEP-004). A collection's name and a card's text never go
   in a URL, the tab title or drag data.
 - A collection's cards are shown by `orderCards`: the cards its list names,
@@ -367,14 +367,24 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   entries, never from stored records themselves and never from a draft. An
   answer is shown with `CitedAnswer`, which shows answer text as text and
   reads cited words from the entry as it is now, and only if its content
-  hash still matches. Sessions are in memory for now (`services.reflect`)
-  and are dropped by `dropSecrets`. An answer records every entry that
-  was sent for it, with its hash then (`ReflectionAnswer.sources`), cited
-  or not. **Not built yet (issue #51):** deleting a reflection when one
-  of those entries is edited or deleted (invariant 6). Until then a
-  reflection whose entry changed stays listed and shows none of that
-  entry's words. No real provider is connected, so no real reflection can
-  exist yet; do not connect one (#44, #45) before #51 has landed.
+  hash still matches. An answer records every entry that was sent for
+  it, with its hash then (`ReflectionAnswer.sources`), cited or not. **Not
+  built yet (issue #51):** deleting a reflection when one of those entries
+  is edited or deleted (invariant 6). Until then a reflection whose entry
+  changed stays listed and shows none of that entry's words. No real
+  provider is connected, so no real reflection can exist yet; do not
+  connect one (#44, #45) before #51 has landed.
+- A Reflect session and all its questions and answers are one private
+  record (kind `reflect-session`, envelope type 4), changed only through
+  `ReflectSessions` (`src/domain/reflect/sessions.ts`), reached as
+  `services.reflect`. It is `active` until the person presses Finish
+  Reflection: never finish one for any other reason (leaving, locking,
+  time), never make a finished one active again, and never call AI or
+  write a summary on finishing (PRD RF-007). An answer that has arrived is
+  never dropped: if it cannot be stored it stays on screen with a way to
+  save it, and if its session was finished elsewhere it is saved as a new
+  one. A session changed in two places is settled by the person like a
+  card (`src/sync/card-conflicts.ts`).
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

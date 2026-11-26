@@ -11,6 +11,7 @@ import {
   type CardCollection,
   type ConversationCard,
 } from "../../../src/domain/cards/types";
+import type { ReflectSession } from "../../../src/domain/reflect/types";
 import {
   ConflictChangedError,
   type RecordConflict,
@@ -430,5 +431,91 @@ describe("a version this app cannot read", () => {
     expect(region.getByText(/newer version of Warmly/)).toBeTruthy();
     expect(region.queryAllByRole("button")).toEqual([]);
     expect(await sundayTexts(services)).toHaveLength(3);
+  });
+});
+
+describe("a reflection changed in two places", () => {
+  const SESSION: ReflectSession = {
+    id: "5eed0000-0000-4000-8000-00000000f001",
+    status: "active",
+    messages: [
+      {
+        id: "q1",
+        role: "question",
+        text: "What has gone well?",
+        at: "2026-11-20T09:00:00.000Z",
+      },
+      {
+        id: "a1",
+        role: "answer",
+        at: "2026-11-20T09:00:00.000Z",
+        answer: {
+          markdown: "Plenty.",
+          citations: [],
+          sources: [],
+          coverage: {
+            includedEntryIds: [],
+            omittedEntryCount: 0,
+            truncated: false,
+          },
+        },
+      },
+    ],
+    createdAt: "2026-11-20T09:00:00.000Z",
+    updatedAt: "2026-11-20T09:00:00.000Z",
+  };
+  const THEIR_SESSION: ReflectSession = {
+    ...SESSION,
+    status: "finished",
+    messages: [
+      ...SESSION.messages,
+      {
+        id: "q2",
+        role: "question",
+        text: "And then?",
+        at: "2026-11-21T09:00:00.000Z",
+      },
+    ],
+  };
+
+  it("shows each version by its first question and how much it holds, and keeps the one chosen", async () => {
+    const services = await seeded();
+    await services.records.put("reflect-session", SESSION);
+    services.records.park(SESSION.id, THEIR_SESSION, 2, "reflect-session");
+    await open(services);
+
+    const region = within(
+      await screen.findByRole("region", { name: "A reflection" }),
+    );
+    expect(
+      region.getByText(/added to, or finished, here and on another device/),
+    ).toBeTruthy();
+    expect(region.getAllByText("What has gone well?")).toHaveLength(2);
+    expect(region.getByText("1 question")).toBeTruthy();
+    expect(region.getByText("2 questions, finished")).toBeTruthy();
+
+    await press("Keep the other version");
+
+    await screen.findByText(
+      "The other device's version of the reflection was kept.",
+    );
+    expect((await services.reflect.get(SESSION.id))?.status).toBe("finished");
+  });
+
+  it("one deleted elsewhere can be kept as a new reflection", async () => {
+    const services = await seeded();
+    await services.records.put("reflect-session", SESSION);
+    services.records.park(SESSION.id, undefined, 2, "reflect-session");
+    await open(services);
+    expect(
+      (await screen.findByRole("region", { name: "A reflection" })).textContent,
+    ).toContain("with all of its questions and answers");
+
+    await press("Keep mine as a new reflection");
+
+    await screen.findByText("Your version was kept as a new reflection.");
+    const [kept] = await services.reflect.list();
+    expect(kept?.id).not.toBe(SESSION.id);
+    expect(kept?.messages).toHaveLength(2);
   });
 });

@@ -65,6 +65,9 @@ function SessionList(props: {
             >
               Session from {DAY.format(new Date(session.createdAt))}
               <span class="action__detail">{firstQuestion(session)}</span>
+              <span class="action__detail">
+                {session.status === "finished" ? "Finished" : "Open"}
+              </span>
             </Link>
           </li>
         ))}

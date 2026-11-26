@@ -4,7 +4,7 @@
  */
 import { cleanup, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FakeProvider } from "../../../src/ai/fake-provider";
 import { AiGateway } from "../../../src/ai/gateway";
@@ -16,12 +16,26 @@ import {
   MAX_QUESTION,
   reflectRequest,
 } from "../../../src/domain/reflect/request";
-import { MemoryReflectSessions } from "../../../src/domain/reflect/sessions";
-import { firstQuestion } from "../../../src/domain/reflect/types";
-import { SOURCE_CHANGED } from "../../../src/ui/components/CitedAnswer";
 import {
+  SOURCE_CHANGED,
+  SOURCE_GONE,
+} from "../../../src/ui/components/CitedAnswer";
+import {
+  RecordReflectSessions,
+  SessionFinishedError,
+} from "../../../src/domain/reflect/sessions";
+import {
+  firstQuestion,
+  isReflectSession,
+} from "../../../src/domain/reflect/types";
+import { MemoryRecordStore } from "../../../src/storage/record-store";
+import {
+  ANSWER_NOT_SAVED,
+  FINISHED,
+  FINISH_EXPLAINED,
   NOTHING_TO_ASK_ABOUT,
   QUESTION_NEEDED,
+  SAVED_ELSEWHERE,
 } from "../../../src/ui/screens/reflect/Session";
 import {
   heading,
@@ -182,7 +196,7 @@ describe("the Reflect landing page (RF-001, RF-002)", () => {
 
     const link = await screen.findByRole("link", { name: /Session from/ });
     expect(link.textContent).toBe(
-      "Session from 20 November 2026What has gone well?",
+      "Session from 20 November 2026What has gone well?Open",
     );
   });
 });
@@ -424,6 +438,46 @@ describe("a reflection whose entry has changed (DEP-003; engine in #51)", () => 
   });
 });
 
+describe("a saved reflection while the journal is still loading", () => {
+  it("shows no answer, and never says an entry is gone, until the journal has loaded", async () => {
+    const { services } = await setUp();
+    await renderApp(NEW, services);
+    await askAndSend("What has gone well?");
+    await screen.findByRole("heading", { name: "Answer" });
+    const [stored] = await services.reflect.list();
+    cleanup();
+    // The journal takes its time; everything else answers at once.
+    const list = services.records.list.bind(services.records);
+    let open: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    vi.spyOn(services.records, "list").mockImplementation(async (kind) => {
+      if (kind === "journal-entry") {
+        await held;
+      }
+      return list(kind);
+    });
+
+    await renderApp(
+      pathFor("reflect-session", { id: stored?.id ?? "" }),
+      services,
+    );
+    await screen.findByText("Getting your reflection.");
+
+    expect(screen.queryByRole("heading", { name: "Answer" })).toBeNull();
+    expect(screen.queryByText(SOURCE_GONE)).toBeNull();
+
+    open();
+    const answer = (
+      await screen.findByRole("heading", { name: "Answer" })
+    ).closest(".card") as HTMLElement;
+    expect(answer.textContent).toContain("We cooked together 1.");
+    expect(screen.queryByText(SOURCE_GONE)).toBeNull();
+    expect(screen.queryByText("Getting your reflection.")).toBeNull();
+  });
+});
+
 describe("a saved reflection (RF-001, RF-006)", () => {
   it("says so when it is not here, and offers the way back", async () => {
     const { services, provider } = await setUp();
@@ -438,7 +492,7 @@ describe("a saved reflection (RF-001, RF-006)", () => {
     expect(heading().textContent).toBe("Reflect");
   });
 
-  it("is forgotten when the app locks, with everything else decrypted", async () => {
+  it("is dropped from memory when the app locks, with everything else decrypted", async () => {
     const { services } = await setUp();
     await renderApp(NEW, services);
     await askAndSend("What has gone well?");
@@ -504,7 +558,7 @@ describe("the request for a question (RF-003, RF-004)", () => {
   });
 });
 
-describe("sessions held in memory (RF-006)", () => {
+describe("sessions kept as private records (RF-006)", () => {
   const ANSWER = {
     markdown: "Synthetic.",
     citations: [],
@@ -513,7 +567,7 @@ describe("sessions held in memory (RF-006)", () => {
   };
 
   it("lists newest first, finds by ID, and tells listeners of changes", async () => {
-    const sessions = new MemoryReflectSessions();
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
     let told = 0;
     const stop = sessions.subscribe(() => {
       told += 1;
@@ -540,7 +594,7 @@ describe("sessions held in memory (RF-006)", () => {
   });
 
   it("adds a question and its answer to an active session, and to no other", async () => {
-    const sessions = new MemoryReflectSessions();
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
     const made = await sessions.start(
       { question: "First?", answer: ANSWER },
       new Date("2026-11-01T09:00:00.000Z"),
@@ -577,13 +631,677 @@ describe("sessions held in memory (RF-006)", () => {
       }),
     ).toBe("");
   });
+});
 
-  it("forgets everything on lock", async () => {
-    const sessions = new MemoryReflectSessions();
-    await sessions.start({ question: "First?", answer: ANSWER });
+const SAVED_ANSWER = {
+  markdown: "Synthetic saved answer.",
+  citations: [],
+  sources: [],
+  coverage: { includedEntryIds: [], omittedEntryCount: 0, truncated: false },
+};
 
-    sessions.lock();
+describe("storing the same exchange twice (AI-014)", () => {
+  const exchange = {
+    id: "00000000-0000-4000-8000-0000000000f1",
+    question: "Why?",
+    answer: {
+      markdown: "Because.",
+      citations: [],
+      sources: [],
+      coverage: {
+        includedEntryIds: [],
+        omittedEntryCount: 0,
+        truncated: false,
+      },
+    },
+  };
+
+  it("starts one session, however many times it is started", async () => {
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
+
+    const first = await sessions.start(exchange);
+    const again = await sessions.start(exchange);
+
+    expect(again).toEqual(first);
+    expect(first.id).toBe(exchange.id);
+    expect(await sessions.list()).toHaveLength(1);
+    expect(first.messages.map((each) => each.id)).toEqual([
+      exchange.id,
+      `${exchange.id}-answer`,
+    ]);
+  });
+
+  it("is added to a session once, however many times it is added", async () => {
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
+    const session = await sessions.start({ ...exchange, id: "first" });
+
+    const added = await sessions.add(session.id, exchange);
+    const again = await sessions.add(session.id, exchange);
+
+    expect(again).toEqual(added);
+    expect(again?.messages).toHaveLength(4);
+  });
+
+  it("adding it again to a session that has since been finished is not an error: it is there", async () => {
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
+    const session = await sessions.start({ ...exchange, id: "first" });
+    await sessions.add(session.id, exchange);
+    await sessions.finish(session.id);
+
+    const again = await sessions.add(session.id, exchange);
+
+    expect(again?.status).toBe("finished");
+    expect(again?.messages).toHaveLength(4);
+  });
+
+  it("an exchange with no ID is a new one each time", async () => {
+    const sessions = new RecordReflectSessions(new MemoryRecordStore());
+    const plain = { question: exchange.question, answer: exchange.answer };
+
+    await sessions.start(plain);
+    await sessions.start(plain);
+
+    expect(await sessions.list()).toHaveLength(2);
+  });
+});
+
+describe("the life of a session (RF-007, RF-008, AC-08)", () => {
+  async function made() {
+    const records = new MemoryRecordStore();
+    const sessions = new RecordReflectSessions(records);
+    const session = await sessions.start(
+      { question: "First?", answer: SAVED_ANSWER },
+      new Date("2026-11-01T09:00:00.000Z"),
+    );
+    return { records, sessions, session };
+  }
+
+  it("starts active and is stored as one record holding every turn", async () => {
+    const { records, session } = await made();
+
+    expect(session.status).toBe("active");
+    expect(await records.list("reflect-session")).toEqual([session]);
+    expect(isReflectSession(session)).toBe(true);
+  });
+
+  it("a finished session is read-only and finishing adds nothing to it (RF-007, AC-08)", async () => {
+    const { sessions, session } = await made();
+
+    const finished = await sessions.finish(
+      session.id,
+      new Date("2026-11-02T09:00:00.000Z"),
+    );
+
+    expect(finished).toEqual({
+      ...session,
+      status: "finished",
+      updatedAt: "2026-11-02T09:00:00.000Z",
+    });
+    await expect(
+      sessions.add(session.id, { question: "One more?", answer: SAVED_ANSWER }),
+    ).rejects.toThrow(SessionFinishedError);
+    expect((await sessions.get(session.id))?.messages).toHaveLength(2);
+  });
+
+  it("there is no way back from finished: finishing again changes nothing", async () => {
+    const { records, sessions, session } = await made();
+    const first = await sessions.finish(
+      session.id,
+      new Date("2026-11-02T09:00:00.000Z"),
+    );
+    let writes = 0;
+    const put = records.put.bind(records);
+    records.put = (kind, record) => {
+      writes += 1;
+      return put(kind, record);
+    };
+
+    const again = await sessions.finish(
+      session.id,
+      new Date("2026-11-03T09:00:00.000Z"),
+    );
+
+    expect(again).toEqual(first);
+    expect(writes).toBe(0);
+    // Nothing in the interface makes a session active again.
+    expect(
+      Object.getOwnPropertyNames(RecordReflectSessions.prototype).sort(),
+    ).toEqual([
+      "add",
+      "constructor",
+      "finish",
+      "get",
+      "list",
+      "remove",
+      "start",
+      "subscribe",
+    ]);
+  });
+
+  it("finishing or removing a session that is not here does nothing", async () => {
+    const { sessions } = await made();
+
+    expect(await sessions.finish("nope")).toBeUndefined();
+    expect(await sessions.remove("nope")).toBe(false);
+    expect(await sessions.list()).toHaveLength(1);
+  });
+
+  it("removes a session and everything in it with one deletion", async () => {
+    const { records, sessions, session } = await made();
+    await sessions.add(session.id, { question: "More?", answer: SAVED_ANSWER });
+
+    expect(await sessions.remove(session.id)).toBe(true);
 
     expect(await sessions.list()).toEqual([]);
+    expect(await records.list("reflect-session")).toEqual([]);
+  });
+
+  it("a session left for 90 days is still active and can be added to (RF-007)", async () => {
+    const { sessions, session } = await made();
+    const later = new Date("2026-11-01T09:00:00.000Z");
+    later.setUTCDate(later.getUTCDate() + 90);
+
+    const added = await sessions.add(
+      session.id,
+      { question: "Still here?", answer: SAVED_ANSWER },
+      later,
+    );
+
+    expect(added?.status).toBe("active");
+    expect(added?.messages).toHaveLength(4);
+    expect(added?.updatedAt).toBe("2027-01-30T09:00:00.000Z");
+  });
+
+  it.each([
+    ["nothing", undefined],
+    ["a list", []],
+    [
+      "no ID",
+      { status: "active", messages: [], createdAt: "a", updatedAt: "b" },
+    ],
+    [
+      "an unknown status",
+      {
+        id: "s",
+        status: "paused",
+        messages: [],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "messages that are not a list",
+      {
+        id: "s",
+        status: "active",
+        messages: "x",
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "a turn with an unknown role",
+      {
+        id: "s",
+        status: "active",
+        messages: [{ id: "m", role: "system", at: "t", text: "x" }],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "a question with no text",
+      {
+        id: "s",
+        status: "active",
+        messages: [{ id: "m", role: "question", at: "t" }],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "an answer with no coverage",
+      {
+        id: "s",
+        status: "active",
+        messages: [
+          {
+            id: "m",
+            role: "answer",
+            at: "t",
+            answer: { markdown: "x", citations: [] },
+          },
+        ],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "an answer that does not say which entries it was built from",
+      {
+        id: "s",
+        status: "active",
+        messages: [
+          {
+            id: "m",
+            role: "answer",
+            at: "t",
+            answer: {
+              markdown: "x",
+              citations: [],
+              coverage: SAVED_ANSWER.coverage,
+            },
+          },
+        ],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "a sent entry with no hash",
+      {
+        id: "s",
+        status: "active",
+        messages: [
+          {
+            id: "m",
+            role: "answer",
+            at: "t",
+            answer: { ...SAVED_ANSWER, sources: [{ entryId: "e" }] },
+          },
+        ],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "a citation holding journal text instead of a reference",
+      {
+        id: "s",
+        status: "active",
+        messages: [
+          {
+            id: "m",
+            role: "answer",
+            at: "t",
+            answer: {
+              ...SAVED_ANSWER,
+              citations: [{ claimId: "c1", evidence: [{ quote: "words" }] }],
+            },
+          },
+        ],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+    [
+      "a turn with no time",
+      {
+        id: "s",
+        status: "active",
+        messages: [{ id: "m", role: "question", text: "x" }],
+        createdAt: "a",
+        updatedAt: "b",
+      },
+    ],
+  ])("refuses a stored session with %s", (_name, value) => {
+    expect(isReflectSession(value)).toBe(false);
+  });
+
+  it("accepts a stored session whose answer cites the journal by reference", () => {
+    expect(
+      isReflectSession({
+        id: "s",
+        status: "finished",
+        messages: [
+          { id: "q", role: "question", text: "Why?", at: "t" },
+          {
+            id: "a",
+            role: "answer",
+            at: "t",
+            answer: {
+              markdown: "Because. [c1]",
+              citations: [
+                {
+                  claimId: "c1",
+                  evidence: [
+                    {
+                      entryId: "e",
+                      responseKey: "good",
+                      start: 0,
+                      end: 4,
+                      sourceHash: "h",
+                    },
+                  ],
+                },
+              ],
+              sources: [{ entryId: "e", sourceHash: "h" }],
+              coverage: {
+                includedEntryIds: ["e"],
+                omittedEntryCount: 2,
+                truncated: true,
+              },
+            },
+          },
+        ],
+        createdAt: "a",
+        updatedAt: "b",
+      }),
+    ).toBe(true);
+  });
+});
+
+describe("finishing and deleting on the session screen (RF-007, RF-008)", () => {
+  async function saved(): Promise<{
+    services: TestServices;
+    provider: FakeProvider;
+    id: string;
+  }> {
+    const made = await setUp();
+    const session = await made.services.reflect.start({
+      question: "What has gone well?",
+      answer: SAVED_ANSWER,
+    });
+    return { ...made, id: session.id };
+  }
+
+  it("leaving a reflection and coming back does not finish it", async () => {
+    const { services, id } = await saved();
+    await renderApp(pathFor("reflect-session", { id }), services);
+    const user = userEvent.setup();
+    await screen.findByRole("heading", { name: "Ask more" });
+
+    await user.click(screen.getByRole("link", { name: "Back to Reflect" }));
+    await user.click(await screen.findByRole("link", { name: /Session from/ }));
+
+    await screen.findByRole("heading", { name: "Ask more" });
+    expect((await services.reflect.get(id))?.status).toBe("active");
+  });
+
+  it("says Open or Finished in the list", async () => {
+    const { services, id } = await saved();
+    await renderApp("/reflect", services);
+    expect(
+      (await screen.findByRole("link", { name: /Session from/ })).textContent,
+    ).toMatch(/Open$/);
+
+    await services.reflect.finish(id);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("link", { name: /Session from/ }).textContent,
+      ).toMatch(/Finished$/);
+    });
+  });
+
+  it("asks before finishing, says what it means, and cancelling changes nothing", async () => {
+    const { services, id } = await saved();
+    await renderApp(pathFor("reflect-session", { id }), services);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Finish Reflection" }),
+    );
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toContain(FINISH_EXPLAINED);
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect((await services.reflect.get(id))?.status).toBe("active");
+    expect(screen.getByRole("heading", { name: "Ask more" })).toBeTruthy();
+  });
+
+  it("finishing makes it read-only, says why, and calls no AI", async () => {
+    const { services, provider, id } = await saved();
+    await renderApp(pathFor("reflect-session", { id }), services);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Finish Reflection" }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Finish Reflection",
+      }),
+    );
+
+    await screen.findByText(FINISHED);
+    expect(screen.queryByLabelText(BOX)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Ask" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Finish Reflection" }),
+    ).toBeNull();
+    // Still readable, and still deletable.
+    expect(screen.getByText("Synthetic saved answer.")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Delete this reflection" }),
+    ).toBeTruthy();
+    expect(provider.calls).toEqual([]);
+    const stored = await services.reflect.get(id);
+    expect(stored?.status).toBe("finished");
+    expect(stored?.messages).toHaveLength(2);
+  });
+
+  it("deletes for good only after a confirmation, and leaves the journal alone", async () => {
+    const { services, provider, id } = await saved();
+    await renderApp(pathFor("reflect-session", { id }), services);
+    const user = userEvent.setup();
+
+    await user.click(
+      await screen.findByRole("button", { name: "Delete this reflection" }),
+    );
+    const dialog = screen.getByRole("alertdialog");
+    expect(dialog.textContent).toContain("Your journal entries are not.");
+    expect(dialog.textContent).toContain("There is no trash and no undo.");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(await services.reflect.get(id)).toBeDefined();
+
+    await user.click(
+      screen.getByRole("button", { name: "Delete this reflection" }),
+    );
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Delete reflection",
+      }),
+    );
+
+    await screen.findByText(
+      "The reflection has been removed from this device.",
+    );
+    await waitFor(() => {
+      expect(document.activeElement).toBe(heading());
+    });
+    expect(screen.queryByText(/isn't on this device/)).toBeNull();
+    expect(await services.reflect.list()).toEqual([]);
+    expect(await services.records.list("journal-entry")).toHaveLength(3);
+    expect(provider.calls).toEqual([]);
+  });
+
+  it("says so if finishing cannot be saved", async () => {
+    const { services, id } = await saved();
+    await renderApp(pathFor("reflect-session", { id }), services);
+    const user = userEvent.setup();
+    await screen.findByRole("button", { name: "Finish Reflection" });
+    services.records.put = () => Promise.reject(new Error("synthetic CANARY"));
+
+    await user.click(screen.getByRole("button", { name: "Finish Reflection" }));
+    await user.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Finish Reflection",
+      }),
+    );
+
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "Warmly couldn't save that.",
+    );
+    expect(document.body.textContent).not.toContain("CANARY");
+    expect((await services.reflect.get(id))?.status).toBe("active");
+  });
+});
+
+describe("an answer that has arrived is never lost (AI-014)", () => {
+  it("is kept on screen with a way to save it when storing fails, and no second request is made", async () => {
+    const { services, provider } = await setUp();
+    await renderApp(NEW, services);
+    const put = services.records.put.bind(services.records);
+    let failing = true;
+    services.records.put = (kind, record) =>
+      failing && kind === "reflect-session"
+        ? Promise.reject(new Error("synthetic CANARY"))
+        : put(kind, record);
+
+    await askAndSend("What has gone well?");
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(ANSWER_NOT_SAVED);
+    expect(document.body.textContent).not.toContain("CANARY");
+    // The answer itself is on screen, and the question is still in the box.
+    expect(screen.getByText(/A test answer about 2 entries\./)).toBeTruthy();
+    expect(screen.getByLabelText(BOX)).toHaveProperty(
+      "value",
+      "What has gone well?",
+    );
+    expect(await services.reflect.list()).toEqual([]);
+
+    failing = false;
+    await userEvent
+      .setup()
+      .click(within(alert).getByRole("button", { name: "Save the answer" }));
+
+    await screen.findByRole("heading", { name: "You asked" });
+    expect(await services.reflect.list()).toHaveLength(1);
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("is stored once even if the first try was written and then reported as failed", async () => {
+    const { services, provider } = await setUp();
+    await renderApp(NEW, services);
+    const put = services.records.put.bind(services.records);
+    let lying = true;
+    services.records.put = async (kind, record) => {
+      await put(kind, record);
+      if (lying && kind === "reflect-session") {
+        lying = false;
+        throw new Error("synthetic failure after the write");
+      }
+    };
+
+    await askAndSend("What has gone well?");
+    const alert = await screen.findByRole("alert");
+    expect(await services.reflect.list()).toHaveLength(1);
+
+    await userEvent
+      .setup()
+      .click(within(alert).getByRole("button", { name: "Save the answer" }));
+    await screen.findByRole("heading", { name: "You asked" });
+
+    // One reflection with one question and one answer: not two of either.
+    const stored = await services.reflect.list();
+    expect(stored).toHaveLength(1);
+    expect(stored[0]?.messages).toHaveLength(2);
+    expect(provider.calls).toHaveLength(1);
+  });
+
+  it("is stored before the app locks, if it was still waiting to be saved", async () => {
+    const { services } = await setUp();
+    await renderApp(NEW, services);
+    const put = services.records.put.bind(services.records);
+    let failing = true;
+    services.records.put = (kind, record) =>
+      failing && kind === "reflect-session"
+        ? Promise.reject(new Error("synthetic"))
+        : put(kind, record);
+    await askAndSend("What has gone well?");
+    await screen.findByRole("alert");
+    expect(await services.reflect.list()).toEqual([]);
+
+    // Storage works again by the time the person locks.
+    failing = false;
+    expect(await services.lockHooks.flush()).toBe(0);
+
+    const stored = await services.reflect.list();
+    expect(stored).toHaveLength(1);
+    expect(stored[0] === undefined ? "" : firstQuestion(stored[0])).toBe(
+      "What has gone well?",
+    );
+  });
+
+  it("locking with nothing waiting stores nothing", async () => {
+    const { services } = await setUp();
+    await renderApp(NEW, services);
+    await screen.findByLabelText(BOX);
+
+    expect(await services.lockHooks.flush()).toBe(0);
+
+    expect(await services.reflect.list()).toEqual([]);
+  });
+
+  it("is saved as a new reflection if its own was finished on another device meanwhile", async () => {
+    const { services } = await setUp();
+    const session = await services.reflect.start({
+      question: "What has gone well?",
+      answer: SAVED_ANSWER,
+    });
+    await renderApp(pathFor("reflect-session", { id: session.id }), services);
+    await screen.findByRole("heading", { name: "Ask more" });
+    // As sync would, between the screen opening and the answer arriving:
+    // the other device finishes this reflection.
+    const add = services.reflect.add.bind(services.reflect);
+    services.reflect.add = async (...args) => {
+      await services.reflect.finish(session.id);
+      return add(...args);
+    };
+
+    await askAndSend("And what was hard?");
+
+    await waitFor(async () => {
+      expect(await services.reflect.list()).toHaveLength(2);
+    });
+    const newest = (await services.reflect.list()).find(
+      (each) => each.id !== session.id,
+    );
+    expect(newest === undefined ? "" : firstQuestion(newest)).toBe(
+      "And what was hard?",
+    );
+    // The finished one is untouched, and the answer has its own address.
+    expect((await services.reflect.get(session.id))?.messages).toHaveLength(2);
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(
+        pathFor("reflect-session", { id: newest?.id ?? "" }),
+      );
+    });
+    expect(await screen.findByText(SAVED_ELSEWHERE)).toBeTruthy();
+  });
+
+  it("is saved as a new reflection if its own was deleted on another device meanwhile, and the note is true of that too", async () => {
+    const { services } = await setUp();
+    const session = await services.reflect.start({
+      question: "What has gone well?",
+      answer: SAVED_ANSWER,
+    });
+    await renderApp(pathFor("reflect-session", { id: session.id }), services);
+    await screen.findByRole("heading", { name: "Ask more" });
+    // As sync would: the other device deletes this reflection.
+    const add = services.reflect.add.bind(services.reflect);
+    services.reflect.add = async (...args) => {
+      await services.reflect.remove(session.id);
+      return add(...args);
+    };
+
+    await askAndSend("And what was hard?");
+
+    await waitFor(async () => {
+      const [only] = await services.reflect.list();
+      expect(only?.id).toBeDefined();
+      expect(only?.id).not.toBe(session.id);
+    });
+    const [kept] = await services.reflect.list();
+    expect(await services.reflect.list()).toHaveLength(1);
+    expect(kept === undefined ? "" : firstQuestion(kept)).toBe(
+      "And what was hard?",
+    );
+    // The deleted one stays deleted.
+    expect(await services.reflect.get(session.id)).toBeUndefined();
+    expect(await screen.findByText(SAVED_ELSEWHERE)).toBeTruthy();
+    expect(SAVED_ELSEWHERE).toContain("finished or deleted on another device");
   });
 });
