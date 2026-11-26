@@ -13,7 +13,7 @@ from psycopg import sql
 from psycopg.rows import TupleRow
 
 from tests.api.cases import BYTES32, commitment
-from tests.auth.devices import ENROLLMENT_VERIFIER, TestDevice
+from tests.auth.devices import ENROLLMENT_KEY, TestDevice
 from tests.auth.tokens import Signer
 
 JSON = {"Content-Type": "application/json"}
@@ -185,7 +185,7 @@ def _account(client: TestClient, signer: Signer, name: str) -> Account:
             "expected_version": 0,
             "format_version": 1,
             "wrapped_key": wrapped_key,
-            "device_enrollment_verifier": ENROLLMENT_VERIFIER,
+            "device_enrollment_key": ENROLLMENT_KEY,
         },
     )
     device = TestDevice(device_id=str(uuid4()))

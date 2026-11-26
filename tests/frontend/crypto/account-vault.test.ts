@@ -14,7 +14,7 @@ import {
 import { fromBase64, toBase64 } from "../../../src/crypto/encoding";
 import { VaultError } from "../../../src/crypto/key-vault";
 import { fingerprint, type RootKey } from "../../../src/crypto/root-key";
-import { deviceEnrollmentVerifier } from "../../../src/devices/signing";
+import { deviceEnrollmentKey } from "../../../src/devices/signing";
 import { FakeAuthClient } from "../../../src/testing/fake-auth-client";
 import {
   FAKE_RECOVERY_STORAGE_KEY,
@@ -242,7 +242,7 @@ describe("recovering on a new device (DEV-001 path B)", () => {
       expectedVersion: 0,
       envelope: (stolen as StoredRecoveryEnvelope).envelope,
       formatVersion: 1,
-      enrollmentVerifier: new Uint8Array(32),
+      enrollmentKey: new Uint8Array(32),
     });
 
     expect(await code(device().unlockWithRecoveryKey(key))).toBe(
@@ -675,8 +675,8 @@ describe("what the vault gives device registration (DEV-002, ADR-0005)", () => {
     const root = vault.rootKey() as RootKey;
     expect(writes).toHaveLength(1);
     expect(writes[0]?.expectedVersion).toBe(0);
-    expect(toBase64(writes[0]?.enrollmentVerifier ?? new Uint8Array())).toBe(
-      toBase64(await deviceEnrollmentVerifier(root)),
+    expect(toBase64(writes[0]?.enrollmentKey ?? new Uint8Array())).toBe(
+      toBase64(await deviceEnrollmentKey(root)),
     );
   });
 
@@ -687,11 +687,9 @@ describe("what the vault gives device registration (DEV-002, ADR-0005)", () => {
     await vault.createAccountKeys();
     await vault.confirmRecoveryKey();
 
-    const verifier = toBase64(
-      writes[0]?.enrollmentVerifier ?? new Uint8Array(),
-    );
+    const verifier = toBase64(writes[0]?.enrollmentKey ?? new Uint8Array());
 
-    expect(writes[0]?.enrollmentVerifier).toHaveLength(32);
+    expect(writes[0]?.enrollmentKey).toHaveLength(32);
     expect(toBase64(writes[0]?.envelope ?? new Uint8Array())).not.toContain(
       verifier.slice(0, 16),
     );

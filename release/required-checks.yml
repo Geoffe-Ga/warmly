@@ -106,6 +106,7 @@ checks:
       - tests/fixtures/hpke
       - tests/fixtures/signing/v1.json
       - tests/fixtures/pairing/v1.json
+      - tests/fixtures/enrollment
   - id: indexeddb-migration
     title: Every released on-device database still opens
     job: Frontend Quality (TypeScript)

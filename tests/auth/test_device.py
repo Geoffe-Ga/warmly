@@ -1,20 +1,25 @@
 """The pieces of device verification, tested directly (ADR-0005, D-06)."""
 
 import base64
+import hashlib
+import hmac
 from datetime import datetime
 from uuid import UUID
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from starlette.requests import Request
 
 from tests.auth.devices import (
     DEVICE_ID,
-    ENROLLMENT_VERIFIER,
+    ENROLLMENT_KEY,
     TestDevice,
     enrollment_proof,
 )
 from tests.auth.tokens import OWNER_ID
 from warmly.auth.device import (
+    ENROLLMENT_PROOF_VERSION,
     MAX_CLOCK_SKEW_SECONDS,
     DeviceAuthorizationError,
     DeviceVerifier,
@@ -242,23 +247,66 @@ async def test_a_signature_is_checked_against_the_message_and_the_key() -> None:
     assert not signature_is_valid(device.public_key, signed.message(), "AAAA")
 
 
-async def test_the_enrollment_proof_binds_the_verifier_the_device_and_the_key() -> None:
+def _raw_public(private: Ed25519PrivateKey) -> str:
+    """The public half of an enrollment key, as an account stores it."""
+    raw = private.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+    return base64.b64encode(raw).decode()
+
+
+async def test_the_enrollment_proof_binds_the_account_the_device_and_the_key() -> None:
     """Change any one of them and the proof no longer matches."""
     key = TestDevice().public_key
     device_id = UUID(DEVICE_ID)
     proof = enrollment_proof(DEVICE_ID, key)
-    other_verifier = base64.b64encode(b"\x07" * 32).decode()
+    other_account = _raw_public(Ed25519PrivateKey.generate())
 
-    assert enrollment_proof_is_valid(ENROLLMENT_VERIFIER, device_id, key, proof)
-    assert not enrollment_proof_is_valid(other_verifier, device_id, key, proof)
+    assert enrollment_proof_is_valid(ENROLLMENT_KEY, device_id, key, proof)
+    assert not enrollment_proof_is_valid(other_account, device_id, key, proof)
     assert not enrollment_proof_is_valid(
-        ENROLLMENT_VERIFIER, UUID(int=device_id.int + 1), key, proof
+        ENROLLMENT_KEY, UUID(int=device_id.int + 1), key, proof
     )
     assert not enrollment_proof_is_valid(
-        ENROLLMENT_VERIFIER, device_id, TestDevice().public_key, proof
+        ENROLLMENT_KEY, device_id, TestDevice().public_key, proof
     )
-    assert not enrollment_proof_is_valid(ENROLLMENT_VERIFIER, device_id, key, "AAAA")
+    assert not enrollment_proof_is_valid(ENROLLMENT_KEY, device_id, key, "AAAA")
     assert not enrollment_proof_is_valid("c2hvcnQ=", device_id, key, proof)
+
+
+async def test_what_the_server_stores_cannot_make_a_proof() -> None:
+    """The stored value is a public key: nothing made from it alone passes.
+
+    The earlier design stored the HMAC key itself, so a copy of the database
+    was enough to make a proof. Each attempt below uses only what the server
+    holds (issue 84).
+    """
+    key = TestDevice().public_key
+    device_id = UUID(DEVICE_ID)
+    message = f"{ENROLLMENT_PROOF_VERSION}\n{DEVICE_ID}\n{key}".encode()
+    stored = base64.b64decode(ENROLLMENT_KEY)
+    as_hmac = hmac.new(stored, message, hashlib.sha256).digest()
+    as_private_seed = Ed25519PrivateKey.from_private_bytes(stored).sign(message)
+
+    attempts = [
+        base64.b64encode(as_hmac).decode(),
+        base64.b64encode(as_hmac + as_hmac).decode(),
+        base64.b64encode(as_private_seed).decode(),
+        base64.b64encode(stored + stored).decode(),
+        ENROLLMENT_KEY,
+    ]
+
+    for attempt in attempts:
+        assert not enrollment_proof_is_valid(ENROLLMENT_KEY, device_id, key, attempt)
+
+
+async def test_a_stored_value_that_is_not_a_key_refuses_every_proof() -> None:
+    """Bytes that are no Ed25519 point verify nothing, and do not crash."""
+    key = TestDevice().public_key
+    proof = enrollment_proof(DEVICE_ID, key)
+    not_a_point = base64.b64encode(b"\xff" * 32).decode()
+
+    assert not enrollment_proof_is_valid(not_a_point, UUID(DEVICE_ID), key, proof)
 
 
 def _request(raw_path: bytes, query: bytes) -> Request:

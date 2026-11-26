@@ -28,7 +28,7 @@ const OTHER: AuthSession = {
 };
 const ENVELOPE = new Uint8Array([1, 2, 3, 4]);
 
-const VERIFIER = new Uint8Array(32).fill(5);
+const ENROLLMENT_KEY = new Uint8Array(32).fill(5);
 
 function change(
   expectedVersion: number,
@@ -39,7 +39,7 @@ function change(
     expectedVersion,
     envelope,
     formatVersion,
-    enrollmentVerifier: VERIFIER,
+    enrollmentKey: ENROLLMENT_KEY,
   };
 }
 
@@ -102,7 +102,7 @@ describe("the recovery envelope on the Warmly API (SEC-003)", () => {
       expected_version: 0,
       format_version: 1,
       wrapped_key: "AQIDBA==",
-      device_enrollment_verifier: toBase64(VERIFIER),
+      device_enrollment_key: toBase64(ENROLLMENT_KEY),
     });
     expect(api.calls[0]?.init.headers).toMatchObject({
       "Content-Type": "application/json",

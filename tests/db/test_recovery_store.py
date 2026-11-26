@@ -12,6 +12,7 @@ import psycopg
 import pytest
 import pytest_asyncio
 
+from tests.auth.devices import ENROLLMENT_KEY
 from tests.db.conftest import BROWSER_ROLES
 from warmly.db.database import Database
 from warmly.db.recovery_store import PostgresRecoveryStore
@@ -32,7 +33,7 @@ def _request(expected: int, wrapped: str = WRAPPED_A) -> PutRecoveryEnvelopeRequ
         expected_version=expected,
         format_version=1,
         wrapped_key=wrapped,
-        device_enrollment_verifier="dmVyaWZpZXI=" if expected == 0 else None,
+        device_enrollment_key=ENROLLMENT_KEY if expected == 0 else None,
     )
 
 
@@ -250,6 +251,6 @@ async def test_an_envelope_stored_before_verifiers_existed_has_none(
         )
         conn.commit()
 
-    assert await store.enrollment_verifier(OWNER_A) is None
+    assert await store.enrollment_key(OWNER_A) is None
     await store.write(OWNER_A, _request(1, "bmV3"))
-    assert await store.enrollment_verifier(OWNER_A) is None
+    assert await store.enrollment_key(OWNER_A) is None

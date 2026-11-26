@@ -51,7 +51,7 @@ the whole product; items are added here as the work that creates them lands.
       refused when its timestamp is more than 5 minutes from the server's
       clock. Tracked in #61.
 - [ ] **No recovery envelope in the production database lacks an enrollment
-      verifier** (`device_enrollment_verifier IS NULL` returns no rows). An
+      key** (`device_enrollment_key IS NULL` returns no rows). An
       account without one can never register a device. Tracked in #61.
 
 ## Device pairing (issue #22, `docs/adr/0005-device-identity-and-pairing.md`)

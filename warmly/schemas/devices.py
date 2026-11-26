@@ -37,7 +37,8 @@ class RegisterDeviceRequest(ApiModel):
     enrollment_proof: SmallCiphertext = Field(
         description=(
             "Proof that the registering device knows the account root key: "
-            "an HMAC over the device ID and public key."
+            "an Ed25519 signature over the device ID and public key, made "
+            "with the account's enrollment key."
         )
     )
 

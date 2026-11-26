@@ -29,6 +29,13 @@ Ciphertext = Annotated[str, _base64_text(MAX_PAYLOAD_CHARS)]
 # A short opaque encrypted value, base64 encoded.
 SmallCiphertext = Annotated[str, _base64_text(MAX_SMALL_CIPHERTEXT_CHARS)]
 
+# An account's device-enrollment public key: a raw 32-byte Ed25519 key,
+# which is always exactly 44 base64 characters with one "=".
+EnrollmentPublicKey = Annotated[
+    str,
+    StringConstraints(min_length=44, max_length=44, pattern=r"^[A-Za-z0-9+/]{43}=$"),
+]
+
 # A device public key, base64 encoded.
 PublicKey = Annotated[str, _base64_text(MAX_SMALL_CIPHERTEXT_CHARS)]
 

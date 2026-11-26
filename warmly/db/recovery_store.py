@@ -20,8 +20,8 @@ _READ = """
      WHERE owner_id = %s
 """
 
-_READ_VERIFIER = """
-    SELECT device_enrollment_verifier
+_READ_ENROLLMENT_KEY = """
+    SELECT device_enrollment_key
       FROM warmly_private.recovery_envelopes
      WHERE owner_id = %s
 """
@@ -30,7 +30,7 @@ _READ_VERIFIER = """
 _CREATE = """
     INSERT INTO warmly_private.recovery_envelopes
                 (owner_id, version, format_version, wrapped_key,
-                 device_enrollment_verifier)
+                 device_enrollment_key)
          VALUES (%s, 1, %s, %s, %s)
     ON CONFLICT (owner_id) DO NOTHING
       RETURNING version, format_version, wrapped_key
@@ -121,7 +121,7 @@ class PostgresRecoveryStore:
                         owner_id,
                         request.format_version,
                         request.wrapped_key,
-                        request.device_enrollment_verifier,
+                        request.device_enrollment_key,
                     ),
                 )
             else:
@@ -136,17 +136,17 @@ class PostgresRecoveryStore:
                 )
             return _envelope(await cursor.fetchone())
 
-    async def enrollment_verifier(self, owner_id: UUID) -> str | None:
-        """Return what a new device must prove it knows.
+    async def enrollment_key(self, owner_id: UUID) -> str | None:
+        """Return the public key a new device's registration is checked against.
 
         Args:
             owner_id: The verified owner.
 
         Returns:
-            The verifier stored with the envelope, or ``None`` if the account
-            has no envelope or the envelope predates device registration.
+            The enrollment public key stored with the envelope, or ``None``
+            if the account has no envelope or its envelope has no key.
         """
         async with self._database.as_owner(owner_id) as tx:
-            cursor = await tx.execute(_READ_VERIFIER, (owner_id,))
+            cursor = await tx.execute(_READ_ENROLLMENT_KEY, (owner_id,))
             row = await cursor.fetchone()
         return None if row is None or row[0] is None else str(row[0])

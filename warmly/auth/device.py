@@ -13,7 +13,6 @@ nonce is refused.
 import base64
 import binascii
 import hashlib
-import hmac
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -24,6 +23,7 @@ from uuid import UUID
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from fastapi import Depends, Request
 
@@ -38,7 +38,7 @@ SIGNATURE_HEADER = "Warmly-Signature"
 # First line of every signed message. Changing what is signed means a new
 # version here, so an old signature can never be read under new rules.
 SIGNATURE_VERSION = "warmly-request-v1"
-ENROLLMENT_PROOF_VERSION = "warmly-device-enrollment-v1"
+ENROLLMENT_PROOF_VERSION = "warmly-device-enrollment-v2"
 
 # How far a request's timestamp may be from the server's clock, either way.
 MAX_CLOCK_SKEW_SECONDS = 300
@@ -52,6 +52,10 @@ _MAX_NONCE_CHARS = 64
 _PUBLIC_KEY_BYTES = 65
 _SIGNATURE_BYTES = 64
 _HALF = _SIGNATURE_BYTES // 2
+# The account's enrollment key is a raw Ed25519 public key, and a proof is
+# an Ed25519 signature.
+_ENROLLMENT_KEY_BYTES = 32
+_ENROLLMENT_PROOF_BYTES = 64
 
 DeviceErrorCode = Literal[
     "device.missing_signature",
@@ -206,30 +210,38 @@ def signature_is_valid(public_key: str, message: bytes, signature: str) -> bool:
 
 
 def enrollment_proof_is_valid(
-    verifier: str, device_id: UUID, public_key: str, proof: str
+    enrollment_key: str, device_id: UUID, public_key: str, proof: str
 ) -> bool:
     """Check that whoever is registering a device knows the account root key.
 
-    The proof is ``HMAC-SHA-256(verifier, version | device ID | public key)``,
-    where the verifier is derived one-way from the root key. A stolen session
-    token cannot produce it.
+    The account's enrollment key pair is derived from its root key on the
+    client. The server is given only the public half, so nothing it stores
+    can make a proof: a copy of the database plus a stolen session token is
+    still not enough to register a device (ADR-0005, issue 84).
+
+    The proof is an Ed25519 signature, by the private half, over
+    ``version | device ID | public key``.
 
     Args:
-        verifier: The account's enrollment verifier, base64.
+        enrollment_key: The account's enrollment public key, base64.
         device_id: The device being registered.
         public_key: The key it is registering.
-        proof: Base64 of the 32-byte HMAC.
+        proof: Base64 of the 64-byte signature.
 
     Returns:
-        Whether the proof matches.
+        Whether the proof is that key's signature over this registration.
     """
-    key = decode_base64(verifier, hashlib.sha256().digest_size)
-    given = decode_base64(proof, hashlib.sha256().digest_size)
+    key = decode_base64(enrollment_key, _ENROLLMENT_KEY_BYTES)
+    given = decode_base64(proof, _ENROLLMENT_PROOF_BYTES)
     if key is None or given is None:
         return False
     message = "\n".join([ENROLLMENT_PROOF_VERSION, str(device_id), public_key])
-    expected = hmac.new(key, message.encode(), hashlib.sha256).digest()
-    return hmac.compare_digest(expected, given)
+    try:
+        Ed25519PublicKey.from_public_bytes(key).verify(given, message.encode())
+    except (InvalidSignature, ValueError):
+        # ValueError: the stored bytes are not a key at all.
+        return False
+    return True
 
 
 class DeviceVerifier:

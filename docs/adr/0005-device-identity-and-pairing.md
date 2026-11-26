@@ -122,14 +122,41 @@ whole scheme. So registration (`POST /v1/devices`) needs three things:
 1. A valid session token.
 2. A signature over the request by the key being registered, which proves
    the caller holds that private key.
-3. An **enrollment proof**: `HMAC-SHA-256(verifier, "warmly-device-enrollment-v1\n" + device ID + "\n" + public key)`.
+3. An **enrollment proof**: an Ed25519 signature, by the account's
+   enrollment key, over
+   `"warmly-device-enrollment-v2\n" + device ID + "\n" + public key`.
 
-The verifier is 32 bytes derived one-way from the account root key (HKDF,
-info `warmly/device-enrollment/v1`). The client sends it once, with the first
-recovery envelope, and the server stores it beside the envelope. Only a
-device that holds the root key can compute the proof, which means a device
-that was unlocked with the recovery key or, after #22, approved by another
-device. The server learns nothing about the root key from the verifier.
+The enrollment key is an Ed25519 key pair whose private half is derived
+from the account root key: 32 bytes of HKDF output (info
+`warmly/device-enrollment/v2`) used as the Ed25519 seed. Every device that
+holds the root key can make the same key pair again, and nothing else can.
+The client sends the **public** half once, with the first recovery
+envelope, and the server stores it beside the envelope. Only a device that
+holds the root key can sign the proof, which means a device that was
+unlocked with the recovery key or approved by another device.
+
+The server holds nothing that can make a proof. A copy of the database
+plus a stolen session token is not enough to register a device (issue 84).
+The server learns nothing about the root key from the public key.
+
+**Why Ed25519, when request signatures are ECDSA P-256.** The key must be
+derived from the root key, so that any device holding the root key has it.
+WebCrypto cannot turn HKDF output into an ECDSA P-256 private key without
+arithmetic the app would have to write itself. An Ed25519 private key is
+just 32 bytes, which WebCrypto imports in the standard PKCS#8 wrapping and
+from which it works out the public key. So the derivation uses WebCrypto
+only and adds no dependency (ADR-0003). Ed25519 signatures are also
+deterministic, so both sides can be held to one fixture
+(`tests/fixtures/enrollment/v2.json`), which was made by Python's
+`cryptography` and is checked against WebCrypto in Node, Chromium and
+WebKit. The cost: a browser without Ed25519 in WebCrypto cannot add a
+device. The app tries it at start (`canSignEnrollment`) and shows the
+unsupported-browser notice if it fails.
+
+The proof was first an HMAC whose key ("verifier") the server stored.
+That value could itself make a proof. It was replaced before any real
+account existed, by a forward-only migration that drops the old column; a
+public key cannot be worked out from the old value.
 
 The app registers a device each time the journal is unlocked on a device
 that is not registered yet, and again when Manage Devices is opened, so an
@@ -141,7 +168,7 @@ interrupted registration completes itself.
 | --- | --- |
 | `GET /v1/health`, `GET /v1/ready` | Public. |
 | `GET /v1/recovery-envelope` | A new device must read the envelope before it can hold the root key, and so before it can register. What it returns is useless without the 256-bit recovery key. |
-| `PUT /v1/recovery-envelope` when creating (version 0) | No device can register before the envelope and its verifier exist. It can only succeed once per account. |
+| `PUT /v1/recovery-envelope` when creating (version 0) | No device can register before the envelope and its enrollment key exist. It can only succeed once per account. |
 | `POST /v1/devices` | Signed by the new key and carrying the enrollment proof instead. |
 | `POST /v1/enrollments`, `GET /v1/enrollments/{id}`, `POST /v1/enrollments/{id}/reveal` | A device asking to be approved has no registered key yet. Nothing these routes do can release a key: see Pairing below. |
 
@@ -163,45 +190,37 @@ on this list.
   Policy remains the control for that (see the threat model).
 - Signing proves which device sent a request. It does not prove the device
   is unlocked; that is the client's own rule (ADR-0004).
-- **An account whose envelope predates this change has no verifier**, and
-  nothing can add one: only the first write of the envelope sets it, so that
-  a session token alone can never plant a verifier on an account that
-  already has keys. Such an account gets `device.account_not_ready` and
-  cannot register a device. This is acceptable only because no deployed
+- **An account whose envelope has no enrollment key cannot register a
+  device**, and nothing can add one: only the first write of the envelope
+  sets it, so that a session token alone can never plant a key on an
+  account that already has keys. Such an account gets
+  `device.account_not_ready`. This is acceptable only because no deployed
   database exists yet: the only such rows are in developers' local
   databases, which are reset. The release checklist requires confirming
-  that no envelope in the production database lacks a verifier. If that
-  ever stopped being true, the fix would be a signed, one-time upgrade
-  designed for the purpose, not a relaxation of this rule.
-- **The enrollment verifier is a secret the server holds.** It is the HMAC
-  key for the registration proof, so someone who can read the database *and*
-  holds a valid session token for the account could register a device of
-  their own. They would still hold no key: every record stays ciphertext to
-  them, and they could not write a record the user's devices would accept as
-  decryptable. What they would gain is what a registered device can do
-  without the root key: read and submit ciphertext, and replace the recovery
-  envelope, which would stop the recovery key working. The design goal here
-  was the stolen-token case, which it meets. The stronger design is for the
-  server to hold only a public key derived from the root key and for the new
-  device to sign its registration with the matching private key, so the
-  server holds nothing that can make a proof. WebCrypto cannot derive an
-  ECDSA key from HKDF output directly, so that needs care; it is recorded
-  under "Revisit when".
+  that no envelope in the production database lacks a key. If that ever
+  stopped being true, the fix would be a signed, one-time upgrade designed
+  for the purpose, not a relaxation of this rule.
+- **The server stores only the enrollment public key.** Someone who can
+  read the database and holds a valid session token still cannot register a
+  device: the proof needs the private half, which is derived from the root
+  key and never leaves a device. What remains is the case this design does
+  not address: someone who has the root key itself (a compromised unlocked
+  device, or the recovery key) can register a device, because that is what
+  holding the root key means.
 - **Creating the first recovery envelope is unsigned.** A session token
   stolen in the short time between sign-up and the user confirming their
-  recovery key could create an envelope, and its verifier, first. The real
+  recovery key could create an envelope, and its enrollment key, first. The real
   user's own attempt would then be refused ("already set up on another
   device"), so it would be noticed at once, and nothing of theirs exists yet
   to lose.
 - Both sides are held to one committed fixture
   (`tests/fixtures/signing/v1.json`): the browser tests and the server tests
-  each check the same signed requests and enrollment proof.
+  each check the same signed requests. The enrollment proof has its own
+  fixture, `tests/fixtures/enrollment/v2.json`.
 
 ### Revisit when
 
 - Sync lands (epic 04): `last_sync_at` starts to be filled in.
-- Before real users: replace the stored HMAC verifier with a public key
-  derived from the root key (see the limit above). Tracked in #84.
 - A passkey unlock is added (#80): it does not change the device identity.
 
 ## Revocation

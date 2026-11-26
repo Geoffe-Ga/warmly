@@ -35,6 +35,7 @@ import {
 import type { SessionState } from "./session";
 import {
   UNSUPPORTED_BROWSER,
+  canSignEnrollment,
   cannotKeepWriting,
   missingFeatures,
 } from "./support";
@@ -114,8 +115,22 @@ function OfflineNotice(props: { readonly state: SessionState }): JSX.Element {
  * what Warmly is.
  */
 function UnsupportedNotice(): JSX.Element | null {
-  const unsupported = useMemo(() => cannotKeepWriting(missingFeatures()), []);
-  if (!unsupported) {
+  const missing = useMemo(() => cannotKeepWriting(missingFeatures()), []);
+  // Whether the browser can sign a device's enrollment is only found out
+  // by trying, so it arrives a moment after the first paint.
+  const [cannotSign, setCannotSign] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void canSignEnrollment().then((can) => {
+      if (current && !can) {
+        setCannotSign(true);
+      }
+    });
+    return () => {
+      current = false;
+    };
+  }, []);
+  if (!missing && !cannotSign) {
     return null;
   }
   return (

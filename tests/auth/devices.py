@@ -7,7 +7,6 @@ what the tests check.
 
 import base64
 import hashlib
-import hmac
 import secrets
 import time
 from collections.abc import Generator
@@ -17,6 +16,7 @@ from typing import Any
 import httpx2 as httpx
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
 DEVICE_ID = "d0000000-0000-4000-8000-00000000000a"
@@ -24,17 +24,24 @@ OTHER_DEVICE_ID = "d0000000-0000-4000-8000-00000000000b"
 NAME_CIPHERTEXT = "bmFtZQ=="
 # The sync protocol version a current client speaks.
 SYNC_VERSION = "1"
-# 32 synthetic bytes standing in for the value derived from a root key.
-ENROLLMENT_VERIFIER = base64.b64encode(bytes(range(32))).decode()
+# A synthetic account enrollment key pair, standing in for the one a client
+# derives from its root key. The server is given only the public half.
+ENROLLMENT_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+ENROLLMENT_KEY = base64.b64encode(
+    ENROLLMENT_PRIVATE_KEY.public_key().public_bytes(
+        serialization.Encoding.Raw, serialization.PublicFormat.Raw
+    )
+).decode()
 
 
 def enrollment_proof(
-    device_id: str, public_key: str, verifier: str = ENROLLMENT_VERIFIER
+    device_id: str,
+    public_key: str,
+    signer: Ed25519PrivateKey = ENROLLMENT_PRIVATE_KEY,
 ) -> str:
     """Compute the proof a device sends when it registers."""
-    message = f"warmly-device-enrollment-v1\n{device_id}\n{public_key}".encode()
-    digest = hmac.new(base64.b64decode(verifier), message, hashlib.sha256).digest()
-    return base64.b64encode(digest).decode()
+    message = f"warmly-device-enrollment-v2\n{device_id}\n{public_key}".encode()
+    return base64.b64encode(signer.sign(message)).decode()
 
 
 @dataclass

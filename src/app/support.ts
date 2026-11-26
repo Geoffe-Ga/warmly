@@ -71,3 +71,30 @@ export function missingFeatures(scope: unknown = globalThis): MissingFeature[] {
 export function cannotKeepWriting(missing: readonly MissingFeature[]): boolean {
   return missing.includes("encryption") || missing.includes("storage");
 }
+
+/**
+ * Whether this browser can make the signatures the app needs to add a
+ * device to an account: Ed25519, which older browsers lack (ADR-0005).
+ *
+ * This can only be found out by trying, and trying takes a moment, so it
+ * is asked separately from {@link missingFeatures}. The key it makes is
+ * thrown away.
+ *
+ * @param subtle - The WebCrypto interface to try; the page's own by
+ *   default.
+ * @returns Whether an Ed25519 key can be made here.
+ */
+export async function canSignEnrollment(
+  subtle: Pick<SubtleCrypto, "generateKey"> | undefined = globalThis.crypto
+    ?.subtle,
+): Promise<boolean> {
+  if (subtle === undefined) {
+    return false;
+  }
+  try {
+    await subtle.generateKey({ name: "Ed25519" }, false, ["sign", "verify"]);
+    return true;
+  } catch {
+    return false;
+  }
+}

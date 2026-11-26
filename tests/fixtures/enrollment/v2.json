@@ -1,0 +1,8 @@
+{
+  "proofVersion": "warmly-device-enrollment-v2",
+  "rootKey": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=",
+  "enrollmentKey": "1JTnPbfjlH/obN6ygRK0yGGSpgTLFTPJgtmOloo3NY8=",
+  "deviceId": "d0000000-0000-4000-8000-0000000000f1",
+  "devicePublicKey": "BCEDzifPBli2enWntQConlPztTI8Nmd9OuyhN6fleY7/KilF2Ug8hCJ03gXgzpJcKQg4LER4jszak2fgnWPAmLU=",
+  "proof": "epKlbaDfrzFHOfx1b7vsnkGUFS2qToXYfVA9vyeDcZ4WKDa+SHsdlrDNt1GQpJymZzBmjf+5bXIxLGFxbslzDQ=="
+}

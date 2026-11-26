@@ -16,6 +16,7 @@ from uuid import UUID
 import pytest
 
 from warmly.auth.device import (
+    ENROLLMENT_PROOF_VERSION,
     SIGNATURE_VERSION,
     SignedRequest,
     enrollment_proof_is_valid,
@@ -26,6 +27,11 @@ FIXTURE: dict[str, Any] = json.loads(
     (Path(__file__).parent.parent / "fixtures" / "signing" / "v1.json").read_text()
 )
 REQUESTS: list[dict[str, Any]] = FIXTURE["requests"]
+# Made by Python's ``cryptography`` and checked against WebCrypto by the
+# browser tests (``tests/frontend/devices/signing.test.ts``).
+ENROLLMENT: dict[str, str] = json.loads(
+    (Path(__file__).parent.parent / "fixtures" / "enrollment" / "v2.json").read_text()
+)
 
 
 def signed(request: dict[str, Any], **overrides: Any) -> SignedRequest:
@@ -88,13 +94,30 @@ def test_changing_any_signed_part_invalidates_a_browser_signature(
     )
 
 
-def test_server_accepts_a_browser_enrollment_proof() -> None:
-    """Server accepts a browser enrollment proof."""
-    enrollment = FIXTURE["enrollment"]
-
+def test_server_accepts_the_shared_enrollment_proof() -> None:
+    """The server and the browser agree on the enrollment key and proof."""
+    assert ENROLLMENT["proofVersion"] == ENROLLMENT_PROOF_VERSION
     assert enrollment_proof_is_valid(
-        enrollment["verifier"],
+        ENROLLMENT["enrollmentKey"],
+        UUID(ENROLLMENT["deviceId"]),
+        ENROLLMENT["devicePublicKey"],
+        ENROLLMENT["proof"],
+    )
+
+
+def test_server_refuses_the_earlier_hmac_form_of_the_proof() -> None:
+    """The version 1 proof, an HMAC, is no longer accepted by anything."""
+    old = FIXTURE["enrollment"]
+
+    assert not enrollment_proof_is_valid(
+        ENROLLMENT["enrollmentKey"],
         UUID(FIXTURE["deviceId"]),
         FIXTURE["publicKey"],
-        enrollment["proof"],
+        old["proof"],
+    )
+    assert not enrollment_proof_is_valid(
+        old["verifier"],
+        UUID(FIXTURE["deviceId"]),
+        FIXTURE["publicKey"],
+        old["proof"],
     )
