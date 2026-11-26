@@ -5,6 +5,10 @@ import { expect, test } from "../fixtures/test";
 
 const SAMPLE_PARAMS = { id: "sample-1", cardId: "sample-2" };
 const EXPECTED = securityHeaders();
+/** The app's own icons: the only images the service worker may cache. */
+// (The precache list names files without a leading slash; a cached
+// address has one.)
+const OWN_ICON = /^\/?(icon-[a-z0-9-]+|apple-touch-icon)\.png$/;
 
 test.describe("security headers (SEC-007)", () => {
   for (const route of ROUTES) {
@@ -77,7 +81,11 @@ test.describe("the service worker caches the public app shell only (SYNC-001)", 
     );
     expect(urls.length).toBeGreaterThan(0);
     for (const url of urls) {
-      expect(url).toMatch(/\.(js|css|html|svg|webmanifest)$/);
+      expect(url).toMatch(/\.(js|css|html|svg|png|webmanifest)$/);
+      // The only images cached are the app's own icons.
+      if (url.endsWith(".png")) {
+        expect(url).toMatch(OWN_ICON);
+      }
       expect(url).not.toContain("/v1/");
     }
     // Nothing is cached as the app runs: no runtime routes for the API or
@@ -112,7 +120,10 @@ test.describe("the service worker caches the public app shell only (SYNC-001)", 
       const url = new URL(each);
       expect(url.origin).toBe(origin);
       expect(url.pathname).not.toMatch(/^\/v1\//);
-      expect(url.pathname).toMatch(/\.(js|css|html|svg|webmanifest)$/);
+      expect(url.pathname).toMatch(/\.(js|css|html|svg|png|webmanifest)$/);
+      if (url.pathname.endsWith(".png")) {
+        expect(url.pathname).toMatch(OWN_ICON);
+      }
     }
   });
 });

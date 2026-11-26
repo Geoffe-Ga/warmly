@@ -96,8 +96,12 @@ test.describe("offline", () => {
       expect(url.origin).toBe(origin);
       expect(url.pathname).not.toMatch(/^\/v1\//);
       expect(url.pathname).toMatch(
-        /^\/$|\.(js|css|html|svg|webmanifest)$|^\/index\.html$/,
+        /^\/$|\.(js|css|html|svg|png|webmanifest)$|^\/index\.html$/,
       );
+      // The only images cached are the app's own icons.
+      if (url.pathname.endsWith(".png")) {
+        expect(url.pathname).toMatch(/^\/(icon-|apple-touch-icon)/);
+      }
       expect(entry.body).not.toContain("CANARY");
       expect(entry.body).not.toContain("synthetic offline answer");
     }
