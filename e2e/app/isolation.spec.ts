@@ -11,7 +11,7 @@
  */
 import { expect, test, type Page } from "../fixtures/test";
 
-import { onboard, unlockThisDevice } from "./account";
+import { onboard, openMenu, unlockThisDevice } from "./account";
 
 const PROMPTS = [
   "What's going well?",
@@ -82,6 +82,7 @@ test.describe("two accounts in one browser", () => {
     );
 
     // A signs out, and B makes an account in the same browser.
+    await openMenu(page);
     await page.getByRole("button", { name: "Sign out" }).click();
     await onboard(page, "robin@example.com");
 

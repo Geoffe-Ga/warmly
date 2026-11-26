@@ -1,5 +1,6 @@
 import { expect } from "vitest";
 import { render, screen, waitFor } from "@testing-library/preact";
+import userEvent from "@testing-library/user-event";
 
 import { App } from "../../../src/app/App";
 import { createLockHooks } from "../../../src/app/lock-hooks";
@@ -138,6 +139,14 @@ export async function renderApp(
     expect(heading().textContent).not.toBe("Opening Warmly");
   });
   return services;
+}
+
+/**
+ * Open the menu in the top bar, where the secondary navigation, Sync now
+ * and Sign out are while unlocked.
+ */
+export async function openMenu(): Promise<void> {
+  await userEvent.click(screen.getByRole("button", { name: "Menu" }));
 }
 
 /** The screen's single page heading. */

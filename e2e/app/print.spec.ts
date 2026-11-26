@@ -63,7 +63,7 @@ test.describe("printing a collection", () => {
     for (const hidden of [
       page.getByRole("button", { name: "Print" }),
       page.getByRole("button", { name: "Lock" }),
-      page.getByRole("link", { name: "Settings" }),
+      page.getByRole("button", { name: "Menu" }),
       page.getByRole("heading", { level: 1 }),
       page.getByText(/not protected by Warmly/),
       page.locator(".sync-status"),

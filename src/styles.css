@@ -114,12 +114,21 @@ a {
 }
 
 .app-header {
+  /* The menu's panel is placed against the bar, not against its button,
+     so it stays on the screen wherever the button wraps to. */
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  margin-bottom: var(--space-3);
+  gap: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-4);
+}
+
+/* Lock and Menu stay side by side at the far end of the bar. */
+.app-header__controls {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
 }
 
 .home-link,
@@ -130,25 +139,72 @@ a {
   font-weight: 700;
 }
 
-.secondary-nav {
+/* Sync status: a state and a count. It takes the room between the way
+   home and the buttons, so the buttons sit at the far end of the bar. */
+.sync-status {
   display: flex;
+  flex: 1 1 8rem;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
+  gap: var(--space-1) var(--space-3);
+  align-items: center;
+  /* May shrink below its words, which then wrap inside it. */
+  min-width: 0;
+  color: var(--color-ink-muted);
+  font-size: var(--font-size-small);
+}
+
+.sync-status p {
+  margin: 0;
+}
+
+/* On a narrow screen the status takes a line of its own under the bar. */
+@media (max-width: 30rem) {
+  .sync-status {
+    flex-basis: 100%;
+    order: 1;
+  }
+}
+
+/* Menu: a button, and a panel under the bar while it is open */
+.menu__panel {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  display: grid;
+  gap: var(--space-3);
+  width: max-content;
+  /* Never wider than the bar it opens under. */
+  max-width: 100%;
+  padding: var(--space-3);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.menu__list {
+  display: grid;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.secondary-nav a {
-  display: inline-flex;
+.menu__list a {
+  display: flex;
   align-items: center;
   min-height: var(--touch-target);
 }
 
-.secondary-nav a[aria-current="page"] {
+.menu__list a[aria-current="page"] {
   color: var(--color-ink);
   font-weight: 700;
   text-decoration-thickness: 0.15em;
+}
+
+.menu__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
 }
 
 .stack {
@@ -371,21 +427,6 @@ textarea.field__control {
 
 .result-count:empty {
   display: none;
-}
-
-/* Sync status: a state and a count, with the button that runs a sync */
-.sync-status {
-  display: flex;
-  flex-basis: 100%;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  align-items: center;
-  color: var(--color-ink-muted);
-  font-size: var(--font-size-small);
-}
-
-.sync-status p {
-  margin: 0;
 }
 
 /* Offline notice: one line under the header; empty while online.

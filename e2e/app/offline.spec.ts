@@ -11,7 +11,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { OWN_ICON } from "../fixtures/icons";
 import { expect, test, type Page } from "../fixtures/test";
 
-import { onboard, unlockThisDevice } from "./account";
+import { onboard, openMenu, unlockThisDevice } from "./account";
 
 const PROMPTS = [
   "What's going well?",
@@ -164,6 +164,7 @@ test.describe("offline", () => {
     page,
   }) => {
     await onboard(page);
+    await openMenu(page);
     await page.getByRole("link", { name: "Settings" }).click();
 
     const line = page.getByTestId("storage-persistence");

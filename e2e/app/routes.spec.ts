@@ -3,7 +3,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { ROUTES, pathFor } from "../../src/app/routes";
 import { expect, test, type Page } from "../fixtures/test";
 
-import { onboard, openInApp } from "./account";
+import { onboard, openInApp, openMenu } from "./account";
 
 const WCAG_22_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 const SAMPLE_PARAMS = { id: "sample-1", cardId: "sample-2" };
@@ -48,6 +48,7 @@ test.describe("every private screen while unlocked (UX-001, AC-23)", () => {
     page,
   }) => {
     await onboard(page);
+    await openMenu(page);
     await page.getByRole("link", { name: "Manage Devices" }).click();
 
     await page.getByRole("link", { name: "Warmly home" }).click();

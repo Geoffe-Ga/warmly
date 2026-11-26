@@ -17,6 +17,7 @@ import {
   ACCOUNT,
   SAMPLE_PARAMS,
   heading,
+  openMenu,
   renderApp,
   testServices,
   visit,
@@ -46,13 +47,22 @@ describe("App shell while unlocked", () => {
 
   it("offers collections, settings and devices as secondary navigation (UX-001)", async () => {
     await renderApp("/", testServices("unlocked"));
+    // It is in the menu, so the page itself comes first on every screen.
+    expect(screen.queryByRole("navigation", { name: "Secondary" })).toBeNull();
+    await openMenu();
 
     const secondary = screen.getByRole("navigation", { name: "Secondary" });
     const names = within(secondary)
       .getAllByRole("link")
       .map((link) => link.textContent);
 
-    expect(names).toEqual(["Collections", "Settings", "Manage Devices"]);
+    expect(names).toEqual([
+      "Collections",
+      "Settings",
+      "Manage Devices",
+      "What Warmly is and is not",
+      "Privacy and its limits",
+    ]);
   });
 
   it.each(
@@ -134,6 +144,7 @@ describe("App shell while unlocked", () => {
     await renderApp("/settings", testServices("unlocked"));
     const before = window.history.length;
 
+    await openMenu();
     await userEvent.click(screen.getByRole("link", { name: "Settings" }));
 
     expect(window.history.length).toBe(before);
@@ -143,6 +154,7 @@ describe("App shell while unlocked", () => {
 
   it("marks the link to the current screen with aria-current", async () => {
     await renderApp("/settings", testServices("unlocked"));
+    await openMenu();
 
     expect(
       screen
@@ -282,6 +294,7 @@ describe("Lock and Sign out (DEV-005)", () => {
     await services.vault.createAccountKeys();
     await renderApp("/settings", services);
 
+    await openMenu();
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { level: 1, name: "Sign in" });
 
@@ -297,6 +310,7 @@ describe("Lock and Sign out (DEV-005)", () => {
     services.auth.signOut = () => Promise.reject(new Error("offline"));
     await renderApp("/settings", services);
 
+    await openMenu();
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { level: 1, name: "Sign in" });
 
@@ -311,6 +325,7 @@ describe("Lock and Sign out (DEV-005)", () => {
     services.auth.signOut = () => new Promise<void>(() => undefined);
     await renderApp("/settings", services);
 
+    await openMenu();
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
 
     await screen.findByRole("heading", { level: 1, name: "Sign in" });
@@ -329,6 +344,7 @@ describe("Lock and Sign out (DEV-005)", () => {
     window.addEventListener("unhandledrejection", onFailure);
     await renderApp("/settings", services);
 
+    await openMenu();
     await userEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { level: 1, name: "Sign in" });
     await new Promise((resolve) => setTimeout(resolve, 0));

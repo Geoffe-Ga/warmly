@@ -321,6 +321,15 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - The app asks the browser to keep its data (`services.persistence`) on
   unlock, and Settings reports the browser's answer as it is. Never claim
   data is kept when the browser has not agreed.
+- The top bar (`Header`, `src/app/App.tsx`) is one row while unlocked:
+  the way home, the sync status line, Lock and the Menu button. Lock is
+  never inside the menu: manual lock is always one press away (PRD §4.3).
+  The menu (`Menu`, `src/ui/components/Menu.tsx`) holds the secondary
+  navigation (`MENU_NAV`: Collections, Settings and Manage Devices, as
+  PRD UX-001 requires, then the help and privacy pages), Sync now and
+  Sign out. Anything new about the account or the app goes in the menu,
+  not in the bar. Nothing private, and no count but the sync status's
+  own, goes in either.
 - The offline notice in the app shell (`OfflineNotice`, `src/app/App.tsx`)
   is fixed text only. Never put private text, counts or sync details that
   could reveal content in it.

@@ -13,7 +13,13 @@ import {
   STATUS_ITEMS,
 } from "../../../src/ui/screens/settings/StatusSummary";
 
-import { renderApp, testServices, visit, type TestServices } from "./helpers";
+import {
+  openMenu,
+  renderApp,
+  testServices,
+  visit,
+  type TestServices,
+} from "./helpers";
 
 beforeEach(() => {
   sessionStorage.clear();
@@ -152,10 +158,13 @@ describe("the status summary in Settings (UI-008)", () => {
       "See Manage Devices, in the menu at the top.",
     );
     expect(summary.queryAllByRole("link")).toEqual([]);
-    // The links themselves are on the page once each.
+    // The links themselves are there once each: one on the page, one in
+    // the menu at the top, as the sentence says.
     expect(
       screen.getAllByRole("link", { name: "Replace your recovery key" }),
     ).toHaveLength(1);
+    expect(screen.queryByRole("link", { name: "Manage Devices" })).toBeNull();
+    await openMenu();
     expect(
       screen.getAllByRole("link", { name: "Manage Devices" }),
     ).toHaveLength(1);

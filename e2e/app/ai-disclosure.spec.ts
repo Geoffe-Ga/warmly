@@ -10,7 +10,7 @@ import AxeBuilder from "@axe-core/playwright";
 
 import { expect, test } from "../fixtures/test";
 
-import { onboard } from "./account";
+import { onboard, openMenu } from "./account";
 
 const WCAG_22_AA = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
@@ -66,6 +66,7 @@ test.describe("the AI disclosure", () => {
     page,
   }) => {
     await onboard(page);
+    await openMenu(page);
     await page.getByRole("link", { name: "Settings" }).click();
 
     // The status summary names the provider too; this is the card headed

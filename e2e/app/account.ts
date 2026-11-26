@@ -126,3 +126,13 @@ export async function openInApp(page: Page, path: string): Promise<void> {
     window.dispatchEvent(new PopStateEvent("popstate"));
   }, path);
 }
+
+/**
+ * Open the menu in the top bar, where the secondary navigation, Sync now
+ * and Sign out are while unlocked.
+ *
+ * @param page - An unlocked page.
+ */
+export async function openMenu(page: Page): Promise<void> {
+  await page.getByRole("button", { name: "Menu" }).click();
+}

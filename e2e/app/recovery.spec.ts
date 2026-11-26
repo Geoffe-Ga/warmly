@@ -20,6 +20,7 @@ import {
   lastGroup,
   onboard,
   openInApp,
+  openMenu,
   signIn,
 } from "./account";
 
@@ -110,6 +111,7 @@ test.describe("a password reset does not open the journal (AC-18)", () => {
     context,
   }) => {
     const recoveryKey = await onboard(page);
+    await openMenu(page);
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByRole("link", { name: "Forgot your password?" }).click();
     await page.getByLabel("Email").fill(ACCOUNT.email);
