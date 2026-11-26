@@ -172,18 +172,39 @@ Be clear about its limits:
   account looks the same as that person. The project's rule is that an
   agent never adds the label, but nothing in the guard can enforce it.
 
-These are closed by repository settings, which a person must set:
+These are closed by repository settings, which only a repository admin
+can set. The owner decided on 2026-11-26 which of them to adopt now
+(issue #125):
 
 1. Make **Release Gate** and **Release Policy Guard** required status
-   checks on `main` (Settings, Branches, branch protection).
+   checks on `main` (Settings, Branches, branch protection). **Adopted.**
 2. Require review from a code owner for `.github/workflows/`,
-   `release/` and `scripts/release/`.
-3. Create the `release-policy-change` label.
+   `release/` and `scripts/release/`. **Adopted.** The paths and their
+   owner are in `.github/CODEOWNERS`, and a test fails if one of them
+   loses its owner. The file does nothing by itself: "Require review from
+   Code Owners" must be turned on for `main`.
+   GitHub does not count an author's approval of their own pull request,
+   and agents open pull requests through the owner's account. So once the
+   setting is on, a change to one of these paths from that account cannot
+   be approved by its only owner: it needs a second owner, agents working
+   under an account of their own, or an admin's bypass each time.
+3. Create the `release-policy-change` label. **Adopted.** A person
+   creates it; an agent never creates or adds it.
 4. Require an approving review from someone other than the author on
    `main`. That is what turns "a person labelled it" into "a second
-   person agreed".
+   person agreed". **Not adopted yet:** the repository has one person, and
+   agents open pull requests through that person's account, so this rule
+   would stop every merge. It needs a second reviewer, or agents working
+   under an account of their own.
+
+This page does not say whether the settings in 1 to 3 are switched on:
+it cannot see them. Check the repository's settings, or try it: a pull
+request that lowers a coverage floor must be unmergeable without the
+label.
 
 Until the first is done, the gate reports and does not prevent a merge.
+Until the fourth is done, the one person who can waive the policy is also
+the one whose account every change comes from.
 
 ## Updating a pinned tool
 

@@ -1,0 +1,13 @@
+# Who must review a change to the release gates' own files.
+#
+# The Release Policy Guard cannot stop a pull request from editing the
+# workflow that runs it, or the manifest and scripts it reads. Review by a
+# code owner is what stops that. This file names the paths; the setting
+# "Require review from Code Owners" on `main` is what makes it binding, and
+# only a repository admin can turn that on.
+# See docs/runbooks/release-gates.md, "What the guard cannot do".
+
+/.github/workflows/ @Geoffe-Ga
+/release/ @Geoffe-Ga
+/scripts/release/ @Geoffe-Ga
+/.github/CODEOWNERS @Geoffe-Ga
