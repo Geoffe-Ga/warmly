@@ -753,6 +753,7 @@ describe("the stand-in provider (AI-001)", () => {
       kind: "reflect",
       question: "",
       sources: [],
+      history: [],
       partial: false,
     });
     const larger = provider.estimateTokens(sent(reflect()));

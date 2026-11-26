@@ -4,6 +4,7 @@ import { useEffect, useState } from "preact/hooks";
 import { Link } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
+import type { SourceRef } from "../../../ai/contracts";
 import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
 import { deleteEntry } from "../../../domain/journal/delete";
 import { Button } from "../../components/Button";
@@ -66,16 +67,108 @@ const NOTICES = {
 export const DELETE_WARNING =
   "This deletes it from this device now, and from your other devices the next time they sync. There is no trash and no undo. Encrypted copies held in backups cannot be read by anyone but you, and are removed as those backups expire, within 30 days.";
 
-function Answer(props: { readonly text: string }): JSX.Element {
+/** Said above an entry opened from a citation, when the words are marked. */
+export const PASSAGE_MARKED =
+  "You came here from an answer in Reflect. The words it pointed to are marked below.";
+
+/** Said instead when the entry is no longer what the answer was given. */
+export const PASSAGE_STALE =
+  "You came here from an answer in Reflect, but this entry has changed since then, so the words it pointed to are not marked.";
+
+/** A range of characters in one answer. */
+interface Range {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Where to mark the cited words in an entry, if they can be trusted.
+ *
+ * They are marked only if the entry is still the text the answer was
+ * given (its content hash matches) and the range lies inside the answer.
+ * Otherwise nothing is marked: stale words are never shown as cited.
+ *
+ * @param entry - The entry as it is now.
+ * @param cited - The passage a citation pointed to.
+ * @returns The answer and range to mark, or `undefined`.
+ */
+export function passageIn(
+  entry: JournalEntry,
+  cited: SourceRef | undefined,
+): (Range & { readonly key: SourceRef["responseKey"] }) | undefined {
+  if (cited === undefined || cited.sourceHash !== entry.contentHash) {
+    return undefined;
+  }
+  const { start, end, responseKey } = cited;
+  const length = entry.responses[responseKey].length;
+  return start >= 0 && start < end && end <= length
+    ? { key: responseKey, start, end }
+    : undefined;
+}
+
+/** One line of an answer, with the part inside the range marked. */
+function Line(props: {
+  readonly text: string;
+  /** The range, counted from the start of this line. */
+  readonly mark: Range | undefined;
+  readonly first: boolean;
+  readonly last: boolean;
+}): JSX.Element {
+  const { text, mark } = props;
+  const from = Math.max(0, mark?.start ?? 0);
+  const to = Math.min(text.length, mark?.end ?? 0);
+  if (mark === undefined || from >= to) {
+    return <p>{text}</p>;
+  }
+  return (
+    <p>
+      {text.slice(0, from)}
+      <mark class="cited-passage">
+        {props.first && (
+          <span class="visually-hidden">Start of the cited words: </span>
+        )}
+        {text.slice(from, to)}
+        {props.last && (
+          <span class="visually-hidden"> End of the cited words.</span>
+        )}
+      </mark>
+      {text.slice(to)}
+    </p>
+  );
+}
+
+function Answer(props: {
+  readonly text: string;
+  readonly mark?: Range | undefined;
+}): JSX.Element {
   if (props.text.trim() === "") {
     return <p>Not answered yet.</p>;
   }
-  // One paragraph per line the person wrote, so line breaks are kept.
+  const { mark } = props;
+  // One paragraph per line the person wrote, so line breaks are kept. A
+  // marked range is counted over the whole answer, line breaks included.
+  let offset = 0;
   return (
     <>
-      {props.text.split("\n").map((line, index) => (
-        <p key={index}>{line}</p>
-      ))}
+      {props.text.split("\n").map((line, index) => {
+        const start = offset;
+        offset += line.length + 1;
+        const within =
+          mark === undefined
+            ? undefined
+            : { start: mark.start - start, end: mark.end - start };
+        return (
+          <Line
+            key={index}
+            text={line}
+            mark={within}
+            first={
+              mark !== undefined && mark.start >= start && mark.start < offset
+            }
+            last={mark !== undefined && mark.end > start && mark.end <= offset}
+          />
+        );
+      })}
     </>
   );
 }
@@ -90,9 +183,13 @@ function Answer(props: { readonly text: string }): JSX.Element {
  * @returns The entry screen.
  */
 export function Entry(props: { readonly params: RouteParams }): JSX.Element {
-  const { records, events } = useServices();
+  const { records, events, passage } = useServices();
   const action = useAction();
   const id = props.params["id"];
+  // The passage of a citation that was just followed here, taken once.
+  const [cited] = useState(() =>
+    id === undefined ? undefined : passage.take(id),
+  );
   const [found, setFound] = useState<Found>({ kind: "loading" });
   const [confirming, setConfirming] = useState(false);
   const [inConflict, setInConflict] = useState(false);
@@ -155,6 +252,17 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
     };
   }, [records, id]);
 
+  const marked =
+    found.kind === "entry" ? passageIn(found.entry, cited) : undefined;
+  const isMarked = marked !== undefined;
+  useEffect(() => {
+    // Bring the marked words into view: they may be far down a long entry.
+    const mark = isMarked ? document.querySelector(".cited-passage") : null;
+    if (mark !== null && typeof mark.scrollIntoView === "function") {
+      mark.scrollIntoView({ block: "center" });
+    }
+  }, [isMarked]);
+
   const back = (
     <p>
       <Link href={pathFor("journal")}>Back to your journal</Link>
@@ -191,9 +299,17 @@ export function Entry(props: { readonly params: RouteParams }): JSX.Element {
           <Link href={pathFor("sync-conflicts")}>Review the two versions</Link>
         </StatusBanner>
       )}
+      {cited !== undefined && (
+        <p role="status" class="hint">
+          {marked === undefined ? PASSAGE_STALE : PASSAGE_MARKED}
+        </p>
+      )}
       {PROMPTS.map((prompt) => (
         <Card key={prompt.key} heading={prompt.label}>
-          <Answer text={entry.responses[prompt.key]} />
+          <Answer
+            text={entry.responses[prompt.key]}
+            mark={marked?.key === prompt.key ? marked : undefined}
+          />
         </Card>
       ))}
       {entry.feelings !== undefined && entry.feelings.length > 0 && (

@@ -125,6 +125,10 @@ export function promptFor(request: AiRequest, manifest: Manifest): AiPrompt {
         kind: "reflect",
         question: request.question,
         sources,
+        history: (request.history ?? []).map((turn) => ({
+          question: turn.question,
+          answer: turn.answer,
+        })),
         partial: request.coverage?.truncated === true,
       };
     case "cards":

@@ -68,6 +68,7 @@ import {
   RecordReflectSessions,
   type ReflectSessions,
 } from "../domain/reflect/sessions";
+import { CitedPassage } from "../domain/reflect/passage";
 import { createLockHooks, type LockHooks } from "./lock-hooks";
 import { createOnboarding, type Onboarding } from "./onboarding";
 import { createSession, type Session } from "./session";
@@ -98,6 +99,8 @@ export interface Services {
   readonly ai: AiGateway;
   /** Reflect sessions, read from the private records. */
   readonly reflect: ReflectSessions;
+  /** The cited passage being carried to the entry screen, in memory. */
+  readonly passage: CitedPassage;
   /** Collections of conversation cards, read from the private records. */
   readonly cards: CardsStore;
   /** A new version of the app waiting to be used. */
@@ -403,6 +406,7 @@ export function createServices(): Services {
     ai: createGateway(),
     cards: new RecordCardsStore(records),
     reflect: new RecordReflectSessions(records),
+    passage: new CitedPassage(),
     persistence,
     session: createSession(),
     onboarding: createOnboarding(),

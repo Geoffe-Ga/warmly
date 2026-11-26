@@ -25,6 +25,10 @@ export interface AiDisclosureDialogProps {
   readonly onCancel: () => void;
 }
 
+/** What else a follow-up question sends (PRD RF-006). */
+export const EARLIER_TURNS =
+  "the earlier questions and answers in this reflection";
+
 /** Said when the journal is too long to send whole (PRD RF-004, AC-09). */
 export const NOT_EVERYTHING =
   "Your whole journal does not fit in one request. Warmly chose your newest entries, the ones that share words with your question, and a spread of older ones. The answer can only be about the entries that are sent.";
@@ -56,18 +60,23 @@ function entriesText(count: number): string {
  * Put what a request would send into words.
  *
  * @param disclosure - What the gateway says the request carries.
- * @returns For example "14 journal entries and your question", or, when
- *   some did not fit, "14 of your 5,000 journal entries and your question".
+ * @returns For example "14 journal entries and your question"; when some
+ *   did not fit, "14 of your 5,000 journal entries and your question"; and
+ *   for a follow-up, "14 journal entries, your question, and the earlier
+ *   questions and answers in this reflection".
  */
 export function describeSent(disclosure: Disclosure): string {
+  let entries = entriesText(disclosure.entries);
   if (disclosure.omitted > 0) {
     const all = (disclosure.entries + disclosure.omitted).toLocaleString(
       "en-US",
     );
     const sent = disclosure.entries.toLocaleString("en-US");
-    return `${sent} of your ${all} journal entries and ${disclosure.also}`;
+    entries = `${sent} of your ${all} journal entries`;
   }
-  return `${entriesText(disclosure.entries)} and ${disclosure.also}`;
+  return disclosure.earlierTurns > 0
+    ? `${entries}, ${disclosure.also}, and ${EARLIER_TURNS}`
+    : `${entries} and ${disclosure.also}`;
 }
 
 /**

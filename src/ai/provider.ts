@@ -46,11 +46,26 @@ export interface RequestCoverage {
   readonly tooLong?: number;
 }
 
+/**
+ * An earlier question in the same Reflect session, with the prose of the
+ * answer it got (PRD RF-006).
+ */
+export interface EarlierTurn {
+  readonly question: string;
+  readonly answer: string;
+}
+
 /** A question about the person's own journal. */
 export interface ReflectRequest {
   readonly kind: "reflect";
   readonly question: string;
   readonly entries: readonly SourceEntry[];
+  /**
+   * The earlier turns of the session this question is asked in, oldest
+   * first. Only that session's: nothing from any other conversation is
+   * ever sent (PRD RF-006). Absent for a first question.
+   */
+  readonly history?: readonly EarlierTurn[];
   /** What was left out, if anything. Nothing was, when this is absent. */
   readonly coverage?: RequestCoverage;
 }
@@ -90,6 +105,8 @@ export interface ReflectPrompt {
   readonly kind: "reflect";
   readonly question: string;
   readonly sources: readonly AliasedSource[];
+  /** The session's earlier turns, oldest first. Empty for a first question. */
+  readonly history: readonly EarlierTurn[];
   /**
    * Whether these are only some of the journal's entries. A provider must
    * tell its model so, so that the answer does not speak for the whole

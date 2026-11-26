@@ -15,17 +15,14 @@ import { Link, NavigationContext } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import type { JournalEntry } from "../../../domain/journal/types";
+import { askRequest, storeExchange } from "../../../domain/reflect/ask";
 import { EntryTooLargeError } from "../../../domain/reflect/context";
 import {
   InvalidQuestionError,
   MAX_QUESTION,
-  reflectRequest,
+  SessionTooLongError,
 } from "../../../domain/reflect/request";
-import {
-  SessionFinishedError,
-  type Exchange,
-  type ReflectSessions,
-} from "../../../domain/reflect/sessions";
+import type { Exchange } from "../../../domain/reflect/sessions";
 import type { ReflectSession } from "../../../domain/reflect/types";
 import {
   AiRequestStatus,
@@ -63,6 +60,10 @@ export function entryTooLong(date: string | undefined): string {
   return `${which} is too long to send in one request, and no other entry can be sent either, so nothing was sent. Warmly sends whole entries only, and never part of one.`;
 }
 
+/** Said when a reflection's earlier turns leave no room for entries. */
+export const SESSION_TOO_LONG =
+  "This reflection has grown too long to send with another question, so nothing was sent. Your earlier questions and answers go with each new one. To ask this, start a new reflection.";
+
 /** Said when an answer arrived but could not be stored. */
 export const ANSWER_NOT_SAVED =
   "The answer arrived, but Warmly couldn't save it on this device. It is shown below. Nothing was sent again. Keep this page open and try saving it.";
@@ -74,32 +75,6 @@ export const ANSWER_NOT_SAVED =
  */
 export const SAVED_ELSEWHERE =
   "That reflection was finished or deleted on another device while you were asking, so your question and its answer were saved as a new reflection.";
-
-/**
- * Store a question and its answer: in the session it was asked in, or in a
- * new one if there is none, or if that one has gone or was finished
- * meanwhile on another device. The answer is never thrown away.
- */
-async function storeExchange(
-  reflect: ReflectSessions,
-  sessionId: string | undefined,
-  exchange: Exchange,
-): Promise<{ session: ReflectSession; elsewhere: boolean }> {
-  if (sessionId === undefined) {
-    return { session: await reflect.start(exchange), elsewhere: false };
-  }
-  try {
-    const added = await reflect.add(sessionId, exchange);
-    if (added !== undefined) {
-      return { session: added, elsewhere: false };
-    }
-  } catch (error) {
-    if (!(error instanceof SessionFinishedError)) {
-      throw error;
-    }
-  }
-  return { session: await reflect.start(exchange), elsewhere: true };
-}
 
 /** What the screen knows about the session it was asked for. */
 type Found =
@@ -144,6 +119,7 @@ function Messages(props: {
   readonly session: ReflectSession;
   readonly entries: readonly JournalEntry[];
 }): JSX.Element {
+  const { passage } = useServices();
   return (
     <>
       {props.session.messages.map((message) =>
@@ -153,7 +129,13 @@ function Messages(props: {
           </Card>
         ) : (
           <Card key={message.id} heading="Answer">
-            <CitedAnswer answer={message.answer} entries={props.entries} />
+            <CitedAnswer
+              answer={message.answer}
+              entries={props.entries}
+              onFollow={(ref) => {
+                passage.point(ref);
+              }}
+            />
           </Card>
         ),
       )}
@@ -177,7 +159,7 @@ function Ask(props: {
    */
   readonly onSavedElsewhere: (sessionId: string) => void;
 }): JSX.Element {
-  const { ai, reflect, lockHooks } = useServices();
+  const { ai, reflect, lockHooks, passage } = useServices();
   const { navigate } = useContext(NavigationContext);
   const { onSavedElsewhere } = props;
   const [question, setQuestion] = useState("");
@@ -283,7 +265,12 @@ function Ask(props: {
             // Nothing is sent here: this opens the dialog that asks first.
             // Choosing which entries fit is done here, on the device.
             controller.ask(
-              reflectRequest(question, props.entries, ai.sizing()),
+              askRequest({
+                question,
+                entries: props.entries,
+                session: props.session,
+                sizing: ai.sizing(),
+              }),
             );
           } catch (error) {
             if (error instanceof EntryTooLargeError) {
@@ -298,6 +285,8 @@ function Ask(props: {
                     : formatEntryDate(entry.entryDate),
                 ),
               );
+            } else if (error instanceof SessionTooLongError) {
+              setProblem(SESSION_TOO_LONG);
             } else if (error instanceof InvalidQuestionError) {
               setProblem(QUESTION_NEEDED);
             } else {
@@ -351,7 +340,13 @@ function Ask(props: {
               </Button>
             </div>
           </StatusBanner>
-          <CitedAnswer answer={unsaved.answer} entries={props.entries} />
+          <CitedAnswer
+            answer={unsaved.answer}
+            entries={props.entries}
+            onFollow={(ref) => {
+              passage.point(ref);
+            }}
+          />
         </>
       )}
     </Card>

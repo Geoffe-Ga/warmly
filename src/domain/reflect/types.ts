@@ -81,8 +81,21 @@ function isSourceRef(value: unknown): boolean {
       value["responseKey"] === "loved") &&
     isWhole(value["start"]) &&
     isWhole(value["end"]) &&
+    // A reference points at some words: never at none, never backwards.
+    (value["start"] as number) < (value["end"] as number) &&
     isText(value["sourceHash"])
   );
+}
+
+/** Whether every turn has its own ID, so a turn can be told from another. */
+function hasDistinctIds(messages: unknown): boolean {
+  if (!Array.isArray(messages)) {
+    return false;
+  }
+  const ids = messages.map((message: unknown) =>
+    isObject(message) ? message["id"] : undefined,
+  );
+  return new Set(ids).size === ids.length;
 }
 
 function isCitation(value: unknown): boolean {
@@ -141,6 +154,7 @@ export function isReflectSession(value: unknown): value is ReflectSession {
     isText(value["id"]) &&
     (value["status"] === "active" || value["status"] === "finished") &&
     isListOf(value["messages"], isMessage) &&
+    hasDistinctIds(value["messages"]) &&
     isText(value["createdAt"]) &&
     isText(value["updatedAt"])
   );

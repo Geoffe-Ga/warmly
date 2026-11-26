@@ -12,7 +12,11 @@
  * answer. Nothing is cut down quietly.
  */
 import { contextBudget, type Budget } from "../../ai/budget";
-import type { ReflectRequest, SourceEntry } from "../../ai/provider";
+import type {
+  EarlierTurn,
+  ReflectRequest,
+  SourceEntry,
+} from "../../ai/provider";
 import type { JournalEntry } from "../journal/types";
 import { selectContext } from "./context";
 
@@ -36,6 +40,17 @@ export class InvalidQuestionError extends Error {
   }
 }
 
+/**
+ * The session's earlier turns leave no room for any journal entry, so a
+ * new question cannot be asked in it. Nothing was sent.
+ */
+export class SessionTooLongError extends Error {
+  constructor() {
+    super("The reflection is too long to send with another question");
+    this.name = "SessionTooLongError";
+  }
+}
+
 function sourceOf(entry: JournalEntry): SourceEntry {
   return {
     id: entry.id,
@@ -52,11 +67,11 @@ function sourceOf(entry: JournalEntry): SourceEntry {
  * Make the request for a question.
  *
  * The entries that fit are chosen by `selectContext`. The room for them
- * is what is left of the budget after the question and the request's own
- * framing (the size of the same request with no entries), the app's
- * instructions, the answer and a margin (`contextBudget`). Each entry's
- * size is what it adds to that empty request, plus one token, because
- * rounding can hide up to one.
+ * is what is left of the budget after the question, the session's earlier
+ * turns and the request's own framing (the size of the same request with
+ * no entries), the app's instructions, the answer and a margin
+ * (`contextBudget`). Each entry's size is what it adds to that empty
+ * request, plus one token, because rounding can hide up to one.
  *
  * @param question - The person's own question.
  * @param entries - The journal. Drafts are left out: an unfinished entry
@@ -64,15 +79,19 @@ function sourceOf(entry: JournalEntry): SourceEntry {
  * @param sizing - The limits and a way to size a request. Without it (no
  *   provider is connected, so nothing can be sent anyway) every finished
  *   entry is included.
+ * @param history - The earlier turns of the session the question is asked
+ *   in, and of no other. They are sent with it, as fresh copies.
  * @returns The request, oldest entry first, saying what was left out if
  *   anything was.
  * @throws InvalidQuestionError if the question is empty or too long.
+ * @throws SessionTooLongError if the earlier turns leave no room at all.
  * @throws EntryTooLargeError if there are entries and none of them fits.
  */
 export function reflectRequest(
   question: string,
   entries: readonly JournalEntry[],
   sizing?: RequestSizing,
+  history: readonly EarlierTurn[] = [],
 ): ReflectRequest {
   const asked = question.trim();
   if (asked === "" || [...asked].length > MAX_QUESTION) {
@@ -82,15 +101,27 @@ export function reflectRequest(
     kind: "reflect",
     question: asked,
     entries: [],
+    ...(history.length > 0
+      ? {
+          history: history.map((turn) => ({
+            question: turn.question,
+            answer: turn.answer,
+          })),
+        }
+      : {}),
   };
   const framing = sizing?.estimate(empty) ?? 0;
+  const room =
+    sizing === undefined
+      ? Number.POSITIVE_INFINITY
+      : contextBudget(sizing.budget, framing);
+  if (room <= 0 && history.length > 0) {
+    throw new SessionTooLongError();
+  }
   const selection = selectContext({
     entries,
     question: asked,
-    budget:
-      sizing === undefined
-        ? Number.POSITIVE_INFINITY
-        : contextBudget(sizing.budget, framing),
+    budget: room,
     estimate: (entry) =>
       sizing === undefined
         ? 1
@@ -99,8 +130,7 @@ export function reflectRequest(
           1,
   });
   return {
-    kind: "reflect",
-    question: asked,
+    ...empty,
     entries: selection.entries.map(sourceOf),
     ...(selection.coverage.truncated
       ? {

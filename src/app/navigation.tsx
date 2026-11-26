@@ -29,6 +29,11 @@ export interface LinkProps {
   /** Accessible name, when the visible text alone is not enough. */
   readonly label?: string;
   readonly class?: string;
+  /**
+   * Called just before the link is followed inside the app, for something
+   * the next screen needs that must not go in the address.
+   */
+  readonly onFollow?: () => void;
 }
 
 function isPlainLeftClick(event: MouseEvent): boolean {
@@ -63,6 +68,7 @@ export function Link(props: LinkProps): JSX.Element {
   const onClick = (event: MouseEvent): void => {
     if (isPlainLeftClick(event)) {
       event.preventDefault();
+      props.onFollow?.();
       navigate(props.href);
     }
   };
