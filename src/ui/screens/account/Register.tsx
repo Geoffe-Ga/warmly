@@ -6,6 +6,7 @@ import { pathFor } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import { Button } from "../../components/Button";
 import { TextField } from "../../components/Field";
+import { BoundaryNotice } from "../help/boundaries";
 import { PageLayout } from "../../components/PageLayout";
 import {
   AccountForm,
@@ -83,6 +84,7 @@ export function Register(): JSX.Element {
           </Button>
         </div>
       </AccountForm>
+      <BoundaryNotice />
       <p>
         Already have an account? <Link href={pathFor("sign-in")}>Sign in</Link>
       </p>

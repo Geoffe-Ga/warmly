@@ -39,6 +39,7 @@ describe("route table", () => {
       "device-revoked",
       "trust-device",
       "locked",
+      "help",
     ]);
   });
 

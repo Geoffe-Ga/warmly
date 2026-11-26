@@ -142,7 +142,9 @@ describe("the prose (RF-005)", () => {
       />,
     );
 
-    const paragraphs = [...document.querySelectorAll(".cited-answer > p")];
+    const paragraphs = [
+      ...document.querySelectorAll(".cited-answer > p:not(.hint)"),
+    ];
     expect(paragraphs.map((each) => each.textContent)).toEqual([
       "You cooked together. [1]",
       "You also walked. [2][3]",
@@ -187,9 +189,9 @@ describe("the prose (RF-005)", () => {
       />,
     );
 
-    expect(document.querySelector(".cited-answer > p")?.textContent).toBe(
-      "A [1] B [1][2]",
-    );
+    expect(
+      document.querySelector(".cited-answer > p:not(.hint)")?.textContent,
+    ).toBe("A [1] B [1][2]");
     expect(within(sources()).getAllByRole("listitem")).toHaveLength(2);
   });
 
@@ -209,9 +211,9 @@ describe("the prose (RF-005)", () => {
   it("leaves a mark with no citation behind it out, and keeps the words", () => {
     render(<CitedAnswer answer={answer("A [c7] B", [])} entries={[ENTRY]} />);
 
-    expect(document.querySelector(".cited-answer > p")?.textContent).toBe(
-      "A  B",
-    );
+    expect(
+      document.querySelector(".cited-answer > p:not(.hint)")?.textContent,
+    ).toBe("A  B");
   });
 
   it("drops empty paragraphs and keeps single line breaks inside one", () => {
@@ -223,7 +225,7 @@ describe("the prose (RF-005)", () => {
     );
 
     expect(
-      [...document.querySelectorAll(".cited-answer > p")].map(
+      [...document.querySelectorAll(".cited-answer > p:not(.hint)")].map(
         (each) => each.textContent,
       ),
     ).toEqual(["First line\nsecond line", "Last."]);
@@ -290,9 +292,9 @@ describe("the sources (RF-005, AC-26)", () => {
       SOURCE_GONE,
     );
     expect(screen.queryByRole("link")).toBeNull();
-    expect(document.querySelector(".cited-answer > p")?.textContent).toBe(
-      "A [1]",
-    );
+    expect(
+      document.querySelector(".cited-answer > p:not(.hint)")?.textContent,
+    ).toBe("A [1]");
   });
 });
 
@@ -314,8 +316,8 @@ describe("answer text is only ever text (SEC-010)", () => {
       links.every((link) => link.getAttribute("href")?.startsWith("/journal/")),
     ).toBe(true);
     expect(document.body.innerHTML).not.toContain('example.invalid">');
-    expect(document.querySelector(".cited-answer > p")?.textContent).toContain(
-      "<script>alert(1)</script>",
-    );
+    expect(
+      document.querySelector(".cited-answer > p:not(.hint)")?.textContent,
+    ).toContain("<script>alert(1)</script>");
   });
 });

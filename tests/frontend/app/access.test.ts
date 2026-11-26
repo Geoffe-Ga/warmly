@@ -40,7 +40,22 @@ describe("route guard (DEV-005, UI-008)", () => {
       "add-device",
       "device-revoked",
       "locked",
+      "help",
     ]);
+  });
+
+  it("shows the one open screen, which is fixed words only, in every state", () => {
+    expect(ROUTES.filter((r) => r.access === "open").map((r) => r.id)).toEqual([
+      "help",
+    ]);
+    for (const state of [
+      "signed_out",
+      "signed_in_locked",
+      "unlocked",
+    ] as const) {
+      expect(resolve("/help", state)).toMatchObject({ kind: "view" });
+      expect(redirectFor("open", state)).toBeUndefined();
+    }
   });
 
   it.each(privateRoutes.map((route) => [route.id, route] as const))(

@@ -180,6 +180,15 @@ export function coverageNote(answer: ReflectionAnswer): string | undefined {
   return `This answer is about ${sent} of the ${all} journal entries you had when you asked. The others did not fit in one request, so it does not speak for your whole journal.`;
 }
 
+/**
+ * Said under every answer (PRD AI-013, RF-012; AC-26). The app cannot read
+ * an answer's prose and mark each inference in it, so it says this of the
+ * whole answer, every time, whatever the model wrote: what you wrote is
+ * yours, and anything about feelings is the AI's guess.
+ */
+export const ANSWER_IS_A_READING =
+  "This is an AI's reading of the entries that were sent, and it can be wrong. The quoted words are yours, as you wrote them. Anything it says about how you or your partner feel or what either of you meant is a possibility to check, not a fact. It is not advice from a therapist or a doctor.";
+
 export function CitedAnswer(props: {
   readonly answer: ReflectionAnswer;
   readonly entries: readonly JournalEntry[];
@@ -241,6 +250,7 @@ export function CitedAnswer(props: {
           </ol>
         </section>
       )}
+      <p class="hint cited-answer__caution">{ANSWER_IS_A_READING}</p>
     </div>
   );
 }

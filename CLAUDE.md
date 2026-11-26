@@ -406,6 +406,18 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   `src/domain/dependency-rules.ts`. The person is told before (the edit
   screen and delete confirmation, `dependentsWarning`) and after (the
   shell's notice, `removedText`): a count and fixed words only.
+- What Warmly is not is said in fixed words on the help page
+  (`src/ui/screens/help/boundaries.tsx`, route `help`, access `open`),
+  on sign-up and on Reflect: not therapy, not a medical or crisis service,
+  not a judge, a fallible aid (PRD RF-012). Never add crisis detection,
+  sentiment scoring or any reading of journal text for the app's own
+  purposes (RF-013); a test scans the source for it. Every answer ends
+  with `ANSWER_IS_A_READING`. `open` access is only for screens of fixed
+  words that show nothing private. The rules a provider is given are
+  pinned clause by clause in `tests/frontend/reflect/policy.test.ts`, and
+  `tests/frontend/reflect/fixtures/injection-v1.json` holds journal text
+  that tries to act as instructions: never edit it, add a new version.
+  These tests prove the app's own controls, not how a model behaves.
 - A Reflect session and all its questions and answers are one private
   record (kind `reflect-session`, envelope type 4), changed only through
   `ReflectSessions` (`src/domain/reflect/sessions.ts`), reached as
