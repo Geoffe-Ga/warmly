@@ -183,6 +183,11 @@ can set. The owner decided on 2026-11-26 which of them to adopt now
    owner are in `.github/CODEOWNERS`, and a test fails if one of them
    loses its owner. The file does nothing by itself: "Require review from
    Code Owners" must be turned on for `main`.
+   GitHub does not count an author's approval of their own pull request,
+   and agents open pull requests through the owner's account. So once the
+   setting is on, a change to one of these paths from that account cannot
+   be approved by its only owner: it needs a second owner, agents working
+   under an account of their own, or an admin's bypass each time.
 3. Create the `release-policy-change` label. **Adopted.** A person
    creates it; an agent never creates or adds it.
 4. Require an approving review from someone other than the author on
