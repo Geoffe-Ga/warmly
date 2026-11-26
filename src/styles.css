@@ -636,6 +636,38 @@ textarea.field__control {
   color: var(--color-ink);
 }
 
+/* Printing a collection: the sheet and nothing else (PRD CC-013).
+   Black on white whatever the screen colours are, because paper is not a
+   screen. Everything around the sheet is removed from the printed page:
+   the header, the status lines, the page heading, the note and the
+   buttons. */
+@media print {
+  html,
+  body,
+  .shell,
+  main {
+    background: white !important;
+    color: black !important;
+  }
+
+  .shell > :not(main),
+  main:has(.print-sheet) > :not(.stack),
+  main:has(.print-sheet) .stack > :not(.print-sheet) {
+    display: none !important;
+  }
+
+  .print-sheet,
+  .print-sheet * {
+    background: white !important;
+    color: black !important;
+  }
+
+  /* A card is not split across two pages where that can be avoided. */
+  .print-sheet__cards > li {
+    break-inside: avoid;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation: none !important;

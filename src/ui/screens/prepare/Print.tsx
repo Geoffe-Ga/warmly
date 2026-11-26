@@ -9,6 +9,13 @@ import { PageLayout } from "../../components/PageLayout";
 import { useCollection, type OpenCollection } from "./Collection";
 import { FailedNotice, LoadingNotice, MissingNotice } from "./shared";
 
+/**
+ * Said beside the Print button. Paper is outside everything the app does
+ * to keep cards private, and the person should know before printing.
+ */
+export const PAPER_NOTE =
+  "A printed page is not protected by Warmly. Anyone who has the paper can read it, and deleting a card here does not remove it from paper.";
+
 function Sheet(props: OpenCollection): JSX.Element {
   const { collection, cards } = props;
   if (cards.length === 0) {
@@ -26,6 +33,7 @@ function Sheet(props: OpenCollection): JSX.Element {
           ))}
         </ol>
       </section>
+      <p>{PAPER_NOTE}</p>
       <div class="button-row">
         <Button
           variant="primary"
@@ -41,9 +49,15 @@ function Sheet(props: OpenCollection): JSX.Element {
 }
 
 /**
- * A printable copy of one collection: the card text and nothing else (PRD
- * CC-013). Printing happens only when the person presses Print, through
- * the browser's own print dialog. Nothing is sent anywhere to make it.
+ * A printable copy of one collection: its name and the card text, and
+ * nothing else (PRD CC-013). No journal text, no notes on where a card
+ * came from, no kind or authorship labels, no dates, and nothing about the
+ * account or device.
+ *
+ * Printing happens only when the person presses Print, through the
+ * browser's own print dialog. The app makes no file and sends nothing
+ * anywhere. On paper, only the sheet is printed: the print styles in
+ * `styles.css` hide the rest of the page.
  *
  * @param props - The route's parameters; `id` names the collection.
  * @returns The print screen.
