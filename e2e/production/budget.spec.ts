@@ -1,10 +1,12 @@
 /**
  * How much a first visit downloads (PRD §8, UI-003; AC-28).
  *
- * The budget is for what the page needs before it can show anything: the
- * script and style sheet named in the HTML, as a browser receives them
- * compressed. It is measured on the real production build, so a new
- * dependency or a test double that slips into it shows up here.
+ * The budget is for every script and style sheet a first visit fetches,
+ * as a browser receives them compressed: the ones the page names, any
+ * chunk loaded later (the service worker caches all of them on the first
+ * visit), and the service worker with its own runtime. It is measured on
+ * the real production build, so a new dependency or a test double that
+ * slips into it shows up here. Icons and the manifest are not counted.
  *
  * Raising the budget is a decision, not a fix: say why in the PR.
  */
@@ -25,12 +27,25 @@ test.describe("production build: download size", () => {
       ...html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/g),
     ].map((match) => match[1] ?? "");
 
+    // Everything else the first visit fetches: the service worker, the
+    // runtime it loads, and every script or style it caches straight away.
+    const worker = await (await request.get("/sw.js")).text();
+    const runtime = [...worker.matchAll(/["']\.\/(workbox-[\w-]+)["']/g)].map(
+      (match) => `/${match[1] ?? ""}.js`,
+    );
+    const precached = [...worker.matchAll(/url:\s*"([^"]+\.(?:js|css))"/g)].map(
+      (match) => `/${match[1] ?? ""}`,
+    );
+    expect(runtime.length).toBeGreaterThan(0);
+    expect(precached.length).toBeGreaterThan(0);
+    const all = [...new Set([...assets, "/sw.js", ...runtime, ...precached])];
+
     // The page must name its script and its styles, or nothing is measured.
     expect(assets.some((path) => path.endsWith(".js"))).toBe(true);
     expect(assets.some((path) => path.endsWith(".css"))).toBe(true);
 
     let total = 0;
-    for (const path of assets) {
+    for (const path of all) {
       const response = await request.get(path);
       expect(response.ok(), path).toBe(true);
       total += gzipSync(await response.body(), { level: 9 }).length;
@@ -38,7 +53,7 @@ test.describe("production build: download size", () => {
 
     expect(
       total,
-      `A first visit downloads ${String(total)} bytes compressed; the budget is ${String(INITIAL_BUDGET_BYTES)}.`,
+      `A first visit downloads ${String(total)} bytes compressed (${all.join(", ")}); the budget is ${String(INITIAL_BUDGET_BYTES)}.`,
     ).toBeLessThanOrEqual(INITIAL_BUDGET_BYTES);
     // A budget far above what is used protects nothing. If the app has
     // shrunk to under half of it, lower the budget.
