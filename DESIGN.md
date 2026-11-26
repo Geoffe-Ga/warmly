@@ -307,7 +307,7 @@ The system uses the **device's own UI font** (`system-ui, -apple-system, "Segoe 
 - **All sizes are in rem** so the interface follows the user's browser text-size setting and tolerates high zoom (PRD §3.6).
 - **Three weights only:** 400 for reading, 600 for controls and labels, 700 for headings.
 - **One `h1` per screen**, and it receives focus after in-app navigation so screen-reader users hear that the screen changed.
-- Headings use `overflow-wrap: anywhere` so a long word cannot force horizontal scrolling on a narrow phone.
+- All text uses `overflow-wrap: anywhere` (set on `body`), so a word too long for its line breaks and cannot force horizontal scrolling, on a narrow phone, at double text size, in any font. Grid columns that hold text are `minmax(0, 1fr)` and text fields may shrink, for the same reason.
 
 ## Layout
 
@@ -411,7 +411,7 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`card-row`** — One card in a collection's list: a `{component.action-link}` showing the card's words and its kind, and under it two `{component.button-secondary}`s, "Move up" and "Move down". The one that leads nowhere is `{component.button-disabled}`. After a move, a `hint` line says where the card went ("Moved to position 2 of 3."), which is also read out. A row can be dragged onto another row to take its place; the buttons do the same from the keyboard and on touch screens.
 
-**`present-card`** — Presentation mode: one card at a time on a `{colors.surface}` panel with a `{colors.border-strong}` border and generous padding, text at `{typography.heading}` size so it can be read from across a table. Below it a `hint` ("Card 1 of 3") and two `{component.button-secondary}`s, "Previous card" and "Next card"; the one that leads nowhere is `{component.button-disabled}`. Nothing else is on the panel: no source notes, no timers, no marks for cards already shown.
+**`present-card`** — Presentation mode: one card at a time on a `{colors.surface}` panel with a `{colors.border-strong}` border and generous padding, text at `{typography.heading}` size so it can be read from across a table. Below it a `hint` ("Card 1 of 3") and two `{component.button-secondary}`s, "Previous card" and "Next card"; the one that leads nowhere is `{component.button-disabled}`. The two buttons share the row's width and are taller than usual, so either can be pressed with a thumb; the left and right arrow keys do the same, and a `hint` says so. Nothing else is on the panel: no source notes, no timers, no marks for cards already shown.
 
 **`print-sheet`** — What the print screen will print: the collection's name as a heading and its cards as a numbered list at `{typography.title}` size, then a `{component.button-primary}` "Print". Card text only.
 

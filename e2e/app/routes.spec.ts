@@ -76,6 +76,37 @@ test.describe("every private screen while unlocked (UX-001, AC-23)", () => {
   });
 });
 
+test.describe("large text (UI-003)", () => {
+  test("no private screen scrolls sideways at double text size", async ({
+    page,
+  }) => {
+    await onboard(page);
+
+    for (const route of PRIVATE_ROUTES) {
+      await openInApp(page, pathFor(route.id, SAMPLE_PARAMS));
+      await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+      // Fonts differ between machines, and a wider one must not break a
+      // screen that a narrower one fits. Much wider letter spacing stands
+      // in for any wider font, so the answer is the same everywhere.
+      for (const spacing of ["0", "0.3em"]) {
+        const overflow = await page.evaluate((letterSpacing) => {
+          const root = document.documentElement;
+          root.style.fontSize = "200%";
+          root.style.letterSpacing = letterSpacing;
+          const extra = root.scrollWidth - root.clientWidth;
+          root.style.fontSize = "";
+          root.style.letterSpacing = "";
+          return extra;
+        }, spacing);
+        expect(
+          overflow,
+          `${route.id}, letter spacing ${spacing}`,
+        ).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+});
+
 test.describe("signed-out access (DEV-005)", () => {
   for (const route of PRIVATE_ROUTES) {
     test(`${route.id} redirects to sign in and shows nothing private`, async ({

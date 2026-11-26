@@ -68,6 +68,9 @@ body {
   font-family: var(--font-body);
   font-size: var(--font-size-body);
   line-height: var(--line-height);
+  /* A word too long for its line breaks, on any screen, at any text size
+     and in any font, so that a page never has to scroll sideways */
+  overflow-wrap: anywhere;
 }
 
 h1,
@@ -150,6 +153,10 @@ a {
 
 .stack {
   display: grid;
+  /* One column that may shrink below its widest child, so a wide field or
+     button wraps or shrinks at large text sizes and the page never scrolls
+     sideways. */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-3);
 }
 
@@ -247,6 +254,8 @@ a {
 
 .field__control {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   min-height: var(--touch-target);
   padding: var(--space-2) var(--space-3);
   border: var(--border-width) solid var(--color-border-strong);
@@ -269,6 +278,8 @@ textarea.field__control {
 
 .choices {
   display: grid;
+  /* The column may be narrower than its longest word, which then breaks */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
   min-width: 0;
   margin: 0;
@@ -289,8 +300,15 @@ textarea.field__control {
   list-style: none;
 }
 
+.choices__list li {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .choices__option {
   display: inline-flex;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--touch-target);
@@ -308,7 +326,12 @@ textarea.field__control {
   width: 1.25rem;
   height: 1.25rem;
   margin: 0;
+  flex: none;
   accent-color: var(--color-coral-strong);
+}
+
+.choices__option span {
+  min-width: 0;
 }
 
 /* An action offered inside a banner sits clear of its text */
@@ -573,6 +596,12 @@ textarea.field__control {
   background: var(--color-surface);
   font-size: var(--font-size-heading);
   line-height: 1.35;
+}
+
+/* Next and previous: big enough to press with a thumb */
+.present-controls .button {
+  flex: 1 1 8rem;
+  min-height: 3.5rem;
 }
 
 /* What the print screen will print */

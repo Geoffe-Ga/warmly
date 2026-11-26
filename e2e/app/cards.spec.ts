@@ -165,10 +165,14 @@ test.describe("preparing for a conversation", () => {
     await page.getByRole("button", { name: "Next card" }).focus();
     await page.keyboard.press("Enter");
     await expect(page.getByText("Card 2 of 2")).toBeVisible();
-    await page.getByRole("link", { name: "Back to the collection" }).click();
+    await page
+      .getByRole("link", { name: "Close and go back to the collection" })
+      .click();
     await page.getByRole("link", { name: "Present these cards" }).click();
     await expect(page.getByText("Card 1 of 2")).toBeVisible();
-    await page.getByRole("link", { name: "Back to the collection" }).click();
+    await page
+      .getByRole("link", { name: "Close and go back to the collection" })
+      .click();
 
     // Print: the card text only.
     await page.getByRole("link", { name: "Print these cards" }).click();
