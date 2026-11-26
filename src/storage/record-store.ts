@@ -270,6 +270,11 @@ export class MemoryRecordStore implements RecordStore {
   }
 
   put<K extends RecordKind>(kind: K, record: RecordKinds[K]): Promise<void> {
+    if (this.#deleted.has(`${kind}/${record.id}`)) {
+      // As in the real store: a deleted record never comes back under
+      // its ID.
+      return Promise.reject(new RecordDeletedError());
+    }
     this.#kind(kind).set(record.id, record);
     this.#changed();
     return Promise.resolve();
