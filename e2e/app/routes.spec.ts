@@ -85,14 +85,24 @@ test.describe("large text (UI-003)", () => {
     for (const route of PRIVATE_ROUTES) {
       await openInApp(page, pathFor(route.id, SAMPLE_PARAMS));
       await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-      const overflow = await page.evaluate(() => {
-        document.documentElement.style.fontSize = "200%";
-        const root = document.documentElement;
-        const extra = root.scrollWidth - root.clientWidth;
-        root.style.fontSize = "";
-        return extra;
-      });
-      expect(overflow, route.id).toBeLessThanOrEqual(1);
+      // Fonts differ between machines, and a wider one must not break a
+      // screen that a narrower one fits. Wider letter spacing stands in
+      // for a wider font, so the answer is the same everywhere.
+      for (const spacing of ["0", "0.1em"]) {
+        const overflow = await page.evaluate((letterSpacing) => {
+          const root = document.documentElement;
+          root.style.fontSize = "200%";
+          root.style.letterSpacing = letterSpacing;
+          const extra = root.scrollWidth - root.clientWidth;
+          root.style.fontSize = "";
+          root.style.letterSpacing = "";
+          return extra;
+        }, spacing);
+        expect(
+          overflow,
+          `${route.id}, letter spacing ${spacing}`,
+        ).toBeLessThanOrEqual(1);
+      }
     }
   });
 });

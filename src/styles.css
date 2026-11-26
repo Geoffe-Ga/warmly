@@ -273,6 +273,8 @@ textarea.field__control {
 
 .choices {
   display: grid;
+  /* The column may be narrower than its longest word, which then breaks */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-1);
   min-width: 0;
   margin: 0;
@@ -293,8 +295,15 @@ textarea.field__control {
   list-style: none;
 }
 
+.choices__list li {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .choices__option {
   display: inline-flex;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   align-items: center;
   gap: var(--space-2);
   min-height: var(--touch-target);
@@ -312,7 +321,12 @@ textarea.field__control {
   width: 1.25rem;
   height: 1.25rem;
   margin: 0;
+  flex: none;
   accent-color: var(--color-coral-strong);
+}
+
+.choices__option span {
+  min-width: 0;
 }
 
 /* An action offered inside a banner sits clear of its text */
