@@ -726,7 +726,11 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
    */
   #stored(session: Unlocked): void {
     this.#changed();
-    session.channel?.post(TAB_CHANGED);
+    // A channel is closed when its tab locks, and a closed one cannot be
+    // posted to.
+    if (this.#session === session) {
+      session.channel?.post(TAB_CHANGED);
+    }
   }
 
   /**
@@ -1216,6 +1220,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     serverRevision: number,
     acknowledged: Acknowledged,
   ): Promise<void> {
+    const session = this.#session;
     const opened = await this.#read();
     if (opened === undefined) {
       throw new StoreLockedError();
@@ -1273,10 +1278,13 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
         };
       },
     );
-    this.#changed();
     // What is waiting to be sent is counted from the stored rows, so the
     // other tabs' status lines are told as well.
-    this.#session?.channel?.post(TAB_CHANGED);
+    if (session === undefined) {
+      this.#changed();
+    } else {
+      this.#stored(session);
+    }
   }
 
   async applyPage(

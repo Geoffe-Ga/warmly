@@ -36,6 +36,9 @@ differ from what it holds.**
 - **The message** is the fixed word `changed`. It names no record and
   holds nothing the person wrote, no ID and no hash. Other pages on the
   same origin could read the channel; there is nothing on it to read.
+  The channel's name does contain the account ID, as the database's name
+  already does (ADR-0014). A page has to know the name to open the
+  channel; a browser gives no list of channels.
 - **A message is only a reason to read.** Whatever arrives, the tab does
   one thing: it reads the rows from IndexedDB and decrypts the ones whose
   local revision is not the one it holds. A forged message can cause a

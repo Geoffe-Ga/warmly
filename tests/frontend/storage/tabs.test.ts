@@ -9,7 +9,11 @@
  */
 import { describe, expect, it } from "vitest";
 
+import type { ReflectionAnswer } from "../../../src/ai/contracts";
 import { importRootKey, type RootKey } from "../../../src/crypto/root-key";
+import { DEPENDENCY_RULES } from "../../../src/domain/dependency-rules";
+import { Invalidator } from "../../../src/domain/deps/invalidate";
+import { RecordReflectSessions } from "../../../src/domain/reflect/sessions";
 import { completedFrom } from "../../../src/domain/journal/drafts";
 import { newEntry, type JournalEntry } from "../../../src/domain/journal/types";
 import { EncryptedRecordStore } from "../../../src/storage/encrypted-record-store";
@@ -258,6 +262,72 @@ describe("whether memory already holds a stored row", () => {
     // A deleted record never comes back, so a copy is dropped whatever
     // revision it claims.
     expect(holdsCurrent({ revision: 9 }, false, row(2, true))).toBe(false);
+  });
+});
+
+describe("what was built from an entry, with two tabs open", () => {
+  function answerFrom(source: JournalEntry): ReflectionAnswer {
+    return {
+      markdown: "Synthetic answer.",
+      citations: [],
+      sources: [{ entryId: source.id, sourceHash: source.contentHash }],
+      coverage: {
+        includedEntryIds: [source.id],
+        omittedEntryCount: 0,
+        truncated: false,
+      },
+    };
+  }
+
+  it("is removed in both when the entry changes in one, though both tabs try", async () => {
+    const { a, b, hub } = await tabs();
+    const checking = [a, b].map((store) => {
+      const invalidator = new Invalidator(store, DEPENDENCY_RULES);
+      invalidator.start();
+      return invalidator;
+    });
+    /** Until neither tab has anything left to read or to check. */
+    const quiet = async (): Promise<void> => {
+      for (let round = 0; round < 6; round += 1) {
+        await hub.delivered();
+        await Promise.all([a.caughtUp(), b.caughtUp()]);
+        await Promise.all(checking.map((each) => each.run()));
+      }
+    };
+    const source = await entry();
+    const untouched = await entry("Not changed");
+    await a.put("journal-entry", source);
+    await a.put("journal-entry", untouched);
+    const sessions = new RecordReflectSessions(a);
+    for (const question of ["One?", "Two?", "Three?"]) {
+      await sessions.start({ question, answer: answerFrom(source) });
+    }
+    const kept = await sessions.start({
+      question: "About the other entry?",
+      answer: answerFrom(untouched),
+    });
+    await quiet();
+    expect(await b.list("reflect-session")).toHaveLength(4);
+
+    await a.put(
+      "journal-entry",
+      await reworded(source, "Changed in the first tab"),
+      await a.get("journal-entry", source.id),
+    );
+    await quiet();
+
+    // Every session built from the changed entry is gone in both tabs,
+    // and the one built from the other entry is in both.
+    for (const store of [a, b]) {
+      expect(
+        (await store.list("reflect-session")).map((each) => each.id),
+      ).toEqual([kept.id]);
+      expect(await store.deleted("reflect-session")).toHaveLength(3);
+      expect(await store.list("journal-entry")).toHaveLength(2);
+    }
+    for (const each of checking) {
+      each.stop();
+    }
   });
 });
 
