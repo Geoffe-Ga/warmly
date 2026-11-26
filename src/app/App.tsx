@@ -25,7 +25,7 @@ import { Link, NavigationContext, type Navigation } from "./navigation";
 import { useOnline } from "./online";
 import { APP_NAME, resolve } from "./resolve";
 import { normalisePath } from "./router";
-import { SECONDARY_NAV } from "./routes";
+import { SECONDARY_NAV, pathFor } from "./routes";
 import {
   ServicesProvider,
   createServices,
@@ -33,6 +33,11 @@ import {
   type Services,
 } from "./services";
 import type { SessionState } from "./session";
+import {
+  UNSUPPORTED_BROWSER,
+  cannotKeepWriting,
+  missingFeatures,
+} from "./support";
 import { useSessionState } from "./use-session-state";
 
 function currentPath(): string {
@@ -98,6 +103,25 @@ function OfflineNotice(props: { readonly state: SessionState }): JSX.Element {
   return (
     <p role="status" class="offline-notice">
       {text}
+    </p>
+  );
+}
+
+/**
+ * A warning on every screen when this browser cannot encrypt or store
+ * (PRD UI-003). Worked out once: what a browser offers does not change
+ * while the page is open. Fixed words, and a way to the page that says
+ * what Warmly is.
+ */
+function UnsupportedNotice(): JSX.Element | null {
+  const unsupported = useMemo(() => cannotKeepWriting(missingFeatures()), []);
+  if (!unsupported) {
+    return null;
+  }
+  return (
+    <p role="alert" class="offline-notice">
+      {UNSUPPORTED_BROWSER}{" "}
+      <Link href={pathFor("help")}>What Warmly is and is not</Link>
     </p>
   );
 }
@@ -343,6 +367,7 @@ export function App(props: AppProps): JSX.Element {
             state={state}
             navigate={navigate}
           />
+          <UnsupportedNotice />
           <OfflineNotice state={state} />
           <UpdateNotice />
           <RemovedNotice state={state} />

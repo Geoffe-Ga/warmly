@@ -77,7 +77,7 @@ test.describe("the service worker caches the public app shell only (SYNC-001)", 
     );
     expect(urls.length).toBeGreaterThan(0);
     for (const url of urls) {
-      expect(url).toMatch(/\.(js|css|html|svg|webmanifest)$/);
+      expect(url).toMatch(/\.(js|css|html|svg|png|webmanifest)$/);
       expect(url).not.toContain("/v1/");
     }
     // Nothing is cached as the app runs: no runtime routes for the API or
@@ -112,7 +112,7 @@ test.describe("the service worker caches the public app shell only (SYNC-001)", 
       const url = new URL(each);
       expect(url.origin).toBe(origin);
       expect(url.pathname).not.toMatch(/^\/v1\//);
-      expect(url.pathname).toMatch(/\.(js|css|html|svg|webmanifest)$/);
+      expect(url.pathname).toMatch(/\.(js|css|html|svg|png|webmanifest)$/);
     }
   });
 });

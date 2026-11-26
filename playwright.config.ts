@@ -18,6 +18,9 @@ const isCI = Boolean(process.env["CI"]);
  *   swaps in in-memory test doubles for external services and includes the
  *   component gallery. Used for feature flows, which cannot depend on a real
  *   auth server or AI provider.
+ * - **pwa** (`e2e/pwa/`): the same `e2e` build, looked at as an installed
+ *   app as a whole: what makes it installable, a full journey with the
+ *   network off, and what happens when the device has no room left.
  */
 export default defineConfig({
   testDir: "e2e",
@@ -49,6 +52,16 @@ export default defineConfig({
     {
       name: "app-mobile-safari",
       testDir: "e2e/app",
+      use: { ...devices["iPhone 15"], baseURL: APP_URL },
+    },
+    {
+      name: "pwa-chromium",
+      testDir: "e2e/pwa",
+      use: { ...devices["Desktop Chrome"], baseURL: APP_URL },
+    },
+    {
+      name: "pwa-mobile-safari",
+      testDir: "e2e/pwa",
       use: { ...devices["iPhone 15"], baseURL: APP_URL },
     },
   ],

@@ -92,8 +92,12 @@ docs/runbooks/           How to do risky operational changes safely
 config/                  Build-time config shared with tests (security headers, CSP)
 public/, index.html      PWA static assets and entry; vite.config.ts = build, manifest, SW, Vitest
 tests/                   pytest (test_*.py); tests/frontend/ Vitest unit tests
-e2e/                     Playwright E2E + axe: production/ (the real build) and
+e2e/                     Playwright E2E + axe: production/ (the real build),
                          app/ (the e2e build, with in-memory service doubles)
+                         and pwa/ (that build as an installed app: install,
+                         a whole journey offline, a full device)
+docs/support/            Supported browsers, budgets and the manual checks
+                         a person must do on real devices before launch
 scripts/<gate>.sh        Runs the gate for Python, then TypeScript
 scripts/python/          Python-only gates
 scripts/typescript/      TypeScript-only gates
@@ -189,6 +193,21 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - The service worker uses `registerType: "prompt"`: never auto-activate an update while
   a draft may be unsaved. Precache only the public app shell; never add runtime caching
   of API responses or anything containing plaintext.
+- The app is installable: the manifest and its PNG icons are set in
+  `vite.config.ts`, and the icons in `public/` are drawn from
+  `public/icon.svg`. `e2e/pwa/install.spec.ts` checks them. The precache
+  may hold scripts, styles, the page, the manifest and the app's own
+  icons, and nothing else.
+- What a browser lacks is found by `missingFeatures` (`src/app/support.ts`),
+  from what it offers, never from its name. The shell's notice for a
+  browser that cannot encrypt or store is fixed text. Never claim a
+  browser or a device was checked by hand unless a person did it:
+  `docs/support/browsers.md` lists what is automated and what is not.
+- Budgets: a first visit downloads at most 150 KB of script and styles
+  compressed (`e2e/production/budget.spec.ts`), and opening the journal
+  decrypts each entry once (`tests/frontend/perf/scale.test.ts`). Raising
+  either needs a reason in the PR. Never add a wall-clock time limit as a
+  test: it fails for reasons that are not the code's.
 - `no-console` is an ESLint error, because logs must never contain journal content.
 - The Content Security Policy lives in `config/security-headers.ts`. Never add
   `unsafe-inline`, `unsafe-eval` or a wildcard; a new `connect-src` origin needs a
