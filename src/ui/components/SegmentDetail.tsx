@@ -4,10 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { SegmentAlternatives } from "../../ai/contracts";
 import type { SegmentAlternativesRequest } from "../../ai/provider";
 import { AiRequestController } from "../../ai/request-controller";
-import { useServices } from "../../app/services";
-
 import { Link } from "../../app/navigation";
 import { pathFor } from "../../app/routes";
+import { useServices } from "../../app/services";
 import type { Provenance } from "../../domain/cards/provenance";
 import type { CardSegment } from "../../domain/cards/types";
 import { formatEntryDate } from "../screens/journal/shared";
@@ -54,7 +53,7 @@ export const OPTIONS_ARE_SUGGESTIONS =
 
 /** Said once a wording has been put in place. */
 export const WORDING_USED =
-  "This part now uses the wording you picked. It is marked as a suggestion.";
+  "This part now uses the wording you picked. Choosing it makes this card yours.";
 
 /** Said when a picked wording could not be stored. */
 export const WORDING_NOT_SAVED =
@@ -121,6 +120,9 @@ function MoreOptions(props: {
 
   useEffect(() => {
     if (state.phase === "done") {
+      // The wordings are copied here first, so the controller can be put
+      // back to idle: the button is then ready for another request, and
+      // this effect cannot run a second time for the same answer.
       setOptions(state.result.alternatives);
       controller.reset();
     }

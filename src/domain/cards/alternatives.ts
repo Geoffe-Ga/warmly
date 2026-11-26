@@ -7,9 +7,8 @@
  * agreed to that very request in the disclosure dialog.
  *
  * The wordings that come back are suggestions. They cite nothing
- * (ADR-0008), they are never stored unless the person picks one, and a
- * picked wording is marked as a suggestion, because nothing has checked
- * it against the journal.
+ * (ADR-0008) and are never stored unless the person picks one. Picking
+ * one is a change to the card, so the card becomes the person's own.
  */
 import type {
   SegmentAlternativesRequest,
@@ -17,6 +16,8 @@ import type {
 } from "../../ai/provider";
 import type { RecordStore } from "../../storage/record-store";
 import type { JournalEntry } from "../journal/types";
+import { cleanCardText } from "./cards";
+import { owned } from "./ownership";
 import type { ConversationCard } from "./types";
 
 /** The part to reword is not in the card. */
@@ -90,9 +91,9 @@ export function alternativesRequest(
  * Only that part changes. Its words become the picked wording, and what
  * was said about the old words goes with them: the quotes it rested on
  * and the explanation of why it was worded that way described text that
- * is no longer there. The part is marked as a suggestion, which is what a
- * wording from AI that cites nothing is. The other parts, and what the
- * card was drafted from, are left as they are.
+ * is no longer there. Choosing is the person's own act, so the card
+ * becomes theirs, as with any other change (decision D-15). The other
+ * parts are left as they are.
  *
  * @param deps - The record store.
  * @param cardId - The card.
@@ -101,6 +102,8 @@ export function alternativesRequest(
  * @param now - The current time.
  * @returns The changed card, or `undefined` if the card or the part is no
  *   longer here.
+ * @throws InvalidCardTextError if the wording is empty or too long: the
+ *   same limits as for words the person types.
  */
 export async function chooseAlternative(
   deps: { readonly records: RecordStore },
@@ -109,6 +112,7 @@ export async function chooseAlternative(
   text: string,
   now: Date = new Date(),
 ): Promise<ConversationCard | undefined> {
+  const words = cleanCardText(text);
   const card = await deps.records.get("conversation-card", cardId);
   if (
     card === undefined ||
@@ -116,21 +120,18 @@ export async function chooseAlternative(
   ) {
     return undefined;
   }
-  const changed: ConversationCard = {
-    ...card,
-    segments: card.segments.map((segment) =>
+  // Picking a wording is a change to the card like any other, so the card
+  // becomes the person's own (decision D-15).
+  const changed = owned(
+    card,
+    card.type,
+    card.segments.map((segment) =>
       segment.id === segmentId
-        ? {
-            id: segment.id,
-            category: segment.category,
-            text,
-            evidenceKind: "suggestion",
-            evidence: [],
-          }
+        ? { id: segment.id, category: segment.category, text: words }
         : segment,
     ),
-    updatedAt: now.toISOString(),
-  };
+    now.toISOString(),
+  );
   await deps.records.put("conversation-card", changed);
   return changed;
 }

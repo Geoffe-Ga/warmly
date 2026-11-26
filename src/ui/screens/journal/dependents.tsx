@@ -97,7 +97,11 @@ export function useDependentCount(
       buildIndex(records, DEPENDENCY_RULES).then(
         (index) => {
           if (current) {
-            const built = entryId === undefined ? [] : index.of(entryId);
+            // Only what would be removed is counted. A card the person
+            // has made their own is kept, so it is not warned about.
+            const built = (
+              entryId === undefined ? [] : index.of(entryId)
+            ).filter((each) => each.action === "delete");
             const cards = built.filter(
               (each) => each.kind === "conversation-card",
             ).length;

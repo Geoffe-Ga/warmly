@@ -134,3 +134,40 @@ of it.
   is fine at this scale; an index kept in memory is the next step if it is
   not.
 - Real provider adapters (ADR-0007) may be connected now that this exists.
+
+## Amendment: cards the person has made their own (issue #60, decision D-15)
+
+**Ownership.** A card drafted by AI becomes the person's own the first
+time they save any change to it: a part reworded, a part removed, a
+different kind of card, a wording picked from AI's suggestions, or the
+whole card rewritten as one text (D-15). Saving with nothing changed is
+not a change. Moving a card in its collection is not a change. The step
+is one-way.
+
+**What an edit removes at once.** The part whose words changed loses what
+the AI said about it: its quotes, its kind of evidence and its
+explanation. They described words that are no longer there. Parts that
+were not touched keep theirs. Once no part has any left, the card keeps no
+reference to the journal at all: no entry IDs, no hashes, no theme.
+
+**What a source change does to an owned card.** It is never deleted. If it
+still carries anything the AI said, it depends on every entry that was
+sent to draft it, as an unedited card does, and when one of them is
+changed or deleted **all** of the AI's notes are taken out of the card and
+every reference to the journal with them. The words stay exactly as they
+are. This is wider than "the parts that quoted that entry": an explanation
+or an inference was written from everything that was sent, so it may
+paraphrase the entry that changed even where it quotes another. It is the
+same reasoning as the D-14 amendment above.
+
+**How the engine does it.** A dependent now says what happens to it when
+it is stale: `delete`, or `strip` with a function that changes the record
+so that it has no sources left. The engine calls one or the other. A
+stripped card is an ordinary update that syncs; it is not counted in the
+notice of what was removed, and it is not warned about before an entry is
+edited, because nothing of the person's is lost. Running the pass again
+finds nothing to do.
+
+**No excerpt remains.** A card never held journal text, only references
+(DEP-004), and stripping removes the references. A test scans a preserved
+card for any run of words from the old entry, its ID and its hash.
