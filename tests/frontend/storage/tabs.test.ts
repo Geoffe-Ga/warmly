@@ -18,6 +18,8 @@ import { completedFrom } from "../../../src/domain/journal/drafts";
 import { newEntry, type JournalEntry } from "../../../src/domain/journal/types";
 import { EncryptedRecordStore } from "../../../src/storage/encrypted-record-store";
 import { StaleRecordError } from "../../../src/storage/record-store";
+import { SyncEngine } from "../../../src/sync/engine";
+import { MemoryServer } from "../../../src/sync/testing/memory-server";
 import {
   holdsCurrent,
   type TabChannel,
@@ -328,6 +330,97 @@ describe("what was built from an entry, with two tabs open", () => {
     for (const each of checking) {
       each.stop();
     }
+  });
+});
+
+describe("what sync does in one tab", () => {
+  function syncing(store: EncryptedRecordStore, server: MemoryServer) {
+    return new SyncEngine(
+      store,
+      server.transportFor(() => OWNER),
+      () => true,
+    );
+  }
+
+  it("reaches the other tab when a change arrives from another device", async () => {
+    const { a, b, settled } = await tabs();
+    const server = new MemoryServer();
+    // Another device of the account, with a database of its own.
+    databases += 1;
+    const phoneName = `tabs-test-phone-${String(databases)}`;
+    const phone = new EncryptedRecordStore(() => phoneName);
+    phone.unlock(await rootKey(), OWNER);
+    const saved = await entry("Written on the phone");
+    await phone.put("journal-entry", saved);
+    await syncing(phone, server).sync();
+    expect(await b.list("journal-entry")).toEqual([]);
+
+    // Only the first tab syncs: one tab at a time does (ADR-0006).
+    await syncing(a, server).sync();
+    await settled(b);
+
+    expect(await b.list("journal-entry")).toEqual([saved]);
+  });
+
+  it("tells the other tab when the server has accepted what was waiting", async () => {
+    const { a, b, hub, settled } = await tabs();
+    const server = new MemoryServer();
+    await a.put("journal-entry", await entry());
+    await settled(b);
+    expect(await b.pendingCount()).toBe(1);
+    const before = hub.posted.length;
+    let told = 0;
+    b.subscribe(() => {
+      told += 1;
+    });
+
+    await syncing(a, server).sync();
+    await settled(b);
+
+    // No record changed, only what is waiting to be sent. That is counted
+    // from the stored rows, so the second tab's listeners must be told to
+    // look again or its status line would go on saying "1 waiting".
+    expect(hub.posted.length).toBeGreaterThan(before);
+    expect(told).toBeGreaterThan(0);
+    expect(await b.pendingCount()).toBe(0);
+  });
+});
+
+describe("a record the other tab cannot read", () => {
+  it("is counted as unreadable and shown nowhere, however often it is read", async () => {
+    const hub = new Hub();
+    databases += 1;
+    const name = `tabs-test-unreadable-${String(databases)}`;
+    const a = new EncryptedRecordStore(() => name, hub.channel);
+    a.unlock(await rootKey(), OWNER);
+    // The same database opened with a different key, as after a mistake
+    // no screen allows: nothing the first tab stores can be read here.
+    const b = new EncryptedRecordStore(() => name, hub.channel);
+    b.unlock(
+      await importRootKey(Uint8Array.from({ length: 32 }, (_, i) => 255 - i)),
+      OWNER,
+    );
+    await b.list("journal-entry");
+    let told = 0;
+    b.subscribe(() => {
+      told += 1;
+    });
+
+    await a.put("journal-entry", await entry());
+    await hub.delivered();
+    await b.caughtUp();
+
+    expect(await b.list("journal-entry")).toEqual([]);
+    expect(await b.unreadable("journal-entry")).toBe(1);
+    expect(told).toBeGreaterThan(0);
+
+    // Told again with nothing new stored: it is read again and still
+    // cannot be read. It is not counted twice.
+    hub.forge(name, "changed");
+    await b.caughtUp();
+
+    expect(await b.list("journal-entry")).toEqual([]);
+    expect(await b.unreadable("journal-entry")).toBe(1);
   });
 });
 

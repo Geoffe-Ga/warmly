@@ -616,31 +616,27 @@ async function freshCopy(
  *
  * A record that did not change keeps the very copy memory held, so a
  * change based on it is still accepted (ADR-0016).
- *
- * @returns Whether memory changed.
  */
-function takeCopy(copy: FreshCopy | undefined, opened: Opened): boolean {
+function takeCopy(copy: FreshCopy | undefined, opened: Opened): void {
   // Checked again: a write of this tab's own may have landed while the
   // rows were being decrypted, and it is the newer one.
   if (copy === undefined || upToDate(copy.kind, copy.row, opened)) {
-    return false;
+    return;
   }
   const { kind, row, record } = copy;
   const records: Map<string, Held<RecordKinds[RecordKind]>> = opened.records[
     kind
   ];
-  const wasUnreadable = opened.unreadable[kind].has(row.id);
   records.delete(row.id);
   opened.unreadable[kind].delete(row.id);
   if (row.tombstone) {
-    return true;
+    return;
   }
   if (record === undefined) {
     opened.unreadable[kind].add(row.id);
-    return !wasUnreadable;
+  } else {
+    records.set(row.id, { record, revision: row.localRevision });
   }
-  records.set(row.id, { record, revision: row.localRevision });
-  return true;
 }
 
 /** A {@link RecordStore} that keeps encrypted records in IndexedDB. */
@@ -649,7 +645,11 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
   readonly #channel: TabChannelFactory;
   readonly #listeners = new Set<() => void>();
   #session: Unlocked | undefined;
-  /** The reading of other tabs' changes that is under way, if one is. */
+  /**
+   * The reading of other tabs' changes that is under way, if one is. It
+   * is not dropped on lock: a reading that finds its session is no longer
+   * the current one touches nothing, and then clears this itself.
+   */
   #catchingUp: Promise<void> | undefined;
   /** Another tab announced a change while one reading was under way. */
   #behind = false;
@@ -744,7 +744,9 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
       return;
     }
     const reading = this.#takeIn()
-      // A database that cannot be read says so on the next read or write.
+      // A reading that fails changes nothing: memory is only touched once
+      // every row has been read and decrypted. A database that cannot be
+      // read says so, as a typed error, on the next read or write.
       .catch(() => undefined)
       .then(() => {
         this.#catchingUp = undefined;
@@ -782,13 +784,13 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     if (this.#session !== session) {
       return;
     }
-    let changed = false;
     for (const copy of fresh) {
-      changed = takeCopy(copy, opened) || changed;
+      takeCopy(copy, opened);
     }
-    if (changed) {
-      this.#changed();
-    }
+    // Listeners are told even when no record in memory changed: what is
+    // waiting to be sent, and what needs the person, are counted from the
+    // stored rows, and another tab's sync changes those alone.
+    this.#changed();
   }
 
   /** The data of the current unlocked period, or nothing once locked. */
@@ -1222,7 +1224,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
   ): Promise<void> {
     const session = this.#session;
     const opened = await this.#read();
-    if (opened === undefined) {
+    if (session === undefined || opened === undefined) {
       throw new StoreLockedError();
     }
     const { type, recordId } = change.operation;
@@ -1280,11 +1282,7 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     );
     // What is waiting to be sent is counted from the stored rows, so the
     // other tabs' status lines are told as well.
-    if (session === undefined) {
-      this.#changed();
-    } else {
-      this.#stored(session);
-    }
+    this.#stored(session);
   }
 
   async applyPage(
