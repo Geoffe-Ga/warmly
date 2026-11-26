@@ -43,6 +43,31 @@ describe("the in-memory record store (SYNC-001)", () => {
     expect(await store.list("journal-entry")).toEqual([]);
   });
 
+  it("knows which records were deleted, by kind, and not ones that were never here", async () => {
+    const store = new MemoryRecordStore();
+    const entry = await newEntry(ANSWERS);
+    await store.put("journal-entry", entry);
+    expect(await store.deleted("journal-entry")).toEqual([]);
+
+    await store.delete("journal-entry", entry.id);
+    await store.delete("journal-entry", "never-here");
+
+    expect(await store.deleted("journal-entry")).toEqual([entry.id]);
+    expect(await store.deleted("reflect-session")).toEqual([]);
+    // A deletion accepted from another device counts too.
+    const other = await newEntry(ANSWERS);
+    await store.put("journal-entry", other);
+    store.park(other.id, undefined, 2);
+    expect(await store.deleted("journal-entry")).toEqual([entry.id]);
+    await store.resolve("journal-entry", other.id, "theirs", 2);
+    expect((await store.deleted("journal-entry")).sort()).toEqual(
+      [entry.id, other.id].sort(),
+    );
+
+    store.lock();
+    expect(await store.deleted("journal-entry")).toEqual([]);
+  });
+
   it("tells subscribers after each change, until they unsubscribe", async () => {
     const store = new MemoryRecordStore();
     const entry = await newEntry(ANSWERS);

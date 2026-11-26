@@ -15,6 +15,7 @@ import { StatusBanner } from "../../components/StatusBanner";
 import { AccountForm, useAction } from "../account/shared";
 import { EntryFields, OutOfDate } from "./EntryFields";
 import { describeOpenFailure } from "../../storage-messages";
+import { DependentsWarning } from "./dependents";
 import { CANNOT_OPEN, formatEntryDate } from "./shared";
 
 /** What the screen has found out about the entry to edit. */
@@ -135,6 +136,7 @@ export function EditEntry(props: {
           }}
         />
       )}
+      <DependentsWarning entryId={id} doing="edit" />
       <AccountForm
         action={action}
         validate={() => {

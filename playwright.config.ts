@@ -24,7 +24,9 @@ export default defineConfig({
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 1 : 0,
-  reporter: isCI ? [["github"], ["html", { open: "never" }]] : "list",
+  // In CI the list reporter prints each test as it finishes, so a log cut
+  // short still shows how far the run got.
+  reporter: isCI ? [["list"], ["github"], ["html", { open: "never" }]] : "list",
   use: {
     trace: "on-first-retry",
   },
