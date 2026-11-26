@@ -206,41 +206,50 @@ export function useDraft(): DraftForm {
 
   /** Delete the form's draft and empty the form. See `discard`. */
   const runDiscard = async (): Promise<void> => {
-    await settle();
-    const discarded = draft.current;
-    if (discarded !== undefined) {
-      // Forgotten first: whatever happens next, nothing may be saved onto
-      // the deleted draft's ID.
-      draft.current = undefined;
-      // While the draft is being deleted the form has no draft, so a save
-      // would start a second one. Nothing is saved until it is known
-      // whether the draft is gone; what is typed meanwhile is held, and
-      // the lock, page-hidden and leaving-the-screen saves wait for this
-      // (see `flush`) so that held words are not lost to them.
-      discarding.current = true;
-      let gone = false;
-      try {
-        await deleteEntry({ records, events }, discarded.id);
+    // From here until it is known whether the draft is gone, nothing is
+    // saved: the form is about to have no draft, and a save would start a
+    // second one. That includes the moment spent waiting for a save that
+    // was already running. What is typed meanwhile is held, and the lock,
+    // page-hidden and leaving-the-screen saves wait for this (see `flush`)
+    // so that held words are not lost to them.
+    discarding.current = true;
+    // Whether the form ends with no draft: there was none, or it was
+    // deleted.
+    let gone = false;
+    try {
+      await settle();
+      const discarded = draft.current;
+      if (discarded === undefined) {
         gone = true;
-      } catch (error) {
-        // The draft was not deleted, as far as this form knows. If the
-        // store still holds it as a draft, it is this form's draft again:
-        // what is typed next goes onto it, and discarding can be tried
-        // again. Otherwise it would sit in storage with no form offering
-        // it. What is on the form is left as it is.
-        draft.current = await stillADraft(discarded.id);
-        throw error;
-      } finally {
-        const held = typedMeanwhile.current;
-        typedMeanwhile.current = undefined;
-        discarding.current = false;
-        // The draft is still here: what was typed while that was being
-        // found out is saved now, onto the draft if it is still one. If
-        // the draft is gone the form is emptied, and what was typed while
-        // it was going goes with it, as the person asked.
-        if (!gone && held !== undefined) {
-          autosave.current?.changed(held);
+      } else {
+        // Forgotten first: whatever happens next, nothing may be saved
+        // onto the deleted draft's ID.
+        draft.current = undefined;
+        try {
+          await deleteEntry({ records, events }, discarded.id);
+          gone = true;
+        } catch (error) {
+          // The draft was not deleted, as far as this form knows. If the
+          // store still holds it as a draft, it is this form's draft
+          // again: what is typed next goes onto it, and discarding can be
+          // tried again. Otherwise it would sit in storage with no form
+          // offering it. What is on the form is left as it is.
+          draft.current = await stillADraft(discarded.id);
+          throw error;
         }
+      }
+    } finally {
+      const held = typedMeanwhile.current;
+      typedMeanwhile.current = undefined;
+      discarding.current = false;
+      // The delete failed: what was typed while that was being found out
+      // is saved now. It goes onto the draft if the store still holds it
+      // as one; if the draft turned out to be gone or finished elsewhere,
+      // it starts a new draft, since those words are still on the form.
+      // When the form ends with no draft it is emptied, and what was typed
+      // while the draft was going goes with it, as the person asked.
+      if (!gone && held !== undefined) {
+        autosave.current?.changed(held);
       }
     }
     setContent(BLANK);
