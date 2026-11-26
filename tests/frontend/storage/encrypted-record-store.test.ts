@@ -10,6 +10,7 @@ import {
   OUTBOX,
   PARKED,
   RECORDS,
+  UNFINISHED,
   type StoredRecord,
 } from "../../../src/storage/db";
 import {
@@ -128,11 +129,21 @@ describe("the encrypted record store", () => {
     await store.put("journal-entry", written);
     await store.put("journal-entry", { ...written, feelings: ["overwhelmed"] });
     await store.delete("journal-entry", (await entryIn(store)).id);
+    // An unsaved edit of another entry stays behind in its own store.
+    const other = await entry();
+    await store.put("journal-entry", other);
+    await store.keepUnfinished(other.id, {
+      responses: { ...other.responses, good: canary },
+      feelings: ["overwhelmed"],
+      basedOn: written.contentHash,
+    });
 
     const database = await openRaw(name);
     const storeNames = [...database.objectStoreNames];
     database.close();
-    expect(storeNames.sort()).toEqual([META, OUTBOX, PARKED, RECORDS].sort());
+    expect(storeNames.sort()).toEqual(
+      [META, OUTBOX, PARKED, RECORDS, UNFINISHED].sort(),
+    );
     for (const storeName of storeNames) {
       const stored = everythingIn(await readRows(name, storeName));
       expect(stored).not.toContain("CANARY");

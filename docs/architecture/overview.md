@@ -94,12 +94,16 @@ flowchart LR
   store -- "one transaction" --> rows[("records: envelope,<br/>ID, type, revisions")]
   store -- "the same transaction" --> outbox[("outbox:<br/>one operation per change")]
   parked[("parked: the server's version<br/>of a record changed in two places")]
+  screen -- "an edit not saved yet" --> unfinished[("unfinished: an envelope<br/>of its own, never sent")]
 ```
 
 - IndexedDB holds envelopes, never content, a content hash, a search
   index or a decrypted cache.
 - A save writes the record and its outbox operation together, or neither.
 - Search is built in memory from decrypted records and is gone on lock.
+- An edit to a finished entry that has not been saved is kept apart from
+  the entry, encrypted, and is never queued or sent
+  ([ADR-0015](../adr/0015-unsaved-edits.md)).
 - Detail: [ADR-0014](../adr/0014-local-encrypted-store.md).
 
 ## 4. Sync

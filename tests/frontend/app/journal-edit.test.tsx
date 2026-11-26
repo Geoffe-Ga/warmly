@@ -1,11 +1,17 @@
 import { cleanup, screen, waitFor, within } from "@testing-library/preact";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DomainEvents } from "../../../src/domain/events";
 import { PROMPTS, type JournalEntry } from "../../../src/domain/journal/types";
 import { ANSWER_NEEDED } from "../../../src/domain/journal/validation";
 import { StaleRecordError } from "../../../src/storage/record-store";
+import {
+  CHANGES_BROUGHT_BACK,
+  CHANGES_KEPT,
+  CHANGES_NOT_KEPT,
+  ENTRY_CHANGED_SINCE,
+} from "../../../src/ui/screens/journal/EditEntry";
 import { DELETE_WARNING } from "../../../src/ui/screens/journal/shared";
 import {
   CANNOT_OPEN,
@@ -15,6 +21,7 @@ import {
 
 import {
   heading,
+  onEntryPut,
   onEntryReload,
   renderApp,
   testServices,
@@ -98,10 +105,9 @@ describe("editing a saved entry (JR-006, AC-06)", () => {
       "The earlier wording is not kept",
     );
     expect(
-      screen
-        .getByRole("link", { name: "Cancel and go back to the entry" })
-        .getAttribute("href"),
-    ).toBe(`/journal/entries/${ID}`);
+      screen.getByRole("button", { name: "Cancel and go back to the entry" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(CHANGES_BROUGHT_BACK)).toBeNull();
     expect(screen.queryByRole("button", { name: /skip/i })).toBeNull();
     expect(screen.queryByRole("button", { name: "Discard draft" })).toBeNull();
   });
@@ -240,6 +246,284 @@ describe("editing a saved entry (JR-006, AC-06)", () => {
   );
 });
 
+describe("changes to an entry that were not saved (JR-006, DEV-005; ADR-0015)", () => {
+  const status = (): string =>
+    within(screen.getByRole("main")).getByRole("status").textContent;
+
+  /** Open the edit screen again, as after a lock or a reload. */
+  async function reopen(services: TestServices): Promise<void> {
+    cleanup();
+    await renderApp(`/journal/entries/${ID}/edit`, services);
+    await screen.findByRole("button", { name: "Save changes" });
+  }
+
+  it("are kept before the app locks, apart from the entry, which is not changed", async () => {
+    const { services, heard } = await openEdit();
+    expect(status()).toBe("");
+
+    await userEvent.type(box(0), " and more");
+    await services.lockHooks.flush();
+
+    expect(await services.records.unfinished(ID)).toEqual({
+      responses: {
+        good: "Good one and more",
+        improve: "Improve one",
+        loved: "Loved one",
+      },
+      feelings: ["calm"],
+      basedOn: "0".repeat(64),
+    });
+    expect(await services.records.get("journal-entry", ID)).toEqual(stored());
+    expect(await services.records.list("journal-entry")).toHaveLength(1);
+    expect(heard).toEqual([]);
+    await waitFor(() => {
+      expect(status()).toBe(CHANGES_KEPT);
+    });
+  });
+
+  it("are kept when the page is hidden, when it is closed, and when the screen is left", async () => {
+    const leave: (() => void | Promise<void>)[] = [
+      () => {
+        vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+        document.dispatchEvent(new Event("visibilitychange"));
+      },
+      () => {
+        window.dispatchEvent(new Event("pagehide"));
+      },
+      () => userEvent.click(screen.getByRole("link", { name: "Settings" })),
+    ];
+    for (const how of leave) {
+      cleanup();
+      const { services } = await openEdit();
+      await userEvent.type(box(0), " and more");
+
+      await how();
+
+      await waitFor(async () => {
+        expect((await services.records.unfinished(ID))?.responses.good).toBe(
+          "Good one and more",
+        );
+      });
+      expect(await services.records.get("journal-entry", ID)).toEqual(stored());
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("are put back on the form when the entry is next edited, and the page says what they are", async () => {
+    const { services } = await openEdit();
+    await userEvent.type(box(0), " and more");
+    await userEvent.click(screen.getByLabelText("sad"));
+    await services.lockHooks.flush();
+
+    await reopen(services);
+
+    expect(box(0)).toHaveProperty("value", "Good one and more");
+    expect(screen.getByLabelText("sad")).toHaveProperty("checked", true);
+    const notice = screen
+      .getByText(new RegExp(CHANGES_BROUGHT_BACK.slice(0, 40)))
+      .closest('[role="status"]');
+    expect(notice?.textContent).toContain(CHANGES_BROUGHT_BACK);
+    expect(notice?.textContent).not.toContain(ENTRY_CHANGED_SINCE);
+    // Offering them has changed nothing.
+    expect(await services.records.get("journal-entry", ID)).toEqual(stored());
+  });
+
+  it("are offered even when the screen is opened again before they have reached storage", async () => {
+    const { services } = await openEdit();
+    // Keeping is slow: it goes ahead only when the test says.
+    const keep = services.records.keepUnfinished.bind(services.records);
+    let go: () => void = () => undefined;
+    const told = new Promise<void>((resolve) => {
+      go = resolve;
+    });
+    services.records.keepUnfinished = async (...args) => {
+      await told;
+      return keep(...args);
+    };
+    await userEvent.type(box(0), " and more");
+
+    // Left, and opened again at once.
+    cleanup();
+    await renderApp(`/journal/entries/${ID}/edit`, services);
+    // Everything that can happen without the keeping has happened: the
+    // form is not shown from the entry alone meanwhile.
+    for (let turn = 0; turn < 20; turn += 1) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+    }
+    expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+    expect(screen.getByText("Getting your entry.")).toBeTruthy();
+    go();
+
+    await screen.findByRole("button", { name: "Save changes" });
+    expect(box(0)).toHaveProperty("value", "Good one and more");
+  });
+
+  it("say so when the entry has been changed since they were typed, and replace it only when saved", async () => {
+    const services = testServices("unlocked");
+    await services.records.put("journal-entry", stored());
+    await services.records.keepUnfinished(ID, {
+      responses: { good: "Typed before", improve: "i", loved: "l" },
+      feelings: [],
+      basedOn: "1".repeat(64),
+    });
+
+    await renderApp(`/journal/entries/${ID}/edit`, services);
+
+    expect(
+      (await screen.findByText(new RegExp(ENTRY_CHANGED_SINCE))).textContent,
+    ).toContain(CHANGES_BROUGHT_BACK);
+    expect(box(0)).toHaveProperty("value", "Typed before");
+    expect(await services.records.get("journal-entry", ID)).toEqual(stored());
+
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(`/journal/entries/${ID}`);
+    });
+    expect(
+      (await services.records.get("journal-entry", ID))?.responses.good,
+    ).toBe("Typed before");
+    expect(await services.records.unfinished(ID)).toBeUndefined();
+  });
+
+  it("are removed once the entry is saved, and are not offered again", async () => {
+    const { services } = await openEdit();
+    await userEvent.type(box(0), " and more");
+    await services.lockHooks.flush();
+
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(`/journal/entries/${ID}`);
+    });
+
+    expect(await services.records.unfinished(ID)).toBeUndefined();
+    await reopen(services);
+    expect(screen.queryByText(new RegExp(CHANGES_BROUGHT_BACK))).toBeNull();
+    expect(box(0)).toHaveProperty("value", "Good one and more");
+  });
+
+  it("are removed by Cancel, which leaves the entry as it was", async () => {
+    const { services } = await openEdit();
+    await userEvent.type(box(0), " and more");
+    await services.lockHooks.flush();
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Cancel and go back to the entry" }),
+    );
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(`/journal/entries/${ID}`);
+    });
+    // Nothing waiting to be kept is kept after cancelling, either.
+    await services.lockHooks.flush();
+    expect(await services.records.unfinished(ID)).toBeUndefined();
+    expect(await services.records.get("journal-entry", ID)).toEqual(stored());
+  });
+
+  it("can be given up for the saved entry from the notice", async () => {
+    const { services } = await openEdit();
+    await userEvent.type(box(0), " and more");
+    await services.lockHooks.flush();
+    await reopen(services);
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Start again from the saved entry" }),
+    );
+
+    await waitFor(() => {
+      expect(box(0)).toHaveProperty("value", "Good one");
+    });
+    expect(screen.queryByText(new RegExp(CHANGES_BROUGHT_BACK))).toBeNull();
+    expect(await services.records.unfinished(ID)).toBeUndefined();
+    expect(await services.records.get("journal-entry", ID)).toEqual(stored());
+  });
+
+  it("are removed when the form is typed back to what the entry says", async () => {
+    const { services } = await openEdit();
+    await userEvent.type(box(0), "!");
+    await services.lockHooks.flush();
+    expect(await services.records.unfinished(ID)).toBeDefined();
+
+    await userEvent.type(box(0), "{Backspace}");
+
+    await waitFor(async () => {
+      expect(await services.records.unfinished(ID)).toBeUndefined();
+    });
+    await waitFor(() => {
+      expect(status()).toBe("");
+    });
+  });
+
+  it("are not offered, and are removed, when they say what the entry already says", async () => {
+    const services = testServices("unlocked");
+    await services.records.put("journal-entry", stored());
+    await services.records.keepUnfinished(ID, {
+      responses: stored().responses,
+      feelings: ["calm"],
+      basedOn: "1".repeat(64),
+    });
+
+    await renderApp(`/journal/entries/${ID}/edit`, services);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    expect(screen.queryByText(new RegExp(CHANGES_BROUGHT_BACK))).toBeNull();
+    await waitFor(async () => {
+      expect(await services.records.unfinished(ID)).toBeUndefined();
+    });
+  });
+
+  it("typed while the entry is being saved are not kept once it is saved", async () => {
+    const { services } = await openEdit();
+    let go: () => void = () => undefined;
+    const told = new Promise<void>((resolve) => {
+      go = resolve;
+    });
+    onEntryPut(services.records, async (_entry, put) => {
+      await told;
+      await put();
+    });
+
+    await userEvent.type(box(0), " and more");
+    await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await userEvent.type(box(0), " late");
+    go();
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe(`/journal/entries/${ID}`);
+    });
+    await services.lockHooks.flush();
+    expect(await services.records.unfinished(ID)).toBeUndefined();
+  });
+
+  it("say so when they cannot be kept, and stay on the page", async () => {
+    const { services } = await openEdit();
+    services.records.keepUnfinished = () =>
+      Promise.reject(new Error("synthetic"));
+
+    await userEvent.type(box(0), " and more");
+    await services.lockHooks.flush();
+
+    await waitFor(() => {
+      expect(status()).toBe(CHANGES_NOT_KEPT);
+    });
+    expect(box(0)).toHaveProperty("value", "Good one and more");
+    expect(CHANGES_NOT_KEPT).toContain("still on this page");
+  });
+
+  it("do not stop the entry from being edited when they cannot be read", async () => {
+    const services = testServices("unlocked");
+    await services.records.put("journal-entry", stored());
+    services.records.unfinished = () => Promise.reject(new Error("synthetic"));
+
+    await renderApp(`/journal/entries/${ID}/edit`, services);
+    await screen.findByRole("button", { name: "Save changes" });
+
+    expect(box(0)).toHaveProperty("value", "Good one");
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
 describe("an entry changed in another tab (invariant 5)", () => {
   it("is not saved over: the screen says so and offers the latest version, which can then be edited", async () => {
     const { services, heard } = await openEdit();
@@ -264,6 +548,11 @@ describe("an entry changed in another tab (invariant 5)", () => {
     expect(banner?.textContent).toContain("Copy anything you want to keep");
     expect(box(0)).toHaveProperty("value", "Good one mine");
     expect(heard).toEqual([]);
+    // What was typed was not saved as the entry, so it is still kept.
+    await services.lockHooks.flush();
+    expect((await services.records.unfinished(ID))?.responses.good).toBe(
+      "Good one mine",
+    );
     expect(window.location.pathname).toBe(`/journal/entries/${ID}/edit`);
 
     services.records.put = put;
@@ -277,6 +566,9 @@ describe("an entry changed in another tab (invariant 5)", () => {
       expect(box(0)).toHaveProperty("value", "From the other tab");
     });
     expect(screen.queryByText(/was changed in another tab/)).toBeNull();
+    // Loading the latest version gave up what was typed, as the notice said.
+    await services.lockHooks.flush();
+    expect(await services.records.unfinished(ID)).toBeUndefined();
 
     await userEvent.type(box(0), ", and mine");
     await userEvent.click(screen.getByRole("button", { name: "Save changes" }));

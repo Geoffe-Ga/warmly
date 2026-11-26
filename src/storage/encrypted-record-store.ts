@@ -9,6 +9,10 @@
  */
 import { isCardCollection, isConversationCard } from "../domain/cards/types";
 import { isJournalEntry } from "../domain/journal/types";
+import {
+  isUnfinishedEdit,
+  type UnfinishedEdit,
+} from "../domain/journal/unfinished";
 import { isPostConversationReflection } from "../domain/post-conversation/types";
 import { isReflectSession } from "../domain/reflect/types";
 import {
@@ -25,11 +29,13 @@ import {
   OUTBOX,
   PARKED,
   RECORDS,
+  UNFINISHED,
   openRecordsDatabase,
   transact,
   type MetaRow,
   type ParkedRecord,
   type StoredRecord,
+  type UnfinishedRow,
 } from "./db";
 import type {
   Acknowledged,
@@ -83,6 +89,15 @@ const FORMATS: { readonly [K in RecordKind]: KindFormat<K> } = {
 };
 
 const KINDS = Object.keys(FORMATS) as RecordKind[];
+
+/**
+ * An unsaved edit to a journal entry (ADR-0015). It has an envelope type of
+ * its own, so its envelope can never be read as the entry's or the other
+ * way round. It is kept on this device only: nothing of type 6 is ever
+ * queued, sent or fetched. Its row is keyed by the entry's type and ID.
+ */
+const UNFINISHED_EDIT = { type: 6, schemaVersion: 1 } as const;
+const ENTRY_TYPE = FORMATS["journal-entry"].type;
 
 /** The store was asked to write while locked. Nothing was written. */
 export class StoreLockedError extends Error {
@@ -266,7 +281,7 @@ function writeChange(
 ): Promise<WriteOutcome> {
   return transact<WriteOutcome>(
     database,
-    [RECORDS, OUTBOX],
+    [RECORDS, OUTBOX, UNFINISHED],
     "readwrite",
     (transaction, result) => {
       const records = transaction.objectStore(RECORDS);
@@ -303,6 +318,11 @@ function writeChange(
         };
         try {
           records.put(row);
+          if (deleting) {
+            // An unsaved edit goes with the record it was an edit of, in
+            // the same transaction as the deletion.
+            transaction.objectStore(UNFINISHED).delete([row.type, row.id]);
+          }
           queueOperation(transaction, {
             opId: crypto.randomUUID(),
             type: row.type,
@@ -390,7 +410,7 @@ function settle(database: IDBDatabase, choice: Choice): Promise<Settled> {
   const { type, id, keep, replacement } = choice;
   return transact<Settled>(
     database,
-    [RECORDS, OUTBOX, PARKED],
+    [RECORDS, OUTBOX, PARKED, UNFINISHED],
     "readwrite",
     (transaction, result) => {
       const records = transaction.objectStore(RECORDS);
@@ -433,6 +453,10 @@ function settle(database: IDBDatabase, choice: Choice): Promise<Settled> {
           dirty: false,
         };
         records.put(row);
+        if (row.tombstone) {
+          // An unsaved edit goes with the entry it was an edit to.
+          transaction.objectStore(UNFINISHED).delete(key);
+        }
         // This device's version is given up, so nothing is left to send.
         for (const operation of queued.result as OutboxOperation[]) {
           if (operation.type === type && operation.id === id) {
@@ -842,6 +866,114 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     );
   }
 
+  async unfinished(id: string): Promise<UnfinishedEdit | undefined> {
+    const session = this.#session;
+    const opened = await this.#read();
+    if (session === undefined || opened === undefined || opened.superseded) {
+      return undefined;
+    }
+    const row = await transact<UnfinishedRow | undefined>(
+      opened.database,
+      [UNFINISHED],
+      "readonly",
+      (transaction, result) => {
+        const reading = transaction
+          .objectStore(UNFINISHED)
+          .get([ENTRY_TYPE, id]);
+        reading.onsuccess = () => {
+          result(reading.result as UnfinishedRow | undefined);
+        };
+      },
+    );
+    if (row?.schemaVersion !== UNFINISHED_EDIT.schemaVersion) {
+      return undefined;
+    }
+    try {
+      const value = await openJson(
+        session.root,
+        { owner: session.owner, recordId: id, type: UNFINISHED_EDIT.type },
+        row.envelope,
+      );
+      return isUnfinishedEdit(value) ? value : undefined;
+    } catch (error) {
+      if (
+        error instanceof DecryptError ||
+        error instanceof UnsupportedFormatError
+      ) {
+        // Damaged, or written by a version this one cannot read. It is
+        // left where it is and not offered.
+        return undefined;
+      }
+      throw error;
+    }
+  }
+
+  async keepUnfinished(id: string, edit: UnfinishedEdit): Promise<boolean> {
+    const session = this.#session;
+    if (session === undefined) {
+      throw new StoreLockedError();
+    }
+    const opened = await session.opened;
+    if (opened.superseded) {
+      throw new NewerDatabaseError();
+    }
+    // Encrypted before the transaction, which cannot wait for it.
+    const envelope = await sealJson(
+      session.root,
+      { owner: session.owner, recordId: id, type: UNFINISHED_EDIT.type },
+      edit,
+    );
+    if (this.#session !== session) {
+      throw new StoreLockedError();
+    }
+    return transact<boolean>(
+      opened.database,
+      [RECORDS, UNFINISHED],
+      "readwrite",
+      (transaction, result) => {
+        const reading = transaction.objectStore(RECORDS).get([ENTRY_TYPE, id]);
+        reading.onsuccess = () => {
+          const entry = reading.result as StoredRecord | undefined;
+          // Nothing is kept for an entry that is not here or was deleted.
+          if (entry === undefined || entry.tombstone) {
+            result(false);
+            return;
+          }
+          transaction.objectStore(UNFINISHED).put({
+            type: ENTRY_TYPE,
+            id,
+            envelope,
+            schemaVersion: UNFINISHED_EDIT.schemaVersion,
+          } satisfies UnfinishedRow);
+          result(true);
+        };
+      },
+    );
+  }
+
+  async dropUnfinished(id: string): Promise<void> {
+    const opened = await this.#read();
+    if (opened === undefined) {
+      throw new StoreLockedError();
+    }
+    if (opened.superseded) {
+      throw new NewerDatabaseError();
+    }
+    await transact<null>(
+      opened.database,
+      [UNFINISHED],
+      "readwrite",
+      (transaction, result) => {
+        const removing = transaction
+          .objectStore(UNFINISHED)
+          .delete([ENTRY_TYPE, id]);
+        removing.onsuccess = () => {
+          result(null);
+        };
+      },
+    );
+  }
+
   async pending(): Promise<PendingChange[]> {
     const opened = await this.#read();
     if (opened === undefined || opened.superseded) {
@@ -974,11 +1106,12 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
     }
     const written = await transact<Applied[]>(
       opened.database,
-      [RECORDS, PARKED, META],
+      [RECORDS, PARKED, META, UNFINISHED],
       "readwrite",
       (transaction, result) => {
         const records = transaction.objectStore(RECORDS);
         const parked = transaction.objectStore(PARKED);
+        const unfinished = transaction.objectStore(UNFINISHED);
         const applied: Applied[] = [];
         for (const [index, change] of changes.entries()) {
           const key = [change.type, change.recordId];
@@ -1020,6 +1153,10 @@ export class EncryptedRecordStore implements RecordStore, SyncSource {
             };
             records.put(row);
             parked.delete(key);
+            if (change.tombstone) {
+              // An unsaved edit goes with the entry it was an edit to.
+              unfinished.delete(key);
+            }
             applied[index] = { outcome, row };
           };
         }

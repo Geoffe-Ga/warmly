@@ -204,6 +204,7 @@ const PLAN: readonly Swept[] = [
   sweeping("journal-entry", "content", "an entry"),
   sweeping("journal-entry", "dialog", "delete confirmation"),
   sweeping("journal-edit", "content", "an entry being edited"),
+  sweeping("journal-edit", "content", "unsaved changes brought back"),
   sweeping("after-conversation", "content", "a saved note"),
   sweeping("reflect-session", "dialog", "what will be sent"),
   sweeping("reflect-session", "content", "a cited answer"),
@@ -371,6 +372,26 @@ test.describe("the sweep (UI-001 to UI-008, AC-23)", () => {
       "We cooked dinner together on Sunday.",
     );
     await sweep(page, "journal-edit", "content", "an entry being edited");
+
+    // Leaving without saving or cancelling keeps what was typed, and the
+    // edit screen offers it back.
+    const editPath = new URL(page.url()).pathname;
+    await page.getByLabel(PROMPTS[0] ?? "").fill("We cooked on Sunday.");
+    await openInApp(page, "/journal");
+    await openInApp(page, editPath);
+    await expect(page.getByText("Unsaved changes brought back")).toBeVisible();
+    await sweep(
+      page,
+      "journal-edit",
+      "content",
+      "unsaved changes brought back",
+    );
+    await page
+      .getByRole("button", { name: "Start again from the saved entry" })
+      .click();
+    await expect(page.getByLabel(PROMPTS[0] ?? "")).toHaveValue(
+      "We cooked dinner together on Sunday.",
+    );
 
     await openInApp(page, pathFor("after-conversation", { id: "new" }));
     await page.getByLabel("What went well?").fill("We both stayed calm.");
