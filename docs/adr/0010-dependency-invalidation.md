@@ -106,7 +106,9 @@ notice is used, which covers both.
 
 **Rules, not special cases.** A kind of derived record takes part by
 adding a rule to `src/domain/dependency-rules.ts` that reads its sources.
-AI cards (epic 07) add theirs there. The engine imports nothing from
+Cards drafted by AI have theirs there too (`CARD_RULE`): an unedited
+AI card depends on every entry that was sent to draft it, and is deleted
+when one of them changes. The engine imports nothing from
 `src/ai`, the network or sync, and a test checks that.
 
 **Telling the person.** Before: the edit screen and the delete

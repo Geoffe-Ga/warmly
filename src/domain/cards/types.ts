@@ -13,6 +13,7 @@ import {
   SEGMENT_CATEGORIES,
   type CardSegment as GeneratedSegment,
   type CardType,
+  type SentSource,
 } from "../../ai/contracts";
 
 export type {
@@ -51,6 +52,15 @@ export interface ConversationCard {
   readonly segments: readonly CardSegment[];
   /** Journal entries the card was drafted from. Empty for a manual card. */
   readonly sourceEntryIds: readonly string[];
+  /**
+   * Every entry that was sent to draft this card, quoted or not, with its
+   * content hash at the time (PRD DEP-001). The card was written from all
+   * of them, so a change to any of them makes it out of date. Absent for
+   * a manual card. IDs and hashes only: never text from an entry.
+   */
+  readonly sources?: readonly SentSource[];
+  /** The theme the AI gave a card it drafted, in a few words. */
+  readonly theme?: string;
   /** When the card was made, as an ISO 8601 instant. */
   readonly createdAt: string;
   /** When it was last changed, as an ISO 8601 instant. */
@@ -125,6 +135,12 @@ function isSourceRef(value: unknown): boolean {
   );
 }
 
+function isSentSource(value: unknown): boolean {
+  return (
+    isObject(value) && isText(value["entryId"]) && isText(value["sourceHash"])
+  );
+}
+
 function isSegment(value: unknown): value is CardSegment {
   return (
     isObject(value) &&
@@ -156,6 +172,10 @@ export function isConversationCard(value: unknown): value is ConversationCard {
     isOneOf(value["authorship"], ["ai_generated", "user_owned"]) &&
     isListOf(value["segments"], isSegment) &&
     isListOf(value["sourceEntryIds"], isText) &&
+    (value["sources"] === undefined ||
+      (Array.isArray(value["sources"]) &&
+        value["sources"].every(isSentSource))) &&
+    (value["theme"] === undefined || isText(value["theme"])) &&
     isText(value["createdAt"]) &&
     isText(value["updatedAt"])
   );

@@ -23,6 +23,7 @@ describe("route table", () => {
       "prepare",
       "collection",
       "card",
+      "suggest-cards",
       "present",
       "print",
       "settings",

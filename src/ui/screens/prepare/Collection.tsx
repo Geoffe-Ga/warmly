@@ -68,6 +68,9 @@ export function useCollection(
   );
 }
 
+/** Said on a card that AI drafted and the person has not changed. */
+export const DRAFTED_BY_AI = "Drafted by AI";
+
 /** What the screen reader is told after a card moves. */
 function movedText(position: number, total: number): string {
   return `Moved to position ${String(position)} of ${String(total)}.`;
@@ -107,7 +110,10 @@ function CardRow(props: {
         class="action"
       >
         {text}
-        <span class="action__detail">{CARD_TYPE_LABELS[card.type]}</span>
+        <span class="action__detail">
+          {CARD_TYPE_LABELS[card.type]}
+          {card.authorship === "ai_generated" && `. ${DRAFTED_BY_AI}`}
+        </span>
       </Link>
       <div class="button-row">
         <Button
@@ -327,7 +333,8 @@ function Manage(props: {
 /**
  * One collection: its cards in the order the person chose, with the ways
  * to add a card, move cards, rename or delete the collection, and present
- * or print it (PRD CC-001, CC-010, CC-011; AC-13). Nothing here calls AI.
+ * or print it (PRD CC-001, CC-010, CC-011; AC-13). Nothing here calls AI:
+ * drafting cards with AI has a screen of its own, reached by a link.
  *
  * Cards can be moved with the Move up and Move down buttons, which work
  * from the keyboard and say where the card went, or by dragging.
@@ -371,6 +378,17 @@ export function Collection(props: {
           <ChangeError change={change} />
           <CardList {...open} change={change} />
           <AddCard collectionId={open.collection.id} />
+          <Card heading="Draft cards from your journal">
+            <p>
+              You pick the journal entries. Only those are sent to the AI
+              provider you connected, and only after you agree.
+            </p>
+            <p>
+              <Link href={pathFor("suggest-cards", { id: open.collection.id })}>
+                Pick entries and suggest cards
+              </Link>
+            </p>
+          </Card>
           <Manage
             key={open.collection.id}
             open={open}

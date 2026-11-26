@@ -29,6 +29,7 @@ import { Entry } from "../ui/screens/journal/Entry";
 import { Timeline } from "../ui/screens/journal/Timeline";
 import { CardScreen } from "../ui/screens/prepare/CardScreen";
 import { Collection } from "../ui/screens/prepare/Collection";
+import { SelectEntries } from "../ui/screens/prepare/SelectEntries";
 import { Collections } from "../ui/screens/prepare/Collections";
 import { Present } from "../ui/screens/prepare/Present";
 import { Print } from "../ui/screens/prepare/Print";
@@ -73,6 +74,7 @@ const SCREENS: Readonly<
   help: Boundaries,
   prepare: Collections,
   collection: Collection,
+  "suggest-cards": SelectEntries,
   card: CardScreen,
   present: Present,
   print: Print,

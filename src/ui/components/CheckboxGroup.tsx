@@ -15,6 +15,12 @@ export interface CheckboxGroupProps<T extends string> {
   readonly onChange: (selected: T[]) => void;
   /** Shared `name` of the checkboxes. */
   readonly name?: string;
+  /**
+   * What each choice is called on screen, when that is not the option
+   * itself: for example when the options are IDs. The option, never the
+   * label, is the checkbox's value.
+   */
+  readonly labelFor?: (option: T) => string;
 }
 
 /**
@@ -61,7 +67,7 @@ export function CheckboxGroup<T extends string>(
                   toggle(option, event.currentTarget.checked);
                 }}
               />
-              <span>{option}</span>
+              <span>{props.labelFor?.(option) ?? option}</span>
             </label>
           </li>
         ))}

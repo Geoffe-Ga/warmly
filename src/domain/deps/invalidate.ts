@@ -154,6 +154,7 @@ export class Invalidator {
   #running: Promise<void> | undefined;
   #again = false;
   #removed = 0;
+  #removedCards = 0;
 
   /**
    * @param records - The record store.
@@ -170,6 +171,14 @@ export class Invalidator {
    */
   get removed(): number {
     return this.#removed;
+  }
+
+  /**
+   * How many of {@link Invalidator.removed} are cards drafted by AI. The
+   * rest are reflections. Counts only, so the notice can name each kind.
+   */
+  get removedCards(): number {
+    return this.#removedCards;
   }
 
   /**
@@ -194,6 +203,7 @@ export class Invalidator {
   acknowledge(): void {
     if (this.#removed !== 0) {
       this.#removed = 0;
+      this.#removedCards = 0;
       this.#tell();
     }
   }
@@ -213,6 +223,7 @@ export class Invalidator {
     this.#stop?.();
     this.#stop = undefined;
     this.#removed = 0;
+    this.#removedCards = 0;
     this.#tell();
   }
 
@@ -242,6 +253,9 @@ export class Invalidator {
         const gone = await invalidate(this.#records, this.#rules);
         if (gone.length > 0 && this.#stop !== undefined) {
           this.#removed += gone.length;
+          this.#removedCards += gone.filter(
+            (each) => each.kind === "conversation-card",
+          ).length;
           this.#tell();
         }
       } catch {

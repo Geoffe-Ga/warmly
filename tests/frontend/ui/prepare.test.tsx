@@ -135,7 +135,7 @@ describe("one collection (CC-001, CC-010)", () => {
     const links = within(list).getAllByRole("link");
 
     expect(links.map((link) => link.textContent)).toEqual([
-      "I loved cooking with you on Sunday. It made me feel close to you.Appreciation",
+      "I loved cooking with you on Sunday. It made me feel close to you.Appreciation. Drafted by AI",
       "The last two weekends I did the shopping on my own. Could we plan next weekend's together on Thursday?Need and request",
       "What would make weekday evenings easier for you?Curiosity",
     ]);
@@ -216,7 +216,7 @@ describe("one card (CC-007)", () => {
     ).toBeTruthy();
     expect(
       screen.getByText(
-        "Drafted by AI from your journal. You can rewrite all of it.",
+        "Drafted by AI from journal entries you picked. It can be wrong. It is removed if one of those entries is changed or deleted.",
       ),
     ).toBeTruthy();
     const parts = screen.getByRole("list", { name: "The parts of this card" });
@@ -1006,17 +1006,28 @@ describe("changing and deleting a card (CC-010)", () => {
     );
   });
 
-  it("offers no way to change a card that AI drafted and the person has not taken over", async () => {
+  it("offers no way to change a card that AI drafted and the person has not taken over, but lets them delete it", async () => {
+    const services = await unlocked();
     await renderApp(
       pathFor("card", { id: SEED.sunday, cardId: SEED.thanks }),
-      await unlocked(),
+      services,
     );
 
     await screen.findByText(/Drafted by AI/);
     expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "Delete this card" }));
+    await user.click(
+      within(await screen.findByRole("alertdialog")).getByRole("button", {
+        name: "Delete card",
+      }),
+    );
+
+    await screen.findByText("The card has been removed from this device.");
     expect(
-      screen.queryByRole("button", { name: "Delete this card" }),
-    ).toBeNull();
+      await services.records.get("conversation-card", SEED.thanks),
+    ).toBeUndefined();
   });
 
   it("asks before deleting a card, and cancelling keeps it", async () => {

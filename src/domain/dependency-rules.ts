@@ -4,10 +4,12 @@
  * card, takes part in invalidation by adding its rule here; the engine in
  * `deps/` does not change.
  */
+import { CARD_RULE } from "./cards/dependencies";
 import type { DependencyRule } from "./deps/index";
 import { REFLECT_SESSION_RULE } from "./reflect/dependencies";
 
 /** The rules the app runs with. */
 export const DEPENDENCY_RULES: readonly DependencyRule[] = [
   REFLECT_SESSION_RULE,
+  CARD_RULE,
 ];
