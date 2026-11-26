@@ -68,6 +68,7 @@ repos:
     - pyjwt==2.15.1
     - cryptography==50.0.2
     - pytest-asyncio>=0.21.0
+    - types-PyYAML>=6.0.0
 - repo: https://github.com/PyCQA/bandit
   rev: 1.7.7
   hooks:

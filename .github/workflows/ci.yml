@@ -94,18 +94,13 @@ jobs:
           interrogate -vv --fail-under=95 --ignore-init-method --ignore-init-module .
 
       - name: Run security scan with Bandit
+        # Bandit exits with 1 for a finding of any severity, so its exit
+        # code is not what decides. The next step reads the report, and
+        # fails if there is no report to read.
         run: bandit -r . -f json -o bandit-report.json || true
 
       - name: Check Bandit results
-        run: |
-          if [ -f bandit-report.json ]; then
-            HIGH_SEVERITY=$(jq '[.results[] | select(.issue_severity == "HIGH" or .issue_severity == "CRITICAL")] | length' bandit-report.json)
-            if [ "$HIGH_SEVERITY" -gt 0 ]; then
-              echo "Found $HIGH_SEVERITY critical/high severity issues"
-              bandit -r . -f screen
-              exit 1
-            fi
-          fi
+        run: python -m scripts.release.bandit_report bandit-report.json
 
       - name: Audit dependencies with pip-audit
         run: pip-audit --desc --require-hashes --disable-pip || pip-audit --desc
@@ -177,6 +172,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit dependencies with npm audit
+        # High and critical findings block (PRD §10, REL-002). Lower ones
+        # are printed.
+        run: npm audit --audit-level=high
 
       - name: Lint with ESLint
         run: npx eslint . --max-warnings=0
@@ -399,3 +399,110 @@ jobs:
           name: python-package-distributions
           path: dist/
           retention-days: 30
+
+  secret-scan:
+    # A secret in any commit blocks a release (PRD §10, REL-002). The scan
+    # reads the whole history, so the checkout fetches all of it.
+    name: Secret Scan (gitleaks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code with full history
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version: '1.24'
+          cache: false
+
+      - name: Install gitleaks at the pinned version
+        # Built from source through the Go module proxy, whose checksum
+        # database checks the code is the code that version was published as.
+        run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+
+      - name: Scan every commit for secrets
+        run: ./scripts/release/secret-scan.sh
+
+  sast:
+    # Static security analysis; a high-severity finding blocks a release
+    # (PRD §10, REL-002). The rules are a pinned checkout read from disk.
+    name: SAST (Semgrep)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Checkout the Semgrep rules at a pinned commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          repository: semgrep/semgrep-rules
+          ref: a5ad1714f00c9f7fde980cab0ea1d6dc6d414fd2
+          path: .semgrep-rules
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Install Semgrep at the pinned version
+        run: python -m pip install semgrep==1.187.0
+
+      - name: Run the security rules
+        run: ./scripts/release/sast.sh
+        env:
+          SEMGREP_RULES: ${{ github.workspace }}/.semgrep-rules
+
+  release-gate:
+    # The one answer to "may this commit be released?" (PRD §10; AC-24).
+    # It runs whatever happened to the jobs before it, reads their results
+    # from GitHub, and passes only if every check named in
+    # release/required-checks.yml is there, finished and successful.
+    # Nothing deploys from here yet: production deployment is a later
+    # change, and it must depend on this job.
+    name: Release Gate
+    runs-on: ubuntu-latest
+    needs: [quality, frontend, e2e, secret-scan, sast]
+    if: ${{ always() }}
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+
+      - name: Install the gate's one dependency
+        run: python -m pip install "PyYAML>=6.0.0"
+
+      - name: Fetch this commit's check results
+        # On a pull request the checks belong to the head commit, not to
+        # the merge commit the workflow runs on.
+        run: |
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/commits/${COMMIT}/check-runs?per_page=100" \
+            > check-runs.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Evaluate the gate
+        run: python -m scripts.release.gate --manifest release/required-checks.yml --results check-runs.json
