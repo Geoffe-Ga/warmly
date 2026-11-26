@@ -57,7 +57,7 @@ export const NO_ENTRIES =
 
 /** Said when drafted cards could not be stored. They stay on the page. */
 export const CARDS_NOT_SAVED =
-  "The cards came back but could not be saved on this device. They are still here. Nothing needs to be sent again.";
+  "The cards came back but could not be saved on this device. They are still here. Nothing needs to be sent again. Warmly will try once more if you leave this page or it locks, but if that fails too they are lost, so save them here first.";
 
 /** Said when the collection was deleted while the cards were on their way. */
 export const COLLECTION_GONE =
@@ -113,6 +113,11 @@ function Picker(props: {
   );
   const state = useAiRequest(controller);
 
+  // Cards that have arrived and are not stored yet, readable at once by the lock hook, and the save that
+  // is under way, if one is.
+  const waiting = useRef<readonly ConversationCard[] | undefined>(undefined);
+  const saving = useRef<Promise<void> | undefined>(undefined);
+
   // Leaving the screen, or locking, stops a request and forgets it.
   useEffect(
     () => () => {
@@ -121,15 +126,30 @@ function Picker(props: {
     [controller],
   );
 
+  // Cards that arrived and are still not stored when the person leaves
+  // this screen are given one more try. The store outlives the screen, so
+  // the attempt can finish after it has gone. If it fails as well, there
+  // is nowhere left to keep them, which is what the page has already said.
+  useEffect(
+    () => () => {
+      const left = waiting.current;
+      if (left !== undefined) {
+        void Promise.resolve(saving.current)
+          .then(() =>
+            waiting.current === undefined
+              ? undefined
+              : saveGenerated({ records }, left),
+          )
+          .catch(() => undefined);
+      }
+    },
+    [records],
+  );
+
   // Cards that have arrived but are not stored yet. They are kept here
   // until they are: what the person asked for is never dropped.
   const [unsaved, setUnsaved] = useState<readonly ConversationCard[]>();
   const [saveProblem, setSaveProblem] = useState<string>();
-
-  // The same cards, readable at once by the lock hook, and the save that
-  // is under way, if one is.
-  const waiting = useRef<readonly ConversationCard[] | undefined>(undefined);
-  const saving = useRef<Promise<void> | undefined>(undefined);
 
   /** Store cards that are already here. Sends nothing. */
   const save = useCallback(

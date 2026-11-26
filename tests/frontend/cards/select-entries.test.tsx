@@ -396,6 +396,37 @@ describe("cards that have arrived are never dropped", () => {
     expect(provider.calls).toHaveLength(1);
   });
 
+  it("are saved when the person leaves the page after a save that failed", async () => {
+    const provider = new FakeProvider();
+    const { services, collectionId, path } = await setUp(provider);
+    const put = services.records.put.bind(services.records);
+    let failing = true;
+    services.records.put = (kind, record) =>
+      failing && kind === "conversation-card"
+        ? Promise.reject(new Error("synthetic storage failure"))
+        : put(kind, record);
+    await renderApp(path, services);
+    await tick(/Alpha/);
+    await press("Suggest cards");
+    await press(SEND);
+    expect((await screen.findByText(CARDS_NOT_SAVED)).textContent).toContain(
+      "Warmly will try once more if you leave this page",
+    );
+
+    // Storage works again, and the person leaves without pressing Save.
+    failing = false;
+    await userEvent
+      .setup()
+      .click(screen.getByRole("link", { name: "Back to the collection" }));
+
+    const list = await screen.findByRole("navigation", {
+      name: "Cards in this collection",
+    });
+    expect(within(list).getAllByRole("link")).toHaveLength(1);
+    expect(await cardsIn(services, collectionId)).toBe(1);
+    expect(provider.calls).toHaveLength(1);
+  });
+
   it("are saved before the keys go when the app locks first", async () => {
     const provider = new FakeProvider();
     const { services, collectionId, path } = await setUp(provider);
