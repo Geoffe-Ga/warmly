@@ -80,6 +80,13 @@ export interface Disclosure {
    * one request at all.
    */
   readonly tooLong: number;
+  /**
+   * How many of {@link Disclosure.entries} are notes written after a
+   * conversation, not journal entries (PRD PC-004).
+   */
+  readonly after: number;
+  /** How many of {@link Disclosure.omitted} are such notes. */
+  readonly afterOmitted: number;
   /** What else is included, in the person's own words elsewhere on screen. */
   readonly also: "your question" | "your topic" | "the wording you chose";
   /**
@@ -188,6 +195,11 @@ export class AiGateway {
           : 0,
       tooLong:
         request.kind === "reflect" ? (request.coverage?.tooLong ?? 0) : 0,
+      after: request.entries.filter(
+        (entry) => "kind" in entry && entry.kind === "post_conversation",
+      ).length,
+      afterOmitted:
+        request.kind === "reflect" ? (request.coverage?.afterOmitted ?? 0) : 0,
       also: ALSO[request.kind],
       earlierTurns:
         request.kind === "reflect" ? (request.history ?? []).length : 0,

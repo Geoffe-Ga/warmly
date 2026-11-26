@@ -18,10 +18,10 @@ import type {
   CardsRequest,
   ReflectPrompt,
   ReflectRequest,
-  ResponseKey,
   SegmentAlternativesPrompt,
   SegmentAlternativesRequest,
   SourceEntry,
+  SourceResponses,
 } from "./provider";
 
 /** One entry as sent: its name in this request, and what the name stands for. */
@@ -32,8 +32,10 @@ export interface ManifestSource {
   readonly entryId: string;
   /** The entry's content hash when it was sent. Never sent to a provider. */
   readonly sourceHash: string;
+  /** Present only for something written after a conversation. */
+  readonly kind?: "post_conversation";
   /** The text sent under this name. */
-  readonly responses: Readonly<Record<ResponseKey, string>>;
+  readonly responses: SourceResponses;
 }
 
 /** Everything one request sent, in the order it was sent. */
@@ -67,10 +69,30 @@ export function buildManifest(entries: readonly SourceEntry[]): Manifest {
       alias: `E${String(index + 1)}`,
       entryId: entry.id,
       sourceHash: entry.contentHash,
+      ...(entry.kind === "post_conversation" ? { kind: entry.kind } : {}),
       responses: Object.freeze({ ...entry.responses }),
     });
   });
   return Object.freeze({ sources: Object.freeze(sources) });
+}
+
+/**
+ * The text a source holds under one answer's name.
+ *
+ * @param responses - The source's text.
+ * @param key - The answer's name.
+ * @returns The text, or `undefined` if that kind of source has no such
+ *   answer: a journal entry has no "went_well", and a reflection written
+ *   after a conversation has no "good".
+ */
+export function textUnder(
+  responses: SourceResponses,
+  key: string,
+): string | undefined {
+  const found: unknown = (responses as Readonly<Record<string, unknown>>)[key];
+  return typeof found === "string" && Object.hasOwn(responses, key)
+    ? found
+    : undefined;
 }
 
 /**
@@ -90,8 +112,9 @@ export function lookup(
 
 /** The part of a manifest a provider may see: names and text only. */
 function aliased(manifest: Manifest): readonly AliasedSource[] {
-  return manifest.sources.map(({ alias, responses }) => ({
+  return manifest.sources.map(({ alias, kind, responses }) => ({
     alias,
+    ...(kind === undefined ? {} : { kind }),
     responses,
   }));
 }

@@ -43,7 +43,7 @@ const OTHER: JournalEntry = {
 
 function ref(
   entry: JournalEntry,
-  key: SourceRef["responseKey"],
+  key: keyof JournalEntry["responses"],
   words: string,
 ): SourceRef {
   const start = entry.responses[key].indexOf(words);

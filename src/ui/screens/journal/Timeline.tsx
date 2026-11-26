@@ -4,23 +4,82 @@ import { useMemo, useState } from "preact/hooks";
 import { Link } from "../../../app/navigation";
 import { pathFor } from "../../../app/routes";
 import { currentDraft } from "../../../domain/journal/drafts";
-import type { JournalEntry } from "../../../domain/journal/types";
+import {
+  PROMPTS,
+  type EntryDate,
+  type JournalEntry,
+} from "../../../domain/journal/types";
+import {
+  AFTER_LABEL,
+  AFTER_PROMPTS,
+  type PostConversationReflection,
+} from "../../../domain/post-conversation/types";
 import { TextField } from "../../components/Field";
 import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
+import { NEW_AFTER } from "./AfterConversation";
 import { ResultCount, useJournalSearch } from "./Search";
-import { formatEntryDate, useJournalEntries, type Journal } from "./shared";
+import {
+  formatEntryDate,
+  useAfterReflections,
+  useJournalEntries,
+  type Journal,
+} from "./shared";
 
-function EntryLink(props: {
-  readonly entry: JournalEntry;
-  /** A piece of the entry's text to show under its date, for a search. */
+/** One thing in the timeline: a journal entry, or a later reflection. */
+interface TimelineItem {
+  readonly id: string;
+  readonly href: string;
+  readonly date: EntryDate;
+  readonly createdAt: string;
+  /** Said before the date when it is not a journal entry. */
+  readonly label?: string;
+  readonly fields: readonly string[];
+}
+
+function entryItem(entry: JournalEntry): TimelineItem {
+  return {
+    id: entry.id,
+    href: pathFor("journal-entry", { id: entry.id }),
+    date: entry.entryDate,
+    createdAt: entry.createdAt,
+    fields: PROMPTS.map((prompt) => entry.responses[prompt.key]),
+  };
+}
+
+function afterItem(after: PostConversationReflection): TimelineItem {
+  return {
+    id: after.id,
+    href: pathFor("after-conversation", { id: after.id }),
+    date: after.entryDate,
+    createdAt: after.createdAt,
+    // It is never shown as a journal entry (PRD PC-003).
+    label: AFTER_LABEL,
+    fields: AFTER_PROMPTS.map((prompt) => after.responses[prompt.key]),
+  };
+}
+
+/** Newest first, by day, then by when it was written, then by ID. */
+function newestFirst(items: readonly TimelineItem[]): TimelineItem[] {
+  return [...items].sort(
+    (left, right) =>
+      right.date.date.localeCompare(left.date.date) ||
+      right.createdAt.localeCompare(left.createdAt) ||
+      left.id.localeCompare(right.id),
+  );
+}
+
+function ItemLink(props: {
+  readonly item: TimelineItem;
+  /** A piece of the item's text to show under its date, for a search. */
   readonly snippet?: string;
 }): JSX.Element {
-  const { entry } = props;
+  const { item } = props;
   return (
     <li>
-      <Link href={pathFor("journal-entry", { id: entry.id })} class="action">
-        {formatEntryDate(entry.entryDate)}
+      <Link href={item.href} class="action">
+        {item.label !== undefined && `${item.label}: `}
+        {formatEntryDate(item.date)}
         {props.snippet !== undefined && props.snippet !== "" && (
           <span class="action__detail">{props.snippet}</span>
         )}
@@ -52,9 +111,6 @@ function DraftLink(props: { readonly draft: JournalEntry }): JSX.Element {
   );
 }
 
-/** Searched while the entries are still loading: nothing. */
-const NO_ENTRIES: readonly JournalEntry[] = [];
-
 /**
  * The finished journal entries, newest first, with a box to search them.
  * Used by the journal and by Reflect, so the two never differ. Search
@@ -78,10 +134,19 @@ export function JournalBrowser(props: {
     () => all?.filter((entry) => entry.status === "complete"),
     [all],
   );
-  const search = useJournalSearch(entries ?? NO_ENTRIES, query);
+  const after = useAfterReflections();
+  const items = useMemo(
+    () =>
+      newestFirst([
+        ...(entries ?? []).map(entryItem),
+        ...(entries === undefined ? [] : after.map(afterItem)),
+      ]),
+    [entries, after],
+  );
+  const search = useJournalSearch(items, query);
   const shown = search.searching
     ? search.matches
-    : entries?.map((entry) => ({ entry, snippet: "" }));
+    : items.map((item) => ({ item, snippet: "" }));
   const unreadable = journal.state === "ready" ? journal.unreadable : 0;
 
   return (
@@ -113,11 +178,11 @@ export function JournalBrowser(props: {
       )}
       <ResultCount search={search} />
       {entries?.length === 0 && <p>{emptyMessage(props.hasDraft)}</p>}
-      {shown !== undefined && shown.length > 0 && (
+      {shown.length > 0 && (
         <nav aria-label="Entries">
           <ul class="action-list">
-            {shown.map(({ entry, snippet }) => (
-              <EntryLink key={entry.id} entry={entry} snippet={snippet} />
+            {shown.map(({ item, snippet }) => (
+              <ItemLink key={item.id} item={item} snippet={snippet} />
             ))}
           </ul>
         </nav>
@@ -147,6 +212,12 @@ export function Timeline(): JSX.Element {
       ) : (
         <DraftLink draft={draft} />
       )}
+      <p>
+        {/* Opened only by choosing to: nothing leads here by itself. */}
+        <Link href={pathFor("after-conversation", { id: NEW_AFTER })}>
+          Write about a conversation you had
+        </Link>
+      </p>
       <JournalBrowser journal={journal} hasDraft={draft !== undefined} />
     </PageLayout>
   );

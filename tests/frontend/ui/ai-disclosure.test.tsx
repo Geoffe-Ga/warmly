@@ -52,6 +52,8 @@ const DISCLOSURE: Disclosure = {
   entries: 14,
   omitted: 0,
   tooLong: 0,
+  after: 0,
+  afterOmitted: 0,
   earlierTurns: 0,
   also: "your question",
   estimatedTokens: 900,

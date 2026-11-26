@@ -56,6 +56,55 @@ function entriesText(count: number): string {
   return count === 1 ? "1 journal entry" : `${String(count)} journal entries`;
 }
 
+function number(count: number): string {
+  return count.toLocaleString("en-US");
+}
+
+/** The journal entries of a request, and how many were left out. */
+function journalText(sent: number, omitted: number): string {
+  return omitted > 0
+    ? `${number(sent)} of your ${number(sent + omitted)} journal entries`
+    : entriesText(sent);
+}
+
+/**
+ * The notes written after conversations in a request, by their own name:
+ * they are never counted as journal entries (PRD PC-004).
+ */
+function afterText(sent: number, omitted: number): string {
+  if (omitted > 0) {
+    return `${number(sent)} of your ${number(sent + omitted)} notes written after conversations`;
+  }
+  return sent === 1
+    ? "1 note written after a conversation"
+    : `${number(sent)} notes written after conversations`;
+}
+
+/** What was written, of either kind, that a request carries. */
+function writingText(disclosure: Disclosure): readonly string[] {
+  const { after, afterOmitted } = disclosure;
+  const journal = journalText(
+    disclosure.entries - after,
+    disclosure.omitted - afterOmitted,
+  );
+  if (after + afterOmitted === 0) {
+    return [journal];
+  }
+  const notes = afterText(after, afterOmitted);
+  // With no journal entry at all, only the notes are named.
+  return disclosure.entries - after + (disclosure.omitted - afterOmitted) === 0
+    ? [notes]
+    : [journal, notes];
+}
+
+/** "a", "a and b", "a, b, and c". */
+function listed(parts: readonly string[]): string {
+  if (parts.length < 3) {
+    return parts.join(" and ");
+  }
+  return `${parts.slice(0, -1).join(", ")}, and ${parts.at(-1) ?? ""}`;
+}
+
 /**
  * Put what a request would send into words.
  *
@@ -63,20 +112,16 @@ function entriesText(count: number): string {
  * @returns For example "14 journal entries and your question"; when some
  *   did not fit, "14 of your 5,000 journal entries and your question"; and
  *   for a follow-up, "14 journal entries, your question, and the earlier
- *   questions and answers in this reflection".
+ *   questions and answers in this reflection". Notes written after
+ *   conversations are counted apart: "2 journal entries, 1 note written
+ *   after a conversation, and your question".
  */
 export function describeSent(disclosure: Disclosure): string {
-  let entries = entriesText(disclosure.entries);
-  if (disclosure.omitted > 0) {
-    const all = (disclosure.entries + disclosure.omitted).toLocaleString(
-      "en-US",
-    );
-    const sent = disclosure.entries.toLocaleString("en-US");
-    entries = `${sent} of your ${all} journal entries`;
-  }
-  return disclosure.earlierTurns > 0
-    ? `${entries}, ${disclosure.also}, and ${EARLIER_TURNS}`
-    : `${entries} and ${disclosure.also}`;
+  return listed([
+    ...writingText(disclosure),
+    disclosure.also,
+    ...(disclosure.earlierTurns > 0 ? [EARLIER_TURNS] : []),
+  ]);
 }
 
 /**

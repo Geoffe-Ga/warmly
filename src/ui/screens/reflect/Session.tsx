@@ -15,6 +15,7 @@ import { Link, NavigationContext } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import type { JournalEntry } from "../../../domain/journal/types";
+import type { PostConversationReflection } from "../../../domain/post-conversation/types";
 import { askRequest, storeExchange } from "../../../domain/reflect/ask";
 import { EntryTooLargeError } from "../../../domain/reflect/context";
 import {
@@ -38,7 +39,11 @@ import { PageLayout } from "../../components/PageLayout";
 import { StatusBanner } from "../../components/StatusBanner";
 import { describeStorageError } from "../../storage-messages";
 import { DELETE_WARNING } from "../journal/Entry";
-import { formatEntryDate, useJournalEntries } from "../journal/shared";
+import {
+  formatEntryDate,
+  useAfterReflections,
+  useJournalEntries,
+} from "../journal/shared";
 import { NEW_SESSION } from "./Landing";
 
 /** Said when the question box is empty or the question is too long. */
@@ -52,11 +57,15 @@ export const NOTHING_TO_ASK_ABOUT =
  * Said when no entry at all fits in a request: every one is too long.
  *
  * @param date - The entry's day, as shown elsewhere, if the entry is known.
+ * @param after - Whether it was written after a conversation, which is
+ *   never called an entry.
  * @returns What happened and what the person can do.
  */
-export function entryTooLong(date: string | undefined): string {
-  const which =
-    date === undefined ? "One of your entries" : `Your entry for ${date}`;
+export function entryTooLong(date: string | undefined, after = false): string {
+  const named = after
+    ? `What you wrote after a conversation on ${date ?? ""}`
+    : `Your entry for ${date ?? ""}`;
+  const which = date === undefined ? "One of your entries" : named;
   return `${which} is too long to send in one request, and no other entry can be sent either, so nothing was sent. Warmly sends whole entries only, and never part of one.`;
 }
 
@@ -118,6 +127,8 @@ function useSession(id: string | undefined): Found {
 function Messages(props: {
   readonly session: ReflectSession;
   readonly entries: readonly JournalEntry[];
+  /** What was written after conversations; sent and cited like entries. */
+  readonly after: readonly PostConversationReflection[];
 }): JSX.Element {
   const { passage } = useServices();
   return (
@@ -131,7 +142,7 @@ function Messages(props: {
           <Card key={message.id} heading="Answer">
             <CitedAnswer
               answer={message.answer}
-              entries={props.entries}
+              entries={[...props.entries, ...props.after]}
               onFollow={(ref) => {
                 passage.point(ref);
               }}
@@ -150,6 +161,8 @@ function Messages(props: {
 function Ask(props: {
   readonly session: ReflectSession | undefined;
   readonly entries: readonly JournalEntry[];
+  /** What was written after conversations; sent and cited like entries. */
+  readonly after: readonly PostConversationReflection[];
   readonly ready: boolean;
   /**
    * Told when an answer was saved as a new reflection because its own was
@@ -164,7 +177,9 @@ function Ask(props: {
   const { onSavedElsewhere } = props;
   const [question, setQuestion] = useState("");
   const [problem, setProblem] = useState<string>();
-  const [tooLong, setTooLong] = useState<JournalEntry>();
+  const [tooLong, setTooLong] = useState<
+    JournalEntry | PostConversationReflection
+  >();
   const controller = useMemo(
     () =>
       new AiRequestController<ReflectRequest, ReflectionAnswer>(
@@ -246,7 +261,9 @@ function Ask(props: {
     state.phase === "running" ||
     state.phase === "awaiting-consent" ||
     unsaved !== undefined;
-  const hasEntries = props.entries.some((entry) => entry.status === "complete");
+  const hasEntries =
+    props.after.length > 0 ||
+    props.entries.some((entry) => entry.status === "complete");
 
   return (
     <Card heading={props.session === undefined ? "Your question" : "Ask more"}>
@@ -268,13 +285,14 @@ function Ask(props: {
               askRequest({
                 question,
                 entries: props.entries,
+                after: props.after,
                 session: props.session,
                 sizing: ai.sizing(),
               }),
             );
           } catch (error) {
             if (error instanceof EntryTooLargeError) {
-              const entry = props.entries.find(
+              const entry = [...props.entries, ...props.after].find(
                 (each) => each.id === error.entryId,
               );
               setTooLong(entry);
@@ -283,6 +301,7 @@ function Ask(props: {
                   entry === undefined
                     ? undefined
                     : formatEntryDate(entry.entryDate),
+                  entry !== undefined && !("status" in entry),
                 ),
               );
             } else if (error instanceof SessionTooLongError) {
@@ -297,7 +316,7 @@ function Ask(props: {
       >
         <TextArea
           label="What would you like to ask about your journal?"
-          hint="In your own words. Your finished entries are sent with it, as many as fit in one request, to the AI provider you connected, only after you agree."
+          hint="In your own words. Your finished entries, and anything you wrote after a conversation, are sent with it, as many as fit in one request, to the AI provider you connected, only after you agree."
           value={question}
           onInput={setQuestion}
           rows={3}
@@ -308,9 +327,17 @@ function Ask(props: {
             {tooLong !== undefined && (
               <>
                 {" "}
-                <Link href={pathFor("journal-entry", { id: tooLong.id })}>
-                  Open that entry
-                </Link>
+                {"status" in tooLong ? (
+                  <Link href={pathFor("journal-entry", { id: tooLong.id })}>
+                    Open that entry
+                  </Link>
+                ) : (
+                  <Link
+                    href={pathFor("after-conversation", { id: tooLong.id })}
+                  >
+                    Open what you wrote
+                  </Link>
+                )}
               </>
             )}
           </StatusBanner>
@@ -342,7 +369,7 @@ function Ask(props: {
           </StatusBanner>
           <CitedAnswer
             answer={unsaved.answer}
-            entries={props.entries}
+            entries={[...props.entries, ...props.after]}
             onFollow={(ref) => {
               passage.point(ref);
             }}
@@ -464,6 +491,7 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
   const found = useSession(props.params["id"]);
   const journal = useJournalEntries();
   const entries = journal.state === "ready" ? journal.entries : [];
+  const after = useAfterReflections();
   const [deleted, setDeleted] = useState(false);
   // The reflection an answer was moved to, so the note is shown on that
   // reflection only, and not on any other opened afterwards.
@@ -511,7 +539,7 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
       {/* Saved answers wait for the journal: until it has loaded, an entry
           that is here would be shown as "no longer on this device". */}
       {session !== undefined && journal.state === "ready" && (
-        <Messages session={session} entries={entries} />
+        <Messages session={session} entries={entries} after={after} />
       )}
       {session?.status === "finished" && (
         <StatusBanner tone="info" label="Finished">
@@ -524,6 +552,7 @@ export function Session(props: { readonly params: RouteParams }): JSX.Element {
           key={session?.id ?? NEW_SESSION}
           session={session}
           entries={entries}
+          after={after}
           ready={journal.state === "ready"}
           onSavedElsewhere={setSavedElsewhere}
         />

@@ -21,13 +21,17 @@ import {
   buildManifest,
   lookup,
   promptFor,
+  textUnder,
 } from "../../../src/ai/manifest";
-import type { ResponseKey, SourceEntry } from "../../../src/ai/provider";
+import type {
+  JournalResponseKey,
+  JournalSource,
+} from "../../../src/ai/provider";
 
 import fixture from "./fixtures/adversarial-v1.json";
 
-const ENTRIES: readonly SourceEntry[] = fixture.entries;
-const [E1, E2] = ENTRIES as [SourceEntry, SourceEntry];
+const ENTRIES: readonly JournalSource[] = fixture.entries;
+const [E1, E2] = ENTRIES as [JournalSource, JournalSource];
 const MANIFEST = buildManifest(ENTRIES);
 
 function ground(kind: string, response: unknown): unknown {
@@ -50,7 +54,11 @@ function failure(run: () => unknown): unknown {
 
 const QUOTE = "cooked dinner together";
 
-function evidence(alias = "E1", key: ResponseKey = "good", quote = QUOTE) {
+function evidence(
+  alias = "E1",
+  key: JournalResponseKey = "good",
+  quote = QUOTE,
+) {
   return { alias, key, quote };
 }
 
@@ -105,7 +113,9 @@ describe("the source manifest (AI-012, D-16)", () => {
 
     entry.responses.good = "After";
 
-    expect(lookup(manifest, "E1")?.responses.good).toBe("Before");
+    expect(
+      textUnder(lookup(manifest, "E1")?.responses ?? E2.responses, "good"),
+    ).toBe("Before");
   });
 
   it.each([
@@ -201,7 +211,10 @@ describe("a grounded Reflect answer (AI-012, AC-07, AC-26)", () => {
       for (const ref of citation.evidence) {
         const entry = ENTRIES.find((each) => each.id === ref.entryId);
         expect(
-          entry?.responses[ref.responseKey].slice(ref.start, ref.end),
+          textUnder(entry?.responses ?? E1.responses, ref.responseKey)?.slice(
+            ref.start,
+            ref.end,
+          ),
         ).not.toBe("");
       }
     }
@@ -610,7 +623,7 @@ describe("any true quote is accepted and any altered quote is refused (AI-012)",
 
   // Includes an accent, a combining mark, an emoji and awkward punctuation.
   const ALPHABET = [..."abc déé \"'’.,\n-", "🙂", "[c1]", "<b>"];
-  const KEYS: readonly ResponseKey[] = ["good", "improve", "loved"];
+  const KEYS: readonly JournalResponseKey[] = ["good", "improve", "loved"];
   /** Never in the alphabet, so adding it always makes the quote untrue. */
   const FOREIGN = "§";
 
@@ -625,7 +638,7 @@ describe("any true quote is accepted and any altered quote is refused (AI-012)",
     return `x${made}`;
   }
 
-  function entries(random: () => number): SourceEntry[] {
+  function entries(random: () => number): JournalSource[] {
     return Array.from({ length: 1 + Math.floor(random() * 5) }, (_, index) => ({
       id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
       contentHash: String(index).repeat(64).slice(0, 64),
@@ -644,7 +657,7 @@ describe("any true quote is accepted and any altered quote is refused (AI-012)",
       const sent = entries(random);
       const manifest = buildManifest(sent);
       const index = Math.floor(random() * sent.length);
-      const entry = sent[index] as SourceEntry;
+      const entry = sent[index] as JournalSource;
       const key = pick(random, KEYS);
       const text = entry.responses[key];
       const from = Math.floor(random() * text.length);

@@ -143,7 +143,7 @@ describe("the instructions (AI-013)", () => {
 
   it("names the form of answer the app checks", () => {
     expect(REFLECT_POLICY).toContain(
-      '{"markdown": string, "citations": [{"claimId": string, "evidence": [{"alias": string, "key": "good" | "improve" | "loved", "quote": string}]}]}',
+      '{"markdown": string, "citations": [{"claimId": string, "evidence": [{"alias": string, "key": "good" | "improve" | "loved" | "went_well" | "difficult" | "remember", "quote": string}]}]}',
     );
     expect(REFLECT_POLICY).toContain("at most 12000 characters");
     expect(REFLECT_POLICY).toContain("at most 1000 characters");
@@ -179,13 +179,21 @@ describe("the material (golden)", () => {
   it("a first question: the entries under their names, no earlier turns, the question", () => {
     expect(reflectTexts(prompt()).material).toBe(`{
  "prompts": {
-  "good": "What's going well?",
-  "improve": "What would you like to improve?",
-  "loved": "Since your last journal entry, how has your partner helped you feel loved?"
+  "journal_entry": {
+   "good": "What's going well?",
+   "improve": "What would you like to improve?",
+   "loved": "Since your last journal entry, how has your partner helped you feel loved?"
+  },
+  "post_conversation": {
+   "went_well": "What went well?",
+   "difficult": "What felt difficult or unresolved?",
+   "remember": "What would you like to remember?"
+  }
  },
  "entries": [
   {
    "name": "E1",
+   "kind": "journal_entry",
    "good": "We cooked.",
    "improve": "Listen more.",
    "loved": "A note."

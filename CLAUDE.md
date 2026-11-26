@@ -24,7 +24,7 @@ and fetches changes on its own, with backoff, one tab at a time (ADR-0006). Coll
 printed, presented and deleted; they are encrypted records that sync like
 journal entries. Reflect has its landing and session screens, answered by
 the stand-in provider outside production; sessions are encrypted records
-that sync, can be finished into a read-only state and can be deleted, and are removed when an entry they were built from changes. Other routes render accessible placeholders.
+that sync, can be finished into a read-only state and can be deleted, and are removed when an entry they were built from changes. A note can be written after a conversation, only when the person chooses to; it is a record of its own kind that syncs and can be asked about in Reflect. Other routes render accessible placeholders.
 
 ---
 
@@ -317,7 +317,8 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   them only through `src/domain/cards/collections.ts` and `cards.ts`. A
   collection and each card are separate records (kinds `card-collection`
   and `conversation-card`, envelope types 2 and 3: never reuse a type
-  number; 4 is a Reflect session). A card never holds text copied from a journal entry, only
+  number; 4 is a Reflect session, 5 is a note written after a
+  conversation). A card never holds text copied from a journal entry, only
   references (PRD DEP-004). A collection's name and a card's text never go
   in a URL, the tab title or drag data.
 - A collection's cards are shown by `orderCards`: the cards its list names,
@@ -429,6 +430,19 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   save it, and if its session was finished elsewhere it is saved as a new
   one. A session changed in two places is settled by the person like a
   card (`src/sync/card-conflicts.ts`).
+- What is written after a conversation is its own record (kind
+  `post-conversation`, envelope type 5; `src/domain/post-conversation/`,
+  PRD PC-001 to PC-004, D-22), changed only through `createAfter`,
+  `editAfter` and `deleteAfter`. It is never a journal entry, is never
+  turned into one and is never called one on screen. All three answers
+  are optional; only an empty form is refused. Nothing ever asks for one:
+  no prompt, dialog, badge or reminder when presentation closes or at any
+  other time (PC-002), and nothing links it to the cards that were used.
+  When sent to Reflect it goes under kind `post_conversation` with its own
+  answer names (`went_well`, `difficult`, `remember`), is counted apart
+  from journal entries in the disclosure dialog, and is a source like an
+  entry: what was built from it is removed when it changes or is deleted
+  (`SOURCE_KINDS`, `src/domain/deps/invalidate.ts`).
 - An entry is complete only when `canComplete` says so
   (`src/domain/journal/validation.ts`): some non-space text in all three
   answers, with no minimum length and no Skip control. Feelings come only

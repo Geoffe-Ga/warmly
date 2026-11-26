@@ -32,7 +32,7 @@ import {
   type WireEvidence,
   type WireSegment,
 } from "./contracts";
-import { lookup, type Manifest } from "./manifest";
+import { lookup, type Manifest, textUnder } from "./manifest";
 import type { RequestCoverage } from "./provider";
 
 /** Why an answer's citation was not accepted. */
@@ -68,7 +68,11 @@ function resolve(cited: WireEvidence, manifest: Manifest): SourceRef {
   }
   // Exact, with no tidying of spaces, case or punctuation: tidying is how a
   // near miss turns into words the person never wrote.
-  const start = source.responses[cited.key].indexOf(cited.quote);
+  // An answer's name that this kind of source does not have, such as a
+  // journal answer cited in something written after a conversation, holds
+  // no text, so nothing can be quoted from it.
+  const start =
+    textUnder(source.responses, cited.key)?.indexOf(cited.quote) ?? -1;
   if (start < 0) {
     throw new UngroundedCitationError("quote_not_found");
   }

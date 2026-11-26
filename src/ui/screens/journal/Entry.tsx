@@ -5,7 +5,11 @@ import { Link } from "../../../app/navigation";
 import { pathFor, type RouteParams } from "../../../app/routes";
 import { useServices } from "../../../app/services";
 import type { SourceRef } from "../../../ai/contracts";
-import { PROMPTS, type JournalEntry } from "../../../domain/journal/types";
+import {
+  PROMPTS,
+  type JournalEntry,
+  type PromptKey,
+} from "../../../domain/journal/types";
 import { deleteEntry } from "../../../domain/journal/delete";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
@@ -96,14 +100,19 @@ interface Range {
 export function passageIn(
   entry: JournalEntry,
   cited: SourceRef | undefined,
-): (Range & { readonly key: SourceRef["responseKey"] }) | undefined {
+): (Range & { readonly key: PromptKey }) | undefined {
   if (cited === undefined || cited.sourceHash !== entry.contentHash) {
     return undefined;
   }
   const { start, end, responseKey } = cited;
-  const length = entry.responses[responseKey].length;
-  return start >= 0 && start < end && end <= length
-    ? { key: responseKey, start, end }
+  // A journal entry has only its own three answers. A reference to an
+  // answer of another kind of writing marks nothing here.
+  const key = PROMPTS.find((prompt) => prompt.key === responseKey)?.key;
+  if (key === undefined) {
+    return undefined;
+  }
+  return start >= 0 && start < end && end <= entry.responses[key].length
+    ? { key, start, end }
     : undefined;
 }
 

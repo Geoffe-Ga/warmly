@@ -6,6 +6,7 @@ import { useEffect, useState } from "preact/hooks";
 
 import { useServices } from "../../../app/services";
 import type { EntryDate, JournalEntry } from "../../../domain/journal/types";
+import type { PostConversationReflection } from "../../../domain/post-conversation/types";
 import { describeOpenFailure } from "../../storage-messages";
 
 export { CANNOT_OPEN } from "../../storage-messages";
@@ -104,4 +105,39 @@ export function useJournalEntries(): Journal {
   }, [records]);
 
   return journal;
+}
+
+/**
+ * The reflections written after conversations, read again whenever the
+ * store changes. If they cannot be read, the journal is still shown.
+ *
+ * @returns The reflections; none until they have been read.
+ */
+export function useAfterReflections(): readonly PostConversationReflection[] {
+  const { records } = useServices();
+  const [found, setFound] = useState<readonly PostConversationReflection[]>([]);
+  useEffect(() => {
+    let current = true;
+    const load = (): void => {
+      records.list("post-conversation").then(
+        (listed) => {
+          if (current) {
+            setFound(listed);
+          }
+        },
+        () => {
+          if (current) {
+            setFound([]);
+          }
+        },
+      );
+    };
+    load();
+    const stop = records.subscribe(load);
+    return () => {
+      current = false;
+      stop();
+    };
+  }, [records]);
+  return found;
 }

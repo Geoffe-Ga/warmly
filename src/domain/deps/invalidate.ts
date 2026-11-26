@@ -42,16 +42,34 @@ interface Journal {
   readonly unsettled: ReadonlySet<string>;
 }
 
+/**
+ * The kinds of writing an answer can be built from: journal entries, and
+ * reflections written after a conversation (PRD PC-004). Both are sent to
+ * the provider, so a change to either makes what was built from it stale.
+ */
+const SOURCE_KINDS = ["journal-entry", "post-conversation"] as const;
+
 async function readJournal(records: RecordStore): Promise<Journal> {
-  const [entries, deleted, conflicts] = await Promise.all([
-    records.list("journal-entry"),
-    records.deleted("journal-entry"),
-    records.conflicts("journal-entry"),
-  ]);
+  const read = await Promise.all(
+    SOURCE_KINDS.map(async (kind) => {
+      const [written, deleted, conflicts] = await Promise.all([
+        records.list(kind),
+        records.deleted(kind),
+        records.conflicts(kind),
+      ]);
+      return { written, deleted, conflicts };
+    }),
+  );
   return {
-    hashes: new Map(entries.map((entry) => [entry.id, entry.contentHash])),
-    deleted: new Set(deleted),
-    unsettled: new Set(conflicts.map((conflict) => conflict.id)),
+    hashes: new Map(
+      read.flatMap(({ written }) =>
+        written.map((each) => [each.id, each.contentHash] as const),
+      ),
+    ),
+    deleted: new Set(read.flatMap(({ deleted }) => deleted)),
+    unsettled: new Set(
+      read.flatMap(({ conflicts }) => conflicts.map((each) => each.id)),
+    ),
   };
 }
 

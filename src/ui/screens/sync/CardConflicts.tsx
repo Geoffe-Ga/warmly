@@ -1,4 +1,4 @@
-import type { JSX } from "preact";
+import { Fragment, type JSX } from "preact";
 import { useEffect, useState } from "preact/hooks";
 
 import { useServices } from "../../../app/services";
@@ -23,7 +23,12 @@ import {
   listCardConflicts,
   type CardsConflict,
 } from "../../../sync/card-conflicts";
+import {
+  AFTER_PROMPTS,
+  type PostConversationReflection,
+} from "../../../domain/post-conversation/types";
 import { ConflictGoneError } from "../../../sync/conflicts";
+import { formatEntryDate } from "../journal/shared";
 import { Button } from "../../components/Button";
 import { Card } from "../../components/Card";
 import { StatusBanner } from "../../components/StatusBanner";
@@ -103,6 +108,28 @@ function SessionVersion(props: {
   );
 }
 
+/** One version of what was written after a conversation, in full. */
+function AfterVersion(props: {
+  readonly heading: string;
+  readonly after: PostConversationReflection;
+}): JSX.Element {
+  return (
+    <Card heading={props.heading}>
+      {AFTER_PROMPTS.map((prompt) => (
+        <Fragment key={prompt.key}>
+          <p class="hint">{prompt.label}</p>
+          <p class="card-reading">
+            {props.after.responses[prompt.key].trim() === ""
+              ? "Nothing written."
+              : props.after.responses[prompt.key]}
+          </p>
+        </Fragment>
+      ))}
+      <p class="hint">{formatEntryDate(props.after.entryDate)}</p>
+    </Card>
+  );
+}
+
 function Version(props: {
   readonly heading: string;
   readonly conflict: CardsConflict;
@@ -113,6 +140,12 @@ function Version(props: {
     const session = conflict[which];
     return session === undefined ? null : (
       <SessionVersion heading={props.heading} session={session} />
+    );
+  }
+  if (conflict.record === "post-conversation") {
+    const after = conflict[which];
+    return after === undefined ? null : (
+      <AfterVersion heading={props.heading} after={after} />
     );
   }
   if (conflict.record === "card-collection") {
@@ -132,6 +165,7 @@ const NAMES = {
   "card-collection": "collection",
   "conversation-card": "card",
   "reflect-session": "reflection",
+  "post-conversation": "piece of writing",
 } as const;
 
 /** What is said when both versions exist. */
@@ -141,6 +175,8 @@ const EDITED = {
   "conversation-card": "This card was changed here and on another device.",
   "reflect-session":
     "This reflection was added to, or finished, here and on another device. The version you do not keep is removed, with any questions and answers only it has.",
+  "post-conversation":
+    "What you wrote after a conversation was changed here and on another device. Read both before you choose: the version you do not keep is removed.",
 } as const;
 
 /** What is said when the other device deleted it. */
@@ -150,6 +186,8 @@ const DELETED_ELSEWHERE = {
   "conversation-card": `This card was deleted on another device after you changed it here. A deleted card does not come back. You can keep your words as a new card, or let it go. If its collection is gone too, the new card goes into a collection called "${KEPT_CARDS_NAME}".`,
   "reflect-session":
     "This reflection was deleted on another device after you added to it here. A deleted reflection does not come back. You can keep yours as a new reflection, with all of its questions and answers, or let it go.",
+  "post-conversation":
+    "What you wrote after a conversation was deleted on another device after you changed it here. Something deleted does not come back. You can keep your words as a new piece of writing, or let them go.",
 } as const;
 
 /** What each kind of difference is, in a sentence. */

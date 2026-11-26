@@ -12,24 +12,35 @@ import { buildIndex } from "../../../domain/deps/index";
  *
  * @param count - How many reflections were built from the entry.
  * @param doing - What the person is about to do.
+ * @param what - Whether it is a journal entry, or something written
+ *   after a conversation, which is never called an entry.
  * @returns The sentence, or `undefined` when there are none.
  */
 export function dependentsWarning(
   count: number,
   doing: "edit" | "delete",
+  what: "entry" | "after" = "entry",
 ): string | undefined {
   if (count === 0) {
     return undefined;
   }
-  const what =
+  // On the screen for something written after a conversation, "reflection"
+  // alone could mean that writing, so the answers are named by where they
+  // live.
+  const from =
+    what === "entry"
+      ? "from this entry"
+      : "in Reflect from what you wrote here";
+  const built =
     count === 1
-      ? "1 reflection was built from this entry. It"
-      : `${count.toLocaleString("en-US")} reflections were built from this entry. They`;
+      ? `1 reflection was built ${from}. It`
+      : `${count.toLocaleString("en-US")} reflections were built ${from}. They`;
   const when =
     doing === "edit"
       ? "if you change the words of your answers"
       : "when you delete it";
-  return `${what} will be removed ${when}, because an answer may repeat what the entry said. Nothing is sent anywhere and nothing is written again.`;
+  const said = what === "entry" ? "what the entry said" : "what you wrote";
+  return `${built} will be removed ${when}, because an answer may repeat ${said}. Nothing is sent anywhere and nothing is written again.`;
 }
 
 /**
@@ -78,10 +89,12 @@ export function useDependentCount(entryId: string | undefined): number {
 export function DependentsWarning(props: {
   readonly entryId: string | undefined;
   readonly doing: "edit" | "delete";
+  readonly what?: "entry" | "after";
 }): JSX.Element | null {
   const warning = dependentsWarning(
     useDependentCount(props.entryId),
     props.doing,
+    props.what ?? "entry",
   );
   return warning === undefined ? null : <p class="hint">{warning}</p>;
 }

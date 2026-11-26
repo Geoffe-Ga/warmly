@@ -16,6 +16,7 @@ export type RouteId =
   | "journal-new"
   | "journal-entry"
   | "journal-edit"
+  | "after-conversation"
   | "sync-conflicts"
   | "reflect"
   | "reflect-session"
@@ -112,6 +113,13 @@ export const ROUTES: readonly RouteDef[] = [
     path: "/journal/entries/:id/edit",
     title: "Edit journal entry",
     summary: "Change what one of your entries says.",
+    access: "private",
+  },
+  {
+    id: "after-conversation",
+    path: "/journal/after-conversation/:id",
+    title: "After a conversation",
+    summary: "Three optional questions for after a conversation you had.",
     access: "private",
   },
   {
