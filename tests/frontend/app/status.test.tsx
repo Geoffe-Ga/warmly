@@ -2,8 +2,8 @@
  * The status of everything that protects the person's writing, in one
  * place and in plain words (PRD UI-008; AC-23).
  */
-import { cleanup, screen, within } from "@testing-library/preact";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { act, cleanup, screen, waitFor, within } from "@testing-library/preact";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FakeProvider } from "../../../src/ai/fake-provider";
 import { AiGateway } from "../../../src/ai/gateway";
@@ -23,6 +23,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
 });
 
 async function open(services: TestServices) {
@@ -68,9 +69,58 @@ describe("the status summary in Settings (UI-008)", () => {
 
     expect(valueOf(summary, "Connection")).toBe("Online.");
     // The test services have a sync engine with nothing to send.
-    expect(valueOf(summary, "Sync")).toMatch(
-      /All changes saved|Nothing is waiting|Couldn't sync|waiting to sync/,
+    expect(valueOf(summary, "Sync")).toBe("All changes saved");
+  });
+
+  it("says so when the device is offline, and that writing is still saved", async () => {
+    vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const summary = await open(testServices("unlocked"));
+
+    expect(valueOf(summary, "Connection")).toBe(
+      "Offline. Your writing is saved on this device and is sent when the connection returns.",
     );
+  });
+
+  it("says nothing is waiting when sync has stopped for lack of a connection with nothing queued", async () => {
+    const services = testServices("unlocked");
+    // What the engine reports after a sync attempt found no connection.
+    vi.spyOn(services.sync, "state").mockReturnValue({
+      ...services.sync.state(),
+      status: "offline",
+      waiting: 0,
+    });
+    const summary = await open(services);
+
+    // The sync line itself is empty in that state, so the summary says
+    // what that means instead of showing a blank.
+    expect(valueOf(summary, "Sync")).toBe("Nothing is waiting to be sent.");
+  });
+
+  it("gives the count when changes are waiting for a connection", async () => {
+    const services = testServices("unlocked");
+    vi.spyOn(services.sync, "state").mockReturnValue({
+      ...services.sync.state(),
+      status: "offline",
+      waiting: 2,
+    });
+    const summary = await open(services);
+
+    expect(valueOf(summary, "Sync")).toBe("2 changes waiting to sync");
+  });
+
+  it("follows the connection when it comes back", async () => {
+    const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+    const summary = await open(testServices("unlocked"));
+    expect(valueOf(summary, "Connection")).toMatch(/^Offline\./);
+
+    online.mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event("online"));
+    });
+
+    await waitFor(() => {
+      expect(valueOf(summary, "Connection")).toBe("Online.");
+    });
   });
 
   it("says when no AI provider is connected, and names one that is", async () => {

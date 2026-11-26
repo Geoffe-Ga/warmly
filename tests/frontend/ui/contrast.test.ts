@@ -80,11 +80,13 @@ describe("design tokens (UI-001, WCAG 2.2 AA)", () => {
     });
     const found: string[] = [];
     for (const [path, source] of Object.entries(sources)) {
-      // A hex colour, an rgb() or hsl() colour, or an inline style that
-      // sets one. Hashes and IDs are longer than a colour and are not hit.
+      // A hex colour, a colour function, or an inline style that sets a
+      // colour. Hashes and IDs are longer than a colour and are not hit.
+      // It does not catch a colour given by name ("red"), or one built up
+      // from parts: it is a guard against the usual slip, not a proof.
       const hits =
         source.match(
-          /["'`]#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})["'`]|\b(?:rgb|rgba|hsl|hsla)\(|style=\{\{[^}]*(?:color|background)/g,
+          /["'`]#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})["'`]|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color-mix)\(|style=\{\{[^}]*(?:color|background)/g,
         ) ?? [];
       for (const hit of hits) {
         found.push(`${path}: ${hit}`);
