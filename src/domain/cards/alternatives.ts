@@ -132,6 +132,6 @@ export async function chooseAlternative(
     ),
     now.toISOString(),
   );
-  await deps.records.put("conversation-card", changed);
+  await deps.records.put("conversation-card", changed, card);
   return changed;
 }

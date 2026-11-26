@@ -17,11 +17,7 @@ import {
 } from "../../../domain/journal/drafts";
 import type { EntryDate, JournalEntry } from "../../../domain/journal/types";
 import { deleteEntry } from "../../../domain/journal/delete";
-import { sameValue } from "../../../domain/same";
-import {
-  StaleRecordError,
-  type RecordStore,
-} from "../../../storage/record-store";
+import { StaleRecordError } from "../../../storage/record-store";
 import { describeOpenFailure } from "../../storage-messages";
 
 /** The compose form, as the screen sees it. */
@@ -67,34 +63,6 @@ export interface DraftForm {
 }
 
 /**
- * Refuse to write over a draft that is no longer what the form last read
- * or stored: sync or another tab changed it while it was being typed. The
- * store's own stale-copy check does not catch a change that sync has
- * already put in the store's copy.
- *
- * The check and the write that follows are two steps, not one: a change
- * that arrives between them is not caught. That gap is a few turns of the
- * event loop where it used to be the whole time the form was open; closing
- * it needs the comparison inside the store's own write.
- *
- * @param records - The record store.
- * @param mine - The draft as the form knows it, if it has one.
- * @throws StaleRecordError if the stored draft says something else.
- */
-async function refuseIfChanged(
-  records: RecordStore,
-  mine: JournalEntry | undefined,
-): Promise<void> {
-  if (mine === undefined) {
-    return;
-  }
-  const stored = await records.get("journal-entry", mine.id);
-  if (stored !== undefined && !sameValue(stored, mine)) {
-    throw new StaleRecordError();
-  }
-}
-
-/**
  * Hold the compose form and keep its draft saved.
  *
  * The draft is saved a moment after typing stops, when the page is hidden
@@ -132,10 +100,10 @@ export function useDraft(): DraftForm {
     let mounted = true;
     const saver = new Autosave<EntryContent>(
       draftSaver({
-        put: async (next) => {
-          await refuseIfChanged(records, draft.current);
-          await records.put("journal-entry", next);
-        },
+        // The store refuses the write unless the stored draft is still
+        // the copy this form last read or stored: sync or another tab may
+        // have changed it while it was being typed (ADR-0016).
+        put: (next) => records.put("journal-entry", next, draft.current),
         current: () => draft.current,
         finishing: () => finishing.current,
         stored: (next) => {
@@ -321,8 +289,7 @@ export function useDraft(): DraftForm {
         if (session.state !== "unlocked") {
           return undefined;
         }
-        await refuseIfChanged(records, draft.current);
-        await records.put("journal-entry", entry);
+        await records.put("journal-entry", entry, draft.current);
         draft.current = undefined;
         return entry;
       } catch (error) {

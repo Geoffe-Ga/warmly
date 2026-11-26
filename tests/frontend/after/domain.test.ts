@@ -184,7 +184,7 @@ describe("it can be changed and deleted (PC-003)", () => {
         records,
         made.id,
         { ...WORDS, difficult: "Typed here." },
-        { seen: made.responses },
+        { seen: made },
       ),
     ).rejects.toBeInstanceOf(StaleRecordError);
     expect(await records.get("post-conversation", made.id)).toEqual(newer);
@@ -194,7 +194,7 @@ describe("it can be changed and deleted (PC-003)", () => {
       records,
       made.id,
       { ...WORDS, difficult: "Typed here." },
-      { seen: newer.responses },
+      { seen: newer },
     );
     expect(saved.responses.difficult).toBe("Typed here.");
   });

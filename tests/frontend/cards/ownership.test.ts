@@ -156,24 +156,29 @@ describe("a card that changed under the form (invariant 5)", () => {
     ]);
   });
 
-  it("counts a change of kind, but not a move to another place, as a change", async () => {
-    const { records, card } = await setUp();
-    const draft = { type: card.type, parts: parts(card, { s1: "Typed." }) };
+  it("counts any change to the card as a change: its kind, or where it is", async () => {
+    const draft = (card: ConversationCard) => ({
+      type: card.type,
+      parts: parts(card, { s1: "Typed." }),
+    });
 
-    // Read again after a lock, or moved: the same kind and parts.
-    const reread = JSON.parse(JSON.stringify(card)) as ConversationCard;
-    await records.put("conversation-card", {
-      ...reread,
+    const { records, card } = await setUp();
+    await records.put("conversation-card", { ...card, type: "need_request" });
+    await expect(
+      rewriteParts({ records }, card.id, draft(card), { seen: card }),
+    ).rejects.toThrow(StaleRecordError);
+
+    // Moved to another collection on another device: the same words, and
+    // still not the card the person was shown.
+    const { records: other, card: second } = await setUp();
+    await other.put("conversation-card", {
+      ...second,
       collectionId: "00000000-0000-4000-8000-00000000c0ff",
     });
-    expect(
-      await rewriteParts({ records }, card.id, draft, { seen: card }),
-    ).toBeDefined();
-
-    const { records: other, card: second } = await setUp();
-    await other.put("conversation-card", { ...second, type: "need_request" });
     await expect(
-      rewriteParts({ records: other }, second.id, draft, { seen: second }),
+      rewriteParts({ records: other }, second.id, draft(second), {
+        seen: second,
+      }),
     ).rejects.toThrow(StaleRecordError);
   });
 });

@@ -135,7 +135,7 @@ function AfterForm(props: {
         : // Refused if the note has changed under the form meanwhile, by
           // sync or in another tab: it is never replaced unseen.
           editAfter(records, record.id, responses, {
-            seen: record.responses,
+            seen: record,
           });
     saving.current = stored;
     try {
@@ -182,7 +182,7 @@ function AfterForm(props: {
         }
         try {
           await editAfter(records, now.record.id, now.responses, {
-            seen: now.record.responses,
+            seen: now.record,
           });
         } catch (error) {
           if (!(error instanceof StaleRecordError)) {
