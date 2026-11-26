@@ -67,6 +67,11 @@ encrypted on the user's device and the backend stores ciphertext only.
   from it; the server checks that against the public half. Someone who can
   read the database and also holds a valid session token cannot register a
   device, because nothing stored can make the signature (ADR-0005).
+  Reading the public half means exporting the derived key inside the page
+  for a moment, which leaves the private scalar in a string the page
+  cannot wipe. It is derived from the root key, which is in the page's
+  memory anyway while the app is unlocked, so this gives script in the
+  app's origin nothing it could not already reach.
 - **The first recovery envelope is created without a device signature.** No
   device can exist before it. A session token stolen between sign-up and
   the user confirming their recovery key could create the envelope and its

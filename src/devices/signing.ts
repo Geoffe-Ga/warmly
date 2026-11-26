@@ -86,6 +86,8 @@ const ED25519_PKCS8_PREFIX = new Uint8Array([
   0x22, 0x04, 0x20,
 ]);
 const ED25519 = { name: "Ed25519" } as const;
+/** A 32-byte key in base64, with its one padding character. */
+const KEY_BASE64_LENGTH = 44;
 
 /**
  * The account's enrollment key pair: an Ed25519 key whose private half is
@@ -139,7 +141,10 @@ export async function deviceEnrollmentKey(
   }
   // JWK uses the URL-safe alphabet with no padding.
   return fromBase64(
-    jwk.x.replaceAll("-", "+").replaceAll("_", "/").padEnd(44, "="),
+    jwk.x
+      .replaceAll("-", "+")
+      .replaceAll("_", "/")
+      .padEnd(KEY_BASE64_LENGTH, "="),
   );
 }
 

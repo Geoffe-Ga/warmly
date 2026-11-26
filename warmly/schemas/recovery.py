@@ -42,7 +42,7 @@ class PutRecoveryEnvelopeRequest(ApiModel):
     )
 
     @model_validator(mode="after")
-    def _verifier_only_on_create(self) -> Self:
+    def _enrollment_key_only_on_create(self) -> Self:
         """Require the key exactly when the envelope is being created."""
         creating = self.expected_version == 0
         if creating != (self.device_enrollment_key is not None):

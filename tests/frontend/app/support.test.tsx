@@ -2,12 +2,14 @@
  * Telling a person plainly when their browser cannot run the app (PRD
  * UI-003; AC-28). See `docs/support/browsers.md` for what is supported.
  */
-import { cleanup, screen } from "@testing-library/preact";
+import { cleanup, screen, waitFor } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  CANNOT_ADD_DEVICE,
   UNSUPPORTED_BROWSER,
   canSignEnrollment,
+  forgetSigningSupport,
   missingFeatures,
 } from "../../../src/app/support";
 
@@ -16,6 +18,8 @@ import { renderApp, testServices, visit } from "./helpers";
 beforeEach(() => {
   sessionStorage.clear();
   localStorage.clear();
+  // Each test decides what the browser can do, so nothing is remembered.
+  forgetSigningSupport();
   visit("/");
 });
 
@@ -117,7 +121,54 @@ describe("the notice", () => {
     await renderApp("/help", testServices("signed_out"));
 
     const notice = await screen.findByRole("alert");
+    // It says what is actually wrong: this browser can keep writing
+    // private and saved, so the other message would be untrue.
+    expect(notice.textContent).toContain(CANNOT_ADD_DEVICE);
+    expect(notice.textContent).not.toContain(UNSUPPORTED_BROWSER);
+    expect(notice.querySelector("a")?.getAttribute("href")).toBe("/help");
+  });
+
+  it("says the wider problem when storage is missing as well", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+    vi.spyOn(crypto.subtle, "generateKey").mockRejectedValue(
+      new DOMException("Unrecognized name.", "NotSupportedError"),
+    );
+
+    await renderApp("/help", testServices("signed_out"));
+
+    await waitFor(() => {
+      expect(crypto.subtle.generateKey).toHaveBeenCalled();
+    });
+    const notice = screen.getByRole("alert");
     expect(notice.textContent).toContain(UNSUPPORTED_BROWSER);
+    expect(notice.textContent).not.toContain(CANNOT_ADD_DEVICE);
+  });
+
+  it("does not appear and then go in a browser that can sign", async () => {
+    const generateKey = vi.spyOn(crypto.subtle, "generateKey");
+
+    await renderApp("/help", testServices("signed_out"));
+    await waitFor(() => {
+      expect(generateKey).toHaveBeenCalled();
+    });
+    await generateKey.mock.results[0]?.value;
+
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("asks the browser once, however many times the question is put", async () => {
+    const generateKey = vi.spyOn(crypto.subtle, "generateKey");
+
+    expect(await canSignEnrollment()).toBe(true);
+    expect(await canSignEnrollment()).toBe(true);
+
+    expect(generateKey).toHaveBeenCalledTimes(1);
+  });
+
+  it("says in fixed words what cannot be done in a browser that cannot sign", () => {
+    expect(CANNOT_ADD_DEVICE).toBe(
+      "This browser cannot make the signature Warmly uses to add a device to an account, so you cannot set up Warmly here or add this browser to your account. Use a current version of Safari, Chrome, Edge or Firefox.",
+    );
   });
 
   it("says what to do, in fixed words that name no private thing", () => {

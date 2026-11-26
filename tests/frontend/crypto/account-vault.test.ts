@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   RecoveryEnvelopeStore,
@@ -664,7 +664,7 @@ describe("what the vault gives device registration (DEV-002, ADR-0005)", () => {
     };
   }
 
-  it("sends the enrollment verifier derived from the new root key with the first envelope", async () => {
+  it("sends the enrollment public key derived from the new root key with the first envelope", async () => {
     await signUp();
     const { store, writes } = recording();
     const vault = new AccountVault(auth, store);
@@ -680,7 +680,37 @@ describe("what the vault gives device registration (DEV-002, ADR-0005)", () => {
     );
   });
 
-  it("the verifier is not the root key, the envelope or the fingerprint", async () => {
+  it("stores nothing and keeps the new keys when the browser cannot make the enrollment key", async () => {
+    await signUp();
+    const { store, writes } = recording();
+    const vault = new AccountVault(auth, store);
+    await vault.createAccountKeys();
+    // A browser without Ed25519 refuses to import the derived key.
+    const importKey = crypto.subtle.importKey.bind(crypto.subtle);
+    const refusing = vi
+      .spyOn(crypto.subtle, "importKey")
+      .mockImplementation((...args: Parameters<typeof importKey>) =>
+        args[0] === "pkcs8"
+          ? Promise.reject(new DOMException("no", "NotSupportedError"))
+          : importKey(...args),
+      );
+
+    await expect(vault.confirmRecoveryKey()).rejects.toBeInstanceOf(
+      DOMException,
+    );
+
+    // Nothing was uploaded, so no account is left half made on the server.
+    expect(writes).toEqual([]);
+
+    // The new keys are still pending, so the confirmation can be tried
+    // again: once signing works, the first envelope is stored.
+    refusing.mockRestore();
+    await vault.confirmRecoveryKey();
+    expect(writes).toHaveLength(1);
+    expect(writes[0]?.expectedVersion).toBe(0);
+  });
+
+  it("sends a public key, not the root key, the envelope or the fingerprint", async () => {
     await signUp();
     const { store, writes } = recording();
     const vault = new AccountVault(auth, store);

@@ -236,6 +236,9 @@ def enrollment_proof_is_valid(
     if key is None or given is None:
         return False
     message = "\n".join([ENROLLMENT_PROOF_VERSION, str(device_id), public_key])
+    # Any 32 bytes are accepted as a key here, including weak points. That
+    # is not a way in: only the account's own first device can set the key,
+    # and a weak key would weaken that account's own registrations alone.
     try:
         Ed25519PublicKey.from_public_bytes(key).verify(given, message.encode())
     except (InvalidSignature, ValueError):

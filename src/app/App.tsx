@@ -34,6 +34,7 @@ import {
 } from "./services";
 import type { SessionState } from "./session";
 import {
+  CANNOT_ADD_DEVICE,
   UNSUPPORTED_BROWSER,
   canSignEnrollment,
   cannotKeepWriting,
@@ -130,12 +131,14 @@ function UnsupportedNotice(): JSX.Element | null {
       current = false;
     };
   }, []);
+  // Missing encryption or storage is the wider problem, so it is the one
+  // that is said when both are true.
   if (!missing && !cannotSign) {
     return null;
   }
   return (
     <p role="alert" class="unsupported-notice">
-      {UNSUPPORTED_BROWSER}{" "}
+      {missing ? UNSUPPORTED_BROWSER : CANNOT_ADD_DEVICE}{" "}
       <Link href={pathFor("help")}>What Warmly is and is not</Link>
     </p>
   );
