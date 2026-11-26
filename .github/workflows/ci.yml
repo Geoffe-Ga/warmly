@@ -208,6 +208,10 @@ jobs:
     name: E2E + Accessibility (Playwright, axe-core)
     runs-on: ubuntu-latest
     needs: frontend
+    # The suite usually takes about five minutes and has taken 23 on a
+    # slow runner. A run that truly hangs is stopped, so that it fails and
+    # can be read, and does not sit for the default six hours.
+    timeout-minutes: 60
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
