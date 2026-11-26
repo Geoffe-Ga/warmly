@@ -595,7 +595,9 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   a draft is saved or finished, `useDraft` checks that the stored draft is
   still what the form last read or stored (`refuseIfChanged`); if sync or
   another tab changed it, the save is refused and the form offers the
-  latest version. Never write a draft without that check.
+  latest version. Never write a draft without that check. It is a read
+  followed by a write, not one step, so it narrows the gap and does not
+  close it; the same is true of `seen`.
 - A completed entry is changed only through `editEntry`
   (`src/domain/journal/edit.ts`): it keeps the ID, creation time and day,
   applies the completion rule, and keeps no copy of the old text. A

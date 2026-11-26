@@ -72,6 +72,11 @@ export interface DraftForm {
  * store's own stale-copy check does not catch a change that sync has
  * already put in the store's copy.
  *
+ * The check and the write that follows are two steps, not one: a change
+ * that arrives between them is not caught. That gap is a few turns of the
+ * event loop where it used to be the whole time the form was open; closing
+ * it needs the comparison inside the store's own write.
+ *
  * @param records - The record store.
  * @param mine - The draft as the form knows it, if it has one.
  * @throws StaleRecordError if the stored draft says something else.
