@@ -948,8 +948,6 @@ describe("drafts (JR-004)", () => {
     );
     // Typed while it is not yet known whether the draft is still there.
     await userEvent.type(first(), " and more");
-    // The page is hidden, which saves at once whatever is waiting.
-    hidePage();
 
     answer();
 
@@ -962,6 +960,45 @@ describe("drafts (JR-004)", () => {
     expect((await drafts(services)).map((each) => each.id)).toEqual([
       stored.id,
     ]);
+  });
+
+  it("saves what was typed during a failed discard before the app locks", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+    services.records.delete = () => Promise.reject(new Error("synthetic"));
+    const reload = services.records.reload.bind(services.records);
+    let answer: () => void = () => undefined;
+    const asked = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    services.records.reload = (async (...args: Parameters<typeof reload>) => {
+      await asked;
+      return reload(...args);
+    }) as typeof reload;
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard draft" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Discard draft",
+      }),
+    );
+    await userEvent.type(first(), " and more");
+
+    // The app locks while it is still not known whether the draft is
+    // there. Locking waits for every registered save before the keys go.
+    const locking = services.lockHooks.flush();
+    answer();
+    await locking;
+
+    // Stored by the time the lock's save has finished: not later, by the
+    // autosave's own timer, when the keys would already be gone.
+    const kept = await drafts(services);
+    expect(kept.map((each) => each.id)).toEqual([stored.id]);
+    expect(kept[0]?.responses.good).toBe("half a thought and more");
   });
 
   it("leaves no draft of what is typed while a draft is being deleted", async () => {
@@ -990,7 +1027,6 @@ describe("drafts (JR-004)", () => {
       }),
     );
     await userEvent.type(first(), " and more");
-    hidePage();
 
     go();
 
