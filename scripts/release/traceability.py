@@ -49,8 +49,16 @@ SKIPPED_PARTS = frozenset({"__pycache__", "node_modules", "fixtures"})
 _CRITERION = re.compile(r"^\d+\. \*\*\[(AC-\d{2})\]\*\* (.+)$")
 _CITED = re.compile(r"\bAC-\d{2}\b")
 # A test or a group of tests in TypeScript, at the start of a line:
-# `it(`, `test.skip(`, `describe.each(`.
-_TEST_CALL = re.compile(r"^[ \t]*(?:describe|it|test)(?:\.\w+)*\(", re.MULTILINE)
+# `it(`, `test.skip(`, `describe.each(`, `test.describe.serial(`. What may
+# follow the dot is listed, so that `test.beforeEach(`, `test.step(` and
+# `test.use(`, which are not tests, are not taken for one.
+_TEST_FORMS = (
+    "concurrent|describe|each|fails|fixme|only|parallel|runIf|sequential"
+    "|serial|skip|skipIf|todo"
+)
+_TEST_CALL = re.compile(
+    rf"^[ \t]*(?:describe|it|test)(?:\.(?:{_TEST_FORMS}))*\(", re.MULTILINE
+)
 _QUOTES = "\"'`"
 
 

@@ -136,6 +136,12 @@ TYPESCRIPT_CASES = {
         'describe.each([\n  ["a", make()],\n])'
         f'("signing up %s ({FIRST})", () => {{}});\n'
     ),
+    "a group that runs its tests in order": (
+        f'test.describe.serial("signing up ({FIRST})", () => {{}});\n'
+    ),
+    "a test that runs only on a condition": (
+        f'it.skipIf(old)("signs up ({FIRST})", () => {{}});\n'
+    ),
     "a line comment right above a test": (
         f'// Signing up, {FIRST}.\nit("signs up", () => {{}});\n'
     ),
@@ -161,6 +167,17 @@ TYPESCRIPT_NOT_CASES = {
     ),
     "a string inside a test": f'it("signs up", () => {{\n  expect("{FIRST}");\n}});\n',
     "a call that only looks like a test": f'submit("{FIRST}");\nit("x", () => {{}});\n',
+    "a comment above a set-up step": (
+        f'// {FIRST}\ntest.beforeEach(async () => {{}});\n\nit("x", () => {{}});\n'
+    ),
+    "the name of a step inside a test": (
+        f'test("x", async () => {{\n  await test.step("{FIRST}", f);\n}});\n'
+        f'test.step("{FIRST}", f);\n'
+    ),
+    "a setting for a group": (
+        f'// {FIRST}\ntest.describe.configure({{ mode: "serial" }});\n'
+    ),
+    "a setting for a file": f'// {FIRST}\ntest.use({{ locale: "en" }});\n',
 }
 
 

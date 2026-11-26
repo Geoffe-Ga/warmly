@@ -220,8 +220,9 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   of a TypeScript test or group or the comment directly above it. Never
   name a criterion in a test file's header or a helper (a test fails),
   and never cite one a test is not about to fill a gap. It shows that a
-  test names a criterion, not that the test is enough. `docs/README.md` is the index of every
-  document and says which required ones are not written yet.
+  test names a criterion, not that the test is enough. `docs/README.md`
+  is the index of every document and says which required ones are not
+  written yet.
 
 ## Frontend conventions
 
