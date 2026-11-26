@@ -41,12 +41,14 @@ describe("route guard (DEV-005, UI-008)", () => {
       "device-revoked",
       "locked",
       "help",
+      "privacy",
     ]);
   });
 
-  it("shows the one open screen, which is fixed words only, in every state", () => {
+  it("shows the open screens, which are fixed words only, in every state", () => {
     expect(ROUTES.filter((r) => r.access === "open").map((r) => r.id)).toEqual([
       "help",
+      "privacy",
     ]);
     for (const state of [
       "signed_out",
