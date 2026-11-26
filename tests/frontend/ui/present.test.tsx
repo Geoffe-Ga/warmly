@@ -67,6 +67,10 @@ describe("moving through the cards", () => {
 
     await user.keyboard("{ArrowRight}");
     expect(position()).toBe("Card 2 of 3");
+    // The position is announced after the card, like the card itself.
+    expect(screen.getByText("Card 2 of 3").getAttribute("aria-live")).toBe(
+      "polite",
+    );
     await user.keyboard("{ArrowRight}{ArrowRight}{ArrowRight}");
     expect(position()).toBe("Card 3 of 3");
     await user.keyboard("{ArrowLeft}");

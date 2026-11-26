@@ -76,7 +76,8 @@ function Deck(props: OpenCollection): JSX.Element {
       <p class="present-card" aria-live="polite">
         {readingText(card)}
       </p>
-      <p class="hint">
+      {/* Announced after the card, so a screen reader says where it is. */}
+      <p class="hint" aria-live="polite">
         Card {at + 1} of {cards.length}
       </p>
       <div class="button-row present-controls">
