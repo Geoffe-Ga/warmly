@@ -91,6 +91,9 @@ export function useDraft(): DraftForm {
   // either way this screen is replaced, and the hook starts afresh when the
   // form is next opened.
   const finishing = useRef(false);
+  // True while a draft is being deleted, and what was typed during that.
+  const discarding = useRef(false);
+  const typedMeanwhile = useRef<EntryContent | undefined>(undefined);
 
   useEffect(() => {
     let mounted = true;
@@ -205,7 +208,9 @@ export function useDraft(): DraftForm {
     change: (next) => {
       setContent(next);
       setDraftGone(false);
-      if (!finishing.current) {
+      if (discarding.current) {
+        typedMeanwhile.current = next;
+      } else if (!finishing.current) {
         autosave.current?.changed(next);
       }
     },
@@ -257,6 +262,10 @@ export function useDraft(): DraftForm {
         // Forgotten first: whatever happens next, nothing may be saved onto
         // the deleted draft's ID.
         draft.current = undefined;
+        // While the draft is being deleted the form has no draft, so a
+        // save would start a second one. Nothing is saved until it is
+        // known whether the draft is gone; what is typed meanwhile is held.
+        discarding.current = true;
         try {
           await deleteEntry({ records, events }, discarded.id);
         } catch (error) {
@@ -266,8 +275,20 @@ export function useDraft(): DraftForm {
           // tried again. Otherwise it would sit in storage with no form
           // offering it. What is on the form is left as it is.
           draft.current = await stillADraft(discarded.id);
+          // What was typed while that was being found out is saved now,
+          // onto the draft if it is still one.
+          const held = typedMeanwhile.current;
+          typedMeanwhile.current = undefined;
+          discarding.current = false;
+          if (held !== undefined) {
+            autosave.current?.changed(held);
+          }
           throw error;
         }
+        // The draft is gone and the form is emptied, so what was typed
+        // while it was going is discarded with it, as the person asked.
+        typedMeanwhile.current = undefined;
+        discarding.current = false;
       }
       setContent(BLANK);
       setResumed(undefined);

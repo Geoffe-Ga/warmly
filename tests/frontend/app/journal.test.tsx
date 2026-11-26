@@ -915,6 +915,91 @@ describe("drafts (JR-004)", () => {
         (await drafts(services)).some((each) => each.id !== stored.id),
       ).toBe(true);
     });
+    const finished = await services.records.get("journal-entry", stored.id);
+    expect(finished?.status).toBe("complete");
+    expect(finished?.responses).toEqual(stored.responses);
+  });
+
+  it("starts no second draft from what is typed while a failed discard is being looked into", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+    services.records.delete = () => Promise.reject(new Error("synthetic"));
+    // Reading the draft again is slow: it answers only when the test says.
+    const reload = services.records.reload.bind(services.records);
+    let answer: () => void = () => undefined;
+    const asked = new Promise<void>((resolve) => {
+      answer = resolve;
+    });
+    services.records.reload = (async (...args: Parameters<typeof reload>) => {
+      await asked;
+      return reload(...args);
+    }) as typeof reload;
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard draft" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Discard draft",
+      }),
+    );
+    // Typed while it is not yet known whether the draft is still there.
+    await userEvent.type(first(), " and more");
+    // The page is hidden, which saves at once whatever is waiting.
+    hidePage();
+
+    answer();
+
+    // The draft was still there, so what was typed goes onto it.
+    await waitFor(async () => {
+      expect((await drafts(services))[0]?.responses.good).toBe(
+        "half a thought and more",
+      );
+    });
+    expect((await drafts(services)).map((each) => each.id)).toEqual([
+      stored.id,
+    ]);
+  });
+
+  it("leaves no draft of what is typed while a draft is being deleted", async () => {
+    const stored = entry(4, "2026-11-10", {
+      status: "draft",
+      responses: { good: "half a thought", improve: "", loved: "" },
+    });
+    const services = await openCompose(unlockedWith(stored));
+    // Deleting is slow: it goes ahead only when the test says.
+    const remove = services.records.delete.bind(services.records);
+    let go: () => void = () => undefined;
+    const told = new Promise<void>((resolve) => {
+      go = resolve;
+    });
+    services.records.delete = (async (...args: Parameters<typeof remove>) => {
+      await told;
+      await remove(...args);
+    }) as typeof remove;
+
+    await userEvent.click(
+      screen.getByRole("button", { name: "Discard draft" }),
+    );
+    await userEvent.click(
+      within(screen.getByRole("alertdialog")).getByRole("button", {
+        name: "Discard draft",
+      }),
+    );
+    await userEvent.type(first(), " and more");
+    hidePage();
+
+    go();
+
+    // The draft is gone, the form is empty, and nothing typed during the
+    // deletion was kept as a draft of its own.
+    await waitFor(() => {
+      expect(typed()).toBe("");
+    });
+    expect(await drafts(services)).toEqual([]);
   });
 
   it("does not bring back text that was typed just before discarding", async () => {
