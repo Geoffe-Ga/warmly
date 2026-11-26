@@ -545,6 +545,56 @@ describe("a reflection whose entry has changed (DEP-003, AC-12)", () => {
     expect(services.invalidation.removed).toBe(0);
   });
 
+  it("an answer that arrives after its entry changed is stored, then removed like any other, and says so (invariant 6)", async () => {
+    const { services, provider } = await setUp();
+    await renderApp(NEW, services);
+    provider.hangNext();
+    await ask("What has gone well?");
+    await userEvent
+      .setup()
+      .click(await screen.findByRole("button", { name: SEND }));
+    await screen.findByText(/Waiting for Test provider/);
+    // While the answer is on its way, the entry it is being built from
+    // is changed, as it would be by sync from another device.
+    await services.records.put("journal-entry", {
+      ...FIRST,
+      responses: { ...FIRST.responses, good: "Rewritten meanwhile." },
+      contentHash: "9".repeat(64),
+      updatedAt: "2026-11-20T10:00:00.000Z",
+    });
+    const reflect = services.reflect;
+    const started = vi.spyOn(reflect, "start");
+
+    // The request was cancelled by nothing: let a late, checked answer in
+    // by storing one built from the old text, as the screen would.
+    await reflect.start({
+      question: "What has gone well?",
+      answer: {
+        markdown: "Built from the old words.",
+        citations: [],
+        sources: [{ entryId: FIRST.id, sourceHash: FIRST.contentHash }],
+        coverage: {
+          includedEntryIds: [FIRST.id],
+          omittedEntryCount: 0,
+          truncated: false,
+        },
+      },
+    });
+
+    // It was stored, not dropped on arrival, and then removed by the same
+    // rule as any reflection whose entry has changed. The person is told.
+    expect(started).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(removedText(1))).toBeTruthy();
+    await waitFor(async () => {
+      expect(await services.reflect.list()).toEqual([]);
+    });
+    expect(document.body.textContent).not.toContain(
+      "Built from the old words.",
+    );
+    // Nothing was asked again.
+    expect(provider.calls).toHaveLength(1);
+  });
+
   it("says how many when more than one was removed", () => {
     expect(removedText(3)).toBe(
       "3 reflections were removed because a journal entry they were built from was changed or deleted.",
