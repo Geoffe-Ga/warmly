@@ -38,7 +38,10 @@ import {
   SAVED_ELSEWHERE,
   entryTooLong,
 } from "../../../src/ui/screens/reflect/Session";
-import { NOT_EVERYTHING } from "../../../src/ui/components/AiDisclosureDialog";
+import {
+  NOT_EVERYTHING,
+  tooLongNote,
+} from "../../../src/ui/components/AiDisclosureDialog";
 import { formatEntryDate } from "../../../src/ui/screens/journal/shared";
 import {
   heading,
@@ -311,11 +314,38 @@ describe("asking a question (RF-002, RF-003, SEC-009)", () => {
     });
   });
 
-  it("sends nothing and names the entry when one entry alone is too long (D-18)", async () => {
+  it("leaves out an entry that is too long to send, says so before sending, and sends the rest", async () => {
     const huge = entry(7, "2026-11-11", {
       responses: { good: "CANARY ".repeat(8_000), improve: "x", loved: "y" },
     });
-    const { services, provider } = await setUp([FIRST, huge]);
+    const { services, provider } = await setUp([FIRST, SECOND, huge]);
+    await renderApp(NEW, services);
+
+    await ask("What has gone well?");
+
+    const dialog = await screen.findByRole("alertdialog");
+    expect(dialog.textContent).toContain(
+      "This sends 2 of your 3 journal entries and your question",
+    );
+    expect(dialog.textContent).toContain(tooLongNote(1));
+    // The others all fit, so nothing is said about choosing among them.
+    expect(dialog.textContent).not.toContain(NOT_EVERYTHING);
+    await userEvent.setup().click(screen.getByRole("button", { name: SEND }));
+    await screen.findByRole("heading", { name: "Answer" });
+
+    expect(provider.calls).toHaveLength(1);
+    expect(JSON.stringify(provider.calls)).not.toContain("CANARY");
+    expect(provider.calls[0]?.sources).toHaveLength(2);
+    expect(
+      screen.getByText(/This answer is about 2 of the 3 journal entries/),
+    ).toBeTruthy();
+  });
+
+  it("sends nothing and names the entry when no entry at all can be sent", async () => {
+    const huge = entry(7, "2026-11-11", {
+      responses: { good: "CANARY ".repeat(8_000), improve: "x", loved: "y" },
+    });
+    const { services, provider } = await setUp([huge]);
     await renderApp(NEW, services);
 
     await ask("What has gone well?");

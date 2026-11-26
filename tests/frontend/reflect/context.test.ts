@@ -113,6 +113,7 @@ describe("choosing entries for a request (RF-004, D-18)", () => {
     ).toEqual({
       entries: [],
       total: 0,
+      tooLong: [],
       coverage: {
         includedEntryIds: [],
         omittedEntryCount: 0,
@@ -308,10 +309,77 @@ describe("choosing entries for a request (RF-004, D-18)", () => {
     expect(chosen).not.toContain(b.id);
   });
 
-  it("refuses, naming the entry, when one entry alone is larger than the budget", () => {
+  it("leaves out an entry that is larger than the whole budget, and chooses the rest as if it were not there", () => {
     const entries = journal(10);
     const huge = entry(4, "z".repeat(10_000));
     entries[4] = huge;
+    const without = entries.filter((each) => each !== huge);
+
+    const chosen = selectContext({
+      entries,
+      question: QUESTION,
+      estimate: size,
+      budget: 500,
+    });
+    const same = selectContext({
+      entries: without,
+      question: QUESTION,
+      estimate: size,
+      budget: 500,
+    });
+
+    expect(chosen.tooLong).toEqual([huge.id]);
+    expect(chosen.entries).toEqual(same.entries);
+    expect(chosen.entries).not.toContain(huge);
+    expect(chosen.total).toBe(10);
+    // It is counted as left out, with any others that did not fit.
+    expect(chosen.coverage.omittedEntryCount).toBe(
+      same.coverage.omittedEntryCount + 1,
+    );
+    expect(chosen.coverage.truncated).toBe(true);
+    expect(same.tooLong).toEqual([]);
+  });
+
+  it("an entry too long to send is the only thing left out when everything else fits", () => {
+    const entries = journal(5);
+    const huge = entry(2, "z".repeat(10_000));
+    entries[2] = huge;
+
+    const chosen = selectContext({
+      entries,
+      question: QUESTION,
+      estimate: size,
+      budget: 500,
+    });
+
+    expect(chosen.entries).toHaveLength(4);
+    expect(chosen.coverage).toMatchObject({
+      omittedEntryCount: 1,
+      truncated: true,
+    });
+    expect(chosen.tooLong).toEqual([huge.id]);
+  });
+
+  it("an entry whose size cannot be worked out is never sent", () => {
+    const entries = journal(4);
+    const odd = entries[1];
+
+    const chosen = selectContext({
+      entries,
+      question: QUESTION,
+      estimate: (each) => (each === odd ? Number.NaN : size(each)),
+      budget: 500,
+    });
+
+    expect(chosen.tooLong).toEqual([odd?.id]);
+    expect(chosen.entries).toHaveLength(3);
+  });
+
+  it("refuses, naming the oldest entry by ID only, when no entry at all fits", () => {
+    const entries = [
+      entry(1, "z".repeat(10_000)),
+      entry(0, "y".repeat(10_000)),
+    ];
 
     let thrown: unknown;
     try {
@@ -326,10 +394,16 @@ describe("choosing entries for a request (RF-004, D-18)", () => {
     }
 
     expect(thrown).toBeInstanceOf(EntryTooLargeError);
-    expect((thrown as EntryTooLargeError).entryId).toBe(huge.id);
+    expect((thrown as EntryTooLargeError).entryId).toBe(entry(0).id);
     expect((thrown as EntryTooLargeError).name).toBe("EntryTooLargeError");
     // Only the ID: never the entry's text.
-    expect((thrown as EntryTooLargeError).message).not.toContain("zzz");
+    expect((thrown as EntryTooLargeError).message).not.toMatch(/zzz|yyy/);
+  });
+
+  it("the shares and the margin are the decided ones (D-18): changing them is a new decision", () => {
+    expect(SHARES).toEqual({ newest: 0.6, relevant: 0.2, spread: 0.2 });
+    expect(SHARES.newest + SHARES.relevant + SHARES.spread).toBe(1);
+    expect(ESTIMATE_MARGIN).toBe(0.15);
   });
 
   it("accepts an entry exactly as large as the budget", () => {
@@ -503,14 +577,32 @@ describe("a request built for a real limit (RF-004, AI-016)", () => {
     );
   });
 
-  it("refuses when one entry alone cannot be sent", () => {
+  it("leaves an entry that cannot be sent out of the request, and says how many", () => {
+    const gateway = new AiGateway(new FakeProvider());
     const entries = journal(3);
     entries[1] = entry(1, "CANARY ".repeat(10_000));
 
+    const request = reflectRequest(QUESTION, entries, gateway.sizing());
+
+    expect(request.entries).toHaveLength(2);
+    expect(JSON.stringify(request)).not.toContain("CANARY");
+    expect(request.coverage).toEqual({
+      omittedEntryCount: 1,
+      truncated: true,
+      tooLong: 1,
+    });
+    expect(gateway.disclose(request)).toMatchObject({
+      entries: 2,
+      omitted: 1,
+      tooLong: 1,
+    });
+  });
+
+  it("refuses when no entry at all can be sent", () => {
     expect(() =>
       reflectRequest(
         QUESTION,
-        entries,
+        [entry(1, "CANARY ".repeat(10_000))],
         new AiGateway(new FakeProvider()).sizing(),
       ),
     ).toThrow(EntryTooLargeError);

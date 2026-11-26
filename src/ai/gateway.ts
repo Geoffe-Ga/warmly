@@ -75,6 +75,11 @@ export interface Disclosure {
    * one request (PRD RF-004). Zero when everything is included.
    */
   readonly omitted: number;
+  /**
+   * How many of those were left out because each is too long to send in
+   * one request at all.
+   */
+  readonly tooLong: number;
   /** What else is included, in the person's own words elsewhere on screen. */
   readonly also: "your question" | "your topic" | "the wording you chose";
   /** About how many tokens the request carries. */
@@ -176,6 +181,8 @@ export class AiGateway {
         request.kind === "reflect"
           ? (request.coverage?.omittedEntryCount ?? 0)
           : 0,
+      tooLong:
+        request.kind === "reflect" ? (request.coverage?.tooLong ?? 0) : 0,
       also: ALSO[request.kind],
       estimatedTokens,
       large: estimatedTokens >= LARGE_REQUEST_TOKENS,

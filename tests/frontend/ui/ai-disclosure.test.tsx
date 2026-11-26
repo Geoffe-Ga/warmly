@@ -16,6 +16,7 @@ import {
   CANNOT_DESCRIBE,
   NOT_EVERYTHING,
   describeSent,
+  tooLongNote,
 } from "../../../src/ui/components/AiDisclosureDialog";
 import { NO_PROVIDER } from "../../../src/ui/screens/settings/AiProvider";
 import { renderApp, testServices } from "../app/helpers";
@@ -50,6 +51,7 @@ const DISCLOSURE: Disclosure = {
   provider: "Example AI",
   entries: 14,
   omitted: 0,
+  tooLong: 0,
   also: "your question",
   estimatedTokens: 900,
   large: false,
@@ -173,6 +175,35 @@ describe("the disclosure before anything is sent (SEC-009, AI-015)", () => {
     open();
     expect(screen.getByRole("alertdialog").textContent).not.toContain(
       NOT_EVERYTHING,
+    );
+  });
+
+  it("says when entries are too long to send, apart from those that did not fit", () => {
+    open({
+      request: {
+        ...request(),
+        coverage: { omittedEntryCount: 3, truncated: true, tooLong: 2 },
+      },
+    });
+    const both = screen.getByRole("alertdialog").textContent;
+    expect(both).toContain(tooLongNote(2));
+    expect(both).toContain(NOT_EVERYTHING);
+    cleanup();
+
+    open({
+      request: {
+        ...request(),
+        coverage: { omittedEntryCount: 1, truncated: true, tooLong: 1 },
+      },
+    });
+    const only = screen.getByRole("alertdialog").textContent;
+    expect(only).toContain(tooLongNote(1));
+    expect(only).not.toContain(NOT_EVERYTHING);
+    expect(tooLongNote(1)).toMatch(
+      /^1 entry is too long .* so it is left out\./,
+    );
+    expect(tooLongNote(1200)).toMatch(
+      /^1,200 entries are too long .* so they are left out\./,
     );
   });
 

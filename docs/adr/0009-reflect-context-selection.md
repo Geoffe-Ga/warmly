@@ -91,11 +91,21 @@ selection is sent oldest first.
 record ID. Every tie is settled by that order, so the same journal and
 question give the same selection in whatever order the records arrive.
 
-**Whole entries only.** An entry is sent whole or not at all. If one entry
-alone is larger than the room, nothing is sent and the person is told which
-entry it is (`EntryTooLargeError` carries its ID, never its text). Leaving
-it out quietly would hide that part of the journal can never be asked
-about.
+**Whole entries only.** An entry is sent whole or not at all. An entry
+larger than the whole room can never be sent. It is left out, the rest are
+chosen as if it were not there, and the person is told before they agree
+that an entry is too long to send and has been left out. An entry whose
+size cannot be worked out is treated the same way.
+
+D-18 first said that one such entry should stop the request with an error.
+That was changed in review. Refusing would make Reflect unusable until the
+person shortened or deleted an old entry, and editing an entry removes
+every reflection built from it (ADR-0010), so the cure would cost more than
+the problem. Leaving it out is as honest, because it is said, and it is
+counted with the other entries that were not sent.
+
+Only when no entry at all fits is the request refused
+(`EntryTooLargeError`, which carries an entry's ID and never its text).
 
 **Saying so.** The request carries how many entries were left out. Before
 anything is sent, the disclosure dialog says "N of your M journal entries"
@@ -115,10 +125,14 @@ what the model writes, which is what makes AC-09 hold.
   journal's words gets the newest entries and the spread, which is still a
   fair picture. Better relevance (an index, embeddings) is deferred and
   would be a new ADR.
-- A single very long entry blocks Reflect until it is shortened. With real
-  providers' limits this needs an entry of tens of thousands of words.
-  Splitting an entry is not done because a citation must point at words the
-  provider was actually given, in an entry it was given whole.
+- A very long entry is never part of a reflection. With real providers'
+  limits this needs an entry of tens of thousands of words. Splitting an
+  entry is not done because a citation must point at words the provider
+  was actually given, in an entry it was given whole.
+- The spread sizes its sample from the average size of what is left, so
+  with very uneven entries it can pick fewer than its share would hold.
+  The last step, which spends what is left on the newest entries, makes up
+  most of the difference.
 - Real adapters (ADR-0007) must provide an `estimateTokens` that is fast
   and errs high. Selection calls it once for each finished entry each time
   Ask is pressed.

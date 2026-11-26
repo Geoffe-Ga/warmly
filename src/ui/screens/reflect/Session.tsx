@@ -52,7 +52,7 @@ export const NOTHING_TO_ASK_ABOUT =
   "You have no finished journal entries yet, so there is nothing to ask about. Write an entry first.";
 
 /**
- * Said when one entry alone is too long for a request (decision D-18).
+ * Said when no entry at all fits in a request: every one is too long.
  *
  * @param date - The entry's day, as shown elsewhere, if the entry is known.
  * @returns What happened and what the person can do.
@@ -60,7 +60,7 @@ export const NOTHING_TO_ASK_ABOUT =
 export function entryTooLong(date: string | undefined): string {
   const which =
     date === undefined ? "One of your entries" : `Your entry for ${date}`;
-  return `${which} is too long to send in one request, so nothing was sent. Warmly sends whole entries only, and never part of one. If you shorten that entry, you can ask again.`;
+  return `${which} is too long to send in one request, and no other entry can be sent either, so nothing was sent. Warmly sends whole entries only, and never part of one.`;
 }
 
 /** Said when an answer arrived but could not be stored. */

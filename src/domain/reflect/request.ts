@@ -67,7 +67,7 @@ function sourceOf(entry: JournalEntry): SourceEntry {
  * @returns The request, oldest entry first, saying what was left out if
  *   anything was.
  * @throws InvalidQuestionError if the question is empty or too long.
- * @throws EntryTooLargeError if one entry alone does not fit.
+ * @throws EntryTooLargeError if there are entries and none of them fits.
  */
 export function reflectRequest(
   question: string,
@@ -107,6 +107,9 @@ export function reflectRequest(
           coverage: {
             omittedEntryCount: selection.coverage.omittedEntryCount,
             truncated: true,
+            ...(selection.tooLong.length > 0
+              ? { tooLong: selection.tooLong.length }
+              : {}),
           },
         }
       : {}),

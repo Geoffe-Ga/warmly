@@ -39,6 +39,11 @@ export interface RequestCoverage {
    * were left out. An entry is sent whole or not at all, never shortened.
    */
   readonly truncated: boolean;
+  /**
+   * How many of the omitted entries were left out because each is too
+   * long to send in one request at all. Absent when none were.
+   */
+  readonly tooLong?: number;
 }
 
 /** A question about the person's own journal. */

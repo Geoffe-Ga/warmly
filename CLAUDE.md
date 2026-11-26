@@ -377,7 +377,9 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
 - Which entries a Reflect request sends is decided only by `selectContext`
   (`src/domain/reflect/context.ts`, ADR-0009), on the device, from sizes
   given by `services.ai.sizing()`: never call AI or the network to choose,
-  never use a clock or randomness, and never send part of an entry. When
+  never use a clock or randomness, and never send part of an entry. An
+  entry too long to send at all is left out and the dialog says so; only
+  when no entry fits is the request refused. When
   entries are left out, the request says how many, the dialog says "N of
   your M", and `CitedAnswer` says so above the answer from what the app
   sent, whatever the model wrote. Changing `SHARES` or `ESTIMATE_MARGIN`

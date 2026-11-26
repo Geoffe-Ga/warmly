@@ -95,7 +95,7 @@ test.describe("Reflect with a long journal", () => {
     ).toBeVisible();
   });
 
-  test("sends nothing and points to the entry when one entry alone is too long", async ({
+  test("leaves out an entry that is too long, says so, and answers from the rest", async ({
     page,
   }) => {
     await onboard(page);
@@ -104,9 +104,35 @@ test.describe("Reflect with a long journal", () => {
 
     await askAbout(page, "What has gone well?");
 
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText(
+      "This sends 1 of your 2 journal entries and your question to Test provider",
+    );
+    await expect(dialog).toContainText(
+      "1 entry is too long to send in one request, so it is left out.",
+    );
+    await expectNoViolations(page);
+    await dialog.getByRole("button", { name: "Send to Test provider" }).click();
+
+    await expect(page.getByRole("heading", { name: "Answer" })).toBeVisible();
+    await expect(
+      page.getByText(
+        "This answer is about 1 of the 2 journal entries you had when you asked.",
+      ),
+    ).toBeVisible();
+  });
+
+  test("sends nothing and points to the entry when no entry at all can be sent", async ({
+    page,
+  }) => {
+    await onboard(page);
+    await writeEntry(page, "Synthetic very long entry. ".repeat(1200));
+
+    await askAbout(page, "What has gone well?");
+
     const alert = page.getByRole("alert").filter({ hasText: "too long" });
     await expect(alert).toContainText(
-      "is too long to send in one request, so nothing was sent.",
+      "is too long to send in one request, and no other entry can be sent either, so nothing was sent.",
     );
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
     await expect(

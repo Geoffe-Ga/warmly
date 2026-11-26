@@ -8,8 +8,9 @@
  * counted and said. It is a pure function: no clock, no randomness, no
  * network, no AI. An entry is sent whole or not at all.
  *
- * When everything fits, everything is sent. Otherwise the budget is spent
- * in three parts:
+ * An entry that is larger than the whole budget is left out and counted,
+ * because it could never be sent. Of the rest: when everything fits,
+ * everything is sent. Otherwise the budget is spent in three parts:
  *
  * 1. 60% on the newest entries, working backwards from the latest;
  * 2. 20% on the entries whose words overlap most with the question;
@@ -27,11 +28,11 @@ import { tokenize } from "../search/tokenize";
 export const SHARES = { newest: 0.6, relevant: 0.2, spread: 0.2 } as const;
 
 /**
- * One entry is larger than the whole budget, so it can never be sent, and
- * the journal cannot be sent honestly without saying so. Nothing was sent.
+ * There are entries, and every one of them is larger than the whole
+ * budget, so there is nothing that can be sent. Nothing was sent.
  */
 export class EntryTooLargeError extends Error {
-  /** The entry that does not fit. Only its ID: never its text. */
+  /** The oldest entry that does not fit. Only its ID: never its text. */
   readonly entryId: string;
 
   /** @param entryId - The entry that does not fit. */
@@ -48,6 +49,11 @@ export interface Selection {
   readonly entries: readonly JournalEntry[];
   /** How many finished entries there were to choose from. */
   readonly total: number;
+  /**
+   * The entries left out because each is too long to send at all, by ID.
+   * They are counted in `coverage.omittedEntryCount` as well.
+   */
+  readonly tooLong: readonly string[];
   readonly coverage: RequestCoverage & {
     readonly includedEntryIds: readonly string[];
   };
@@ -58,6 +64,16 @@ interface Sized {
   readonly size: number;
   /** Position in the journal, oldest first. */
   readonly at: number;
+}
+
+/**
+ * An entry's size in whole tokens: at least one. A size that is not a
+ * number cannot be trusted, so such an entry counts as too long to send.
+ */
+function sizeOf(estimate: number): number {
+  return Number.isFinite(estimate)
+    ? Math.max(1, Math.ceil(estimate))
+    : Number.POSITIVE_INFINITY;
 }
 
 function inOrder(entries: readonly JournalEntry[]): JournalEntry[] {
@@ -206,8 +222,11 @@ function topUp(all: readonly Sized[], chosen: Chosen): void {
  *   size of one entry in tokens and must give the same answer every time
  *   for the same entry; and `budget`, the tokens available for entries
  *   after everything else has been set aside (see `contextBudget`).
- * @returns The entries to send, oldest first, with what was left out.
- * @throws EntryTooLargeError if any one entry is larger than the budget.
+ * @returns The entries to send, oldest first, with what was left out. An
+ *   entry larger than the whole budget can never be sent, so it is left
+ *   out and named in `tooLong`; the rest are chosen as if it were not
+ *   there. An entry whose size cannot be worked out is treated the same.
+ * @throws EntryTooLargeError if there are entries and none of them fits.
  */
 export function selectContext(input: {
   readonly entries: readonly JournalEntry[];
@@ -219,34 +238,39 @@ export function selectContext(input: {
   const all: Sized[] = inOrder(input.entries).map((entry, at) => ({
     entry,
     at,
-    size: Math.max(1, Math.ceil(input.estimate(entry))),
+    size: sizeOf(input.estimate(entry)),
   }));
-  const tooLarge = all.find((item) => item.size > budget);
-  if (tooLarge !== undefined) {
-    throw new EntryTooLargeError(tooLarge.entry.id);
+  // An entry that could never be sent is set aside first, so that it
+  // does not stop the others from being chosen.
+  const sendable = all.filter((item) => item.size <= budget);
+  const tooLong = all.filter((item) => item.size > budget);
+  const [first] = tooLong;
+  if (sendable.length === 0 && first !== undefined) {
+    throw new EntryTooLargeError(first.entry.id);
   }
 
   const chosen = new Chosen(budget);
-  const everything = all.reduce((sum, item) => sum + item.size, 0);
+  const everything = sendable.reduce((sum, item) => sum + item.size, 0);
   if (everything <= budget) {
-    topUp(all, chosen);
+    topUp(sendable, chosen);
   } else {
-    takeNewest(all, chosen, Math.floor(budget * SHARES.newest));
+    takeNewest(sendable, chosen, Math.floor(budget * SHARES.newest));
     takeRelevant(
-      all,
+      sendable,
       chosen,
       Math.floor(budget * SHARES.relevant),
       input.question,
     );
-    takeSpread(all, chosen, Math.floor(budget * SHARES.spread));
-    topUp(all, chosen);
+    takeSpread(sendable, chosen, Math.floor(budget * SHARES.spread));
+    topUp(sendable, chosen);
   }
 
-  const kept = chosen.from(all).map((item) => item.entry);
+  const kept = chosen.from(sendable).map((item) => item.entry);
   const omitted = all.length - kept.length;
   return {
     entries: kept,
     total: all.length,
+    tooLong: tooLong.map((item) => item.entry.id),
     coverage: {
       includedEntryIds: kept.map((entry) => entry.id),
       omittedEntryCount: omitted,
