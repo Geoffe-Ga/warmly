@@ -2,9 +2,11 @@
  * Learning mode and conversation mode for a card AI drafted, in the
  * browser (PRD CC-004 to CC-006; AC-03, AC-11, AC-23).
  *
- * Every part is opened from the keyboard. Nothing here calls AI after the
- * cards are drafted: the fixture fails any test that contacts another
- * host, and the test counts requests as well.
+ * Every part is opened from the keyboard. Looking at a card calls no AI.
+ * Other wordings for a part are asked for only by pressing its button and
+ * agreeing in the dialog (CC-005; AC-15). The stand-in provider sends
+ * nothing: the fixture fails any test that contacts another host, and the
+ * test counts requests as well.
  */
 import AxeBuilder from "@axe-core/playwright";
 
@@ -113,7 +115,7 @@ test.describe("a card AI drafted, in two modes", () => {
     );
     await expect(
       panel.getByRole("button", { name: "Generate more options" }),
-    ).toHaveAttribute("aria-disabled", "true");
+    ).toBeVisible();
     await expectNoViolations(page);
 
     // Escape closes it and gives focus back to the part.
@@ -129,6 +131,42 @@ test.describe("a card AI drafted, in two modes", () => {
 
     // None of this asked anything of a provider or left the browser.
     await expect(page.getByRole("alertdialog")).toHaveCount(0);
+    expect(requests).toEqual([]);
+
+    // Other wordings: asked for only by pressing the button, and only
+    // after agreeing to what would be sent.
+    await page.keyboard.press("Enter");
+    await panel.getByRole("button", { name: "Generate more options" }).click();
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText(
+      "This sends 1 journal entry and the wording you chose to Test provider",
+    );
+    await expectNoViolations(page);
+    await dialog.getByRole("button", { name: "Send to Test provider" }).click();
+    const options = panel.getByRole("region", {
+      name: "Other ways to say this part",
+    });
+    await expect(options).toContainText("These are AI suggestions.");
+    await expect(options).toContainText("A test alternative.");
+    await expect(options).toContainText("Another test alternative.");
+    await expectNoViolations(page);
+    // Nothing is stored until one is picked: the card's words are as before.
+    await expect(page.locator(".card-reading").first()).toHaveText(
+      "A test card.",
+    );
+
+    await options
+      .getByRole("button", {
+        name: "Use this wording: Another test alternative.",
+      })
+      .click();
+    await expect(page.locator(".card-reading").first()).toHaveText(
+      "Another test alternative.",
+    );
+    await expect(panel).toContainText("This is a suggested addition.");
+    await expect(panel.getByTestId("source-excerpt")).toHaveCount(0);
+    await expect(options).toHaveCount(0);
+    await expectNoViolations(page);
     expect(requests).toEqual([]);
   });
 });

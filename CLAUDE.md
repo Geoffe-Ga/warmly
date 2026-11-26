@@ -358,6 +358,17 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   from an entry that has changed. Switching mode and opening a part call
   no AI; the mode lives in component state only. Never check, score or
   correct the person's wording.
+- Other wordings for a part are asked for only by the "Generate more
+  options" button in `SegmentDetail` (PRD CC-005). Opening the panel
+  never asks. Each press is a request of its own, built by
+  `alternativesRequest` (`src/domain/cards/alternatives.ts`) from the
+  part's words and the card's own source entries that still match their
+  hashes, and no others. What comes back cites nothing (ADR-0008) and is
+  shown as suggestions. It lives in component state only: never store a
+  suggestion that was not picked. A picked wording replaces that part
+  through `chooseAlternative`, which drops the part's quotes and
+  explanation and marks it `suggestion`. The words a real provider is
+  given are `alternativesTexts` (`src/ai/prompts/alternatives.ts`).
 - An unedited AI card is a derived record (`CARD_RULE`,
   `src/domain/cards/dependencies.ts`): it is deleted when any entry sent
   for it is changed or deleted. A `user_owned` card depends on nothing.
