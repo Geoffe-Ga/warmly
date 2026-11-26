@@ -58,6 +58,10 @@ The gate counts only check runs posted by GitHub Actions itself. Any app
 can post a check run under any name, so a run from another app can
 neither satisfy a required check nor fail one.
 
+GitHub is asked for the latest run of each job. So a job that failed and
+was run again counts by its newer result. If the saved results ever hold
+more than one run of a job, the worst one counts.
+
 Several checks share one job. That is deliberate: the gate needs the job
 to succeed, and the policy guard protects each check's files separately,
 so nobody can keep a job green by deleting the suite inside it.
@@ -151,10 +155,17 @@ Be clear about its limits:
 - **It protects only what the manifest lists.** A threshold nobody listed
   can be lowered without it noticing.
 - **It does not read the workflow for other ways to weaken a check**, such
-  as removing a step from a required job or changing what a step runs.
-  One case is caught, by a test rather than by the guard: a required job
-  may not have an `if:` or `continue-on-error`
-  (`tests/release/test_manifest.py`).
+  as removing a step from a required job, changing what a step runs,
+  deleting the gate job or taking a job out of what the gate waits for.
+  Some cases are caught by tests rather than by the guard
+  (`tests/release/test_manifest.py`): a required job may not have an
+  `if:` on the job or `continue-on-error` anywhere, and the gate must wait
+  for every job the manifest names. Those tests run in the pull request's
+  own CI, so a pull request that changes the workflow and the tests
+  together gets past them. Only review of those files stops that.
+- **It sees a file deleted, not a file emptied.** A test file whose tests
+  are removed while the file stays is not noticed. The coverage floors
+  catch some of that, not all.
 - **The label proves an account, not a person's judgement.** The guard
   accepts the label from any account GitHub calls a `User`. That includes
   the pull request's own author, and an agent acting through a person's

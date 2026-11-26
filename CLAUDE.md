@@ -194,10 +194,11 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   check in `release/required-checks.yml` must be there, finished and
   successful. Missing, skipped, cancelled, neutral and still running all
   block. Never make the gate treat anything but `success` as a pass. A
-  job the manifest names never has an `if:` and never has
-  `continue-on-error`, on the job or on a step; the gate itself is the
-  one job that runs `if: always()`, so it can report a failure. A test
-  holds both.
+  job the manifest names never has an `if:` on the job itself, and never
+  has `continue-on-error` on the job or on any of its steps. (A step may
+  have an `if:`, as the steps that upload reports after a failure do.)
+  The gate is the one job that runs `if: always()`, so it can report a
+  failure. A test holds all of this.
 - Never remove a check from that manifest, delete a file under one of its
   `paths`, or weaken a threshold to get green. The Release Policy Guard
   (`scripts/release/policy.py`) fails such a pull request unless a person
