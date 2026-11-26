@@ -383,7 +383,7 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 
 **`action-link`** — The large tiles on the home screen. A full-width link on `{colors.blush}` with a `{colors.border-strong}` border, `{typography.label}` text in `{colors.ink}`, and no underline: the whole tile is the target. A tile may carry a second line in `{typography.small}` and `{colors.ink-muted}`, such as the piece of an entry that matched a search.
 
-**`detail-list`** — Short label and value pairs inside a card, such as a device's "Added" date. A two-column `<dl>`: labels in `{colors.ink-muted}`, values in `{colors.ink}`, with `{spacing.xs}` between rows.
+**`detail-list`** — Short label and value pairs inside a card, such as a device's "Added" date. A two-column `<dl>`: labels in `{colors.ink-muted}`, values in `{colors.ink}`, with `{spacing.xs}` between rows. The label column is as wide as its longest label, up to half the card, and both columns wrap, so the list never scrolls sideways at large text.
 
 ### Inputs & Forms
 
@@ -404,6 +404,8 @@ All buttons share one shape: at least 44 × 44px, padding `{spacing.sm}` × `{sp
 **`versions`** — Two `{component.card}`s side by side, stacking on a narrow screen, each one whole version of an entry: a muted "Last changed" line, then each question in bold with its answer under it, line breaks kept. Used where the person chooses between two versions. The two are told apart by their headings ("On this device", "On your other device"), never by colour.
 
 **`ai-disclosure`** — A `{component.dialog}` shown every time before anything is sent to an AI provider. Title "Send this to {provider}?"; body says what is sent ("14 journal entries and your question"), that it goes as readable text to a separate company under its own terms, and that using your own key does not mean nothing is kept; a large request also says so and that it costs more. "Don't send" comes first and has focus when the dialog opens, so sending always takes a second, deliberate step; "Send to {provider}" names the provider on the button itself.
+
+**`ai-request`** — What a screen shows about an AI request besides its answer. While waiting: one line, "Waiting for {provider} to answer.", with a `{component.button-secondary}` "Cancel" beside it; cancelling shows nothing further. After a failure: a `{component.banner-error}` labelled "No answer" that says what happened and what to do next in plain sentences naming the provider, then on its own line that nothing written or chosen was lost and that Warmly does not try again by itself, then a `{component.button-secondary}` "Try again". Try again opens `ai-disclosure` again; nothing is sent until the person agrees there. No spinner, countdown or progress bar.
 
 **`update-notice`** — One line under the header when a new version of the app has been downloaded, styled like `offline-notice`, with a `{component.button-secondary}` "Update now" beside it: "A new version of Warmly is ready." It never appears on its own schedule and never reloads the page by itself; pressing the button saves unsaved writing first.
 
