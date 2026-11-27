@@ -1,6 +1,6 @@
 /**
  * Telling a person plainly when their browser cannot run the app (PRD
- * UI-003; AC-28). See `docs/support/browsers.md` for what is supported.
+ * UI-003). See `docs/support/browsers.md` for what is supported.
  */
 import { cleanup, screen, waitFor } from "@testing-library/preact";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

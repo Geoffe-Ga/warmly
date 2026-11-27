@@ -151,6 +151,8 @@ async function openPart(name: RegExp): Promise<HTMLElement> {
   return screen.findByRole("region", { name: "About this part" });
 }
 
+// What a part cites is read from the entry as it is now, or it is not
+// shown at all (PRD AC-26).
 describe("where a part comes from, worked out now (CC-004, DEP-004)", () => {
   it("reads the words from the entry as it is", () => {
     expect(excerptFor(ref("good", "cooked dinner together"), [ENTRY])).toEqual({
@@ -355,6 +357,7 @@ describe("learning mode (CC-005, AC-11)", () => {
     ).toEqual(["more notice before plans change", "a note in my bag"]);
   });
 
+  // What the AI inferred is labelled as inferred, not as a quote (PRD AC-26).
   it("labels an inferred segment instead of showing a source (AC-11)", async () => {
     const { services } = await setUp();
     await renderApp(PATH, services);

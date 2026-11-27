@@ -1,6 +1,6 @@
 """Device identity, request signing and Manage Devices (ADR-0005).
 
-PRD DEV-002, DEV-003, DEV-010, SEC-006; AC-05, AC-20.
+PRD DEV-002, DEV-003, DEV-010, SEC-006; AC-05.
 """
 
 import base64
@@ -287,7 +287,10 @@ def test_malformed_signature_parts_are_refused(
 def test_a_device_registered_to_another_owner_is_refused(
     app: FastAPI, signer: Signer, device: TestDevice
 ) -> None:
-    """Owner B's token with owner A's device, even correctly signed (invariant 3)."""
+    """Owner B's token with owner A's device, even correctly signed (invariant 3).
+
+    PRD AC-05.
+    """
     other = TestClient(
         app, headers={"Authorization": f"Bearer {signer.token(sub=OTHER_OWNER_ID)}"}
     )
@@ -301,7 +304,7 @@ def test_a_device_registered_to_another_owner_is_refused(
 def test_an_unknown_device_and_another_owners_device_look_the_same(
     app: FastAPI, signer: Signer, device: TestDevice
 ) -> None:
-    """Device IDs cannot be probed across accounts (DEV-010)."""
+    """Device IDs cannot be probed across accounts (DEV-010, AC-05)."""
     other = TestClient(
         app, headers={"Authorization": f"Bearer {signer.token(sub=OTHER_OWNER_ID)}"}
     )
@@ -551,7 +554,7 @@ def test_listing_shows_only_my_devices_and_marks_the_current_one(
     new_device: TestDevice,
     device_store: InMemoryDeviceStore,
 ) -> None:
-    """Another account's devices never appear (DEV-010, AC-20)."""
+    """Another account's devices never appear (DEV-010, AC-05)."""
     _register(session_only, new_device)
     theirs = TestDevice(device_id="d0000000-0000-4000-8000-0000000000cc")
     device_store.add(OTHER_OWNER_ID, theirs)
@@ -582,7 +585,7 @@ def test_renaming_replaces_only_the_encrypted_name(
 def test_renaming_another_owners_device_is_a_404_like_an_unknown_one(
     client: TestClient, device_store: InMemoryDeviceStore
 ) -> None:
-    """404, never 403, so device IDs cannot be probed (DEV-010)."""
+    """404, never 403, so device IDs cannot be probed (DEV-010, AC-05)."""
     theirs = TestDevice(device_id="d0000000-0000-4000-8000-0000000000cc")
     device_store.add(OTHER_OWNER_ID, theirs)
 

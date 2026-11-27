@@ -281,6 +281,7 @@ describe("the first saved change makes an AI card the person's own (CC-008, D-15
     expect(await records.get("conversation-card", card.id)).toEqual(card);
   });
 
+  // The person can word a card however they like (PRD AC-26).
   it("applies no check to the person's wording: anything they type is kept as typed", async () => {
     const { records, card } = await setUp();
     const blunt = "You NEVER listen!!  (and i mean it)";

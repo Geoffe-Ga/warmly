@@ -52,7 +52,7 @@ async def _notes(db: Database, owner: UUID) -> list[str]:
 
 
 async def test_an_owner_sees_only_their_own_rows(db: Database) -> None:
-    """A query with no owner filter still returns one owner's rows only."""
+    """A query with no owner filter still returns one owner's rows only (AC-05)."""
     await _insert(db, OWNER_A, "a-1")
     await _insert(db, OWNER_A, "a-2")
     await _insert(db, OWNER_B, "b-1")
@@ -65,7 +65,7 @@ async def test_an_owner_sees_only_their_own_rows(db: Database) -> None:
 async def test_an_owner_cannot_change_or_delete_another_owners_rows(
     db: Database,
 ) -> None:
-    """Update and delete against someone else's rows match nothing."""
+    """Update and delete against someone else's rows match nothing (AC-05)."""
     await _insert(db, OWNER_A, "a-1")
 
     async with db.as_owner(OWNER_B) as tx:
@@ -77,7 +77,7 @@ async def test_an_owner_cannot_change_or_delete_another_owners_rows(
 
 
 async def test_an_owner_cannot_write_a_row_for_someone_else(db: Database) -> None:
-    """A forged owner_id is rejected by the policy's WITH CHECK."""
+    """A forged owner_id is rejected by the policy's WITH CHECK (AC-05)."""
     with pytest.raises(psycopg.errors.InsufficientPrivilege):
         async with db.as_owner(OWNER_B) as tx:
             await tx.execute(

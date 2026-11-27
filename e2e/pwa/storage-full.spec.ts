@@ -24,6 +24,8 @@ async function setFull(page: Page, full: boolean): Promise<void> {
   }, full);
 }
 
+// A full device: IndexedDB refuses the write, and nothing typed is lost
+// (PRD AC-28).
 test.describe("a device with no room left", () => {
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => {

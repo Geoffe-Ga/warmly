@@ -51,6 +51,8 @@ async function traces(page: Page): Promise<string> {
 }
 
 test.describe("presentation", () => {
+  // Leaving a presentation asks for nothing and sends nothing
+  // (PRD AC-03).
   test("advance to card three, close, reopen: card one, and nothing was recorded or sent (AC-14)", async ({
     page,
   }) => {

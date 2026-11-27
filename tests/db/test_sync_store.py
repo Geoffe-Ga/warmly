@@ -1,4 +1,4 @@
-"""Synced records in PostgreSQL (PRD SYNC-003, SYNC-008; AC-04, AC-05, AC-16).
+"""Synced records in PostgreSQL (PRD SYNC-003, SYNC-008; AC-05, AC-16).
 
 Run against a real PostgreSQL, because the guarantees here are the
 database's: one winner among concurrent writers, a repeated operation that
@@ -161,7 +161,7 @@ async def test_a_deleted_record_keeps_its_row_and_loses_its_ciphertext(
 async def test_a_refused_operation_stores_nothing_at_all(
     db: Database, store: PostgresSyncStore
 ) -> None:
-    """A stale change leaves the record, the receipts and the sequence alone."""
+    """A stale change leaves the record, the receipts and the sequence alone (AC-16)."""
     await store.apply(OWNER_A, _op())
     await store.apply(OWNER_A, _op(1, payload=NEWER))
     before = await _record(db)
@@ -200,7 +200,7 @@ async def test_a_repeated_operation_returns_its_revision_and_changes_nothing(
 async def test_many_writers_from_one_base_revision_yield_exactly_one_winner(
     db: Database, store: PostgresSyncStore
 ) -> None:
-    """Compare-and-swap: one applied, the rest conflicts, nothing lost (AC-04)."""
+    """Compare-and-swap: one applied, the rest conflicts, nothing lost (AC-16)."""
     await store.apply(OWNER_A, _op())
     attempts = [_op(1, payload=NEWER) for _ in range(WRITERS)]
 
@@ -250,7 +250,7 @@ async def test_one_operation_sent_many_times_at_once_is_applied_once(
 async def test_writers_to_different_records_all_succeed_with_distinct_sequences(
     db: Database, store: PostgresSyncStore
 ) -> None:
-    """An account's changes each get their own place in the feed."""
+    """An account's changes each get their own place in the feed (AC-16)."""
     attempts = [_op(record_id=uuid4()) for _ in range(WRITERS)]
 
     results = await asyncio.gather(*(store.apply(OWNER_A, op) for op in attempts))
@@ -265,7 +265,7 @@ async def test_writers_to_different_records_all_succeed_with_distinct_sequences(
 async def test_two_accounts_can_use_the_same_record_id_and_never_meet(
     db: Database, store: PostgresSyncStore
 ) -> None:
-    """Another account's record is a different row, and cannot be detected."""
+    """Another account's record is a different row, and cannot be detected (AC-05)."""
     mine = _op()
     await store.apply(OWNER_A, mine)
     await store.apply(OWNER_A, _op(1, payload=NEWER))
@@ -284,7 +284,7 @@ async def test_two_accounts_can_use_the_same_record_id_and_never_meet(
 async def test_an_account_sees_only_its_own_rows_in_every_sync_table(
     db: Database, store: PostgresSyncStore
 ) -> None:
-    """Row-level security hides another account's rows, whatever the SQL."""
+    """Row-level security hides another account's rows, whatever the SQL (AC-05)."""
     await store.apply(OWNER_A, _op())
 
     for table in TABLES:
@@ -296,7 +296,10 @@ async def test_an_account_sees_only_its_own_rows_in_every_sync_table(
 async def test_an_account_cannot_change_or_claim_another_accounts_record(
     db: Database, store: PostgresSyncStore
 ) -> None:
-    """Updates aimed at another account's row touch nothing; inserts are refused."""
+    """Updates aimed at another account's row touch nothing; inserts are refused.
+
+    PRD AC-05.
+    """
     await store.apply(OWNER_A, _op())
 
     async with db.as_owner(OWNER_B) as tx:

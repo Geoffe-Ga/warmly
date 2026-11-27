@@ -639,6 +639,8 @@ describe("writing a card by hand (CC-010)", () => {
 });
 
 describe("moving cards (CC-010, AC-13)", () => {
+  // Reordering works from the keyboard and is announced as a status: one
+  // machine check of accessibility in a collection (PRD AC-23).
   it("moves a card with the keyboard and announces the new position (AC-13)", async () => {
     const services = await unlocked();
     await renderApp(pathFor("collection", SUNDAY), services);

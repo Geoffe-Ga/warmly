@@ -46,6 +46,7 @@ function lines(text: string): string[] {
 }
 
 test.describe("printing a collection", () => {
+  // A collection can be printed (PRD AC-13).
   test("printed output holds card text only (CC-013)", async ({ page }) => {
     await onThePrintScreen(page);
 

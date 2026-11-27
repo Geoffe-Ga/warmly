@@ -1,5 +1,5 @@
 /**
- * How much a first visit downloads (PRD §8, UI-003; AC-28).
+ * How much a first visit downloads (PRD §8, UI-003).
  *
  * The budget is for every script and style sheet a first visit fetches,
  * as a browser receives them compressed: the ones the page names, any

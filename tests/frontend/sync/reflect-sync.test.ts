@@ -66,6 +66,8 @@ async function shared(): Promise<{
 }
 
 describe("a Reflect session syncs between a person's devices (SYNC-001, AC-05)", () => {
+  // A session that was left can be taken up again with a follow-up, here on
+  // another device (PRD AC-08).
   it("appears whole on the other device, and can be resumed there", async () => {
     const { a, b, id } = await shared();
 

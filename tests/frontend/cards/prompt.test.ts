@@ -123,6 +123,9 @@ const REQUEST: CardsRequest = {
   ],
 };
 
+// What the provider is told, not what a model does: one to three themes,
+// related entries together, no filler, only the chosen entries (PRD AC-10);
+// cite only entries given, and word an inference as one (PRD AC-26).
 describe("the instructions for drafting cards carry every rule", () => {
   it.each(RULES)("%s (%s)", (_rule, _from, clause) => {
     expect(CARDS_POLICY).toContain(clause);

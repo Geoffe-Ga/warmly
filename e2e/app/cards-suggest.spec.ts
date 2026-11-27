@@ -1,7 +1,7 @@
 /**
  * Asking AI to draft cards from picked entries, in the browser, against
  * the stand-in provider (PRD CC-001 to CC-004, DEP-003; AC-03, AC-10,
- * AC-12, AC-15, AC-23).
+ * AC-12, AC-23).
  *
  * The stand-in sends nothing: the fixture fails any test that contacts
  * another host.
@@ -52,6 +52,10 @@ function cardRows(page: Page) {
 }
 
 test.describe("cards drafted by AI", () => {
+  // Only the ticked entries are sent and one to three cards come back
+  // (PRD AC-10). Editing a picked entry removes the unedited cards (AC-12)
+  // and asks AI for nothing (AC-03). Each screen is checked with axe
+  // (AC-23).
   test("pick two of three entries, agree, and two cards appear; editing a picked entry removes them", async ({
     page,
   }) => {

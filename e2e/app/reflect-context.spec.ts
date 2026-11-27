@@ -45,6 +45,8 @@ async function askAbout(page: Page, question: string): Promise<void> {
   await page.getByRole("button", { name: "Ask" }).click();
 }
 
+// A journal too big for one request: the app says how many entries are
+// sent and how many the answer is about (PRD AC-09).
 test.describe("Reflect with a long journal", () => {
   test("says how many entries will be sent before sending, and how many the answer is about", async ({
     page,

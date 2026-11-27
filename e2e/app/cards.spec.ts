@@ -52,6 +52,9 @@ async function addCard(page: Page, text: string): Promise<void> {
 }
 
 test.describe("preparing for a conversation", () => {
+  // A named collection with cards written by hand, reordered from the
+  // keyboard and kept after a reload (PRD AC-13). The collection screens
+  // are checked with axe (AC-23).
   test("offline: make a collection and three cards, reorder them, and find them again after a reload", async ({
     page,
     context,
@@ -123,6 +126,8 @@ test.describe("preparing for a conversation", () => {
     );
   });
 
+  // A collection's cards can be presented and printed (PRD AC-13). The
+  // card, presentation and print screens are checked with axe (AC-23).
   test("edit a card, present, print, and delete with confirmation", async ({
     page,
   }) => {

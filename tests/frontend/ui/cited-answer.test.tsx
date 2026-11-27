@@ -130,6 +130,7 @@ describe("an answer about part of the journal (RF-004, AC-09)", () => {
   });
 });
 
+// A checked answer is shown as prose with its citations (PRD AC-07).
 describe("the prose (RF-005)", () => {
   it("is ordinary paragraphs, with each claim's mark turned into numbered links", () => {
     render(

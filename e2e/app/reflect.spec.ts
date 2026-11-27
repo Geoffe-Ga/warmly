@@ -36,6 +36,9 @@ async function writeEntry(page: Page, good: string): Promise<void> {
 }
 
 test.describe("Reflect", () => {
+  // Opening Reflect and searching ask AI for nothing (PRD AC-03). The
+  // question goes only after agreeing, and the answer cites the entry
+  // (AC-07). The screens pass axe; a citation opens by keyboard (AC-23).
   test("opening Reflect asks nothing; a question is sent only after agreeing; a citation opens the entry", async ({
     page,
   }) => {

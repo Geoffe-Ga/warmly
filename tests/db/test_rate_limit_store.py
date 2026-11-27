@@ -1,4 +1,4 @@
-"""Request counters in PostgreSQL (PRD §8, SEC-005; AC-20).
+"""Request counters in PostgreSQL (PRD §8, SEC-005).
 
 The counters are shared by every copy of the API, so what matters is how the
 database counts under concurrency and keeps accounts apart.

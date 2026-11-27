@@ -1,6 +1,5 @@
 /**
- * Device identities and Manage Devices in the browser (PRD DEV-002, DEV-003;
- * AC-20).
+ * Device identities and Manage Devices in the browser (PRD DEV-002, DEV-003).
  *
  * These run the real key generation, registration proof and name encryption.
  * Only the transport is a double: the `e2e` build keeps the "server's" device

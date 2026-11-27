@@ -1,10 +1,10 @@
 /**
  * Learning mode and conversation mode for a card AI drafted, in the
- * browser (PRD CC-004 to CC-006; AC-03, AC-11, AC-23).
+ * browser (PRD CC-004 to CC-006; AC-11, AC-23).
  *
  * Every part is opened from the keyboard. Looking at a card calls no AI.
  * Other wordings for a part are asked for only by pressing its button and
- * agreeing in the dialog (CC-005; AC-15). The stand-in provider sends
+ * agreeing in the dialog (CC-005). The stand-in provider sends
  * nothing: the fixture fails any test that contacts another host, and the
  * test counts requests as well.
  */
@@ -39,6 +39,9 @@ async function writeEntry(page: Page, good: string): Promise<void> {
 }
 
 test.describe("a card AI drafted, in two modes", () => {
+  // Each part shows where it comes from and what kind it is; other
+  // wordings are asked for only by their own button (PRD AC-11). Each
+  // state is checked with axe and opened from the keyboard (AC-23).
   test("conversation mode is the plain words; learning mode opens each part by keyboard and shows the person's own words", async ({
     page,
   }) => {

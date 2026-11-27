@@ -56,6 +56,10 @@ function cardRows(page: Page) {
 }
 
 test.describe("a card the person has made their own", () => {
+  // Changing a drafted card makes it the person's; when a source entry is
+  // edited the unedited card goes and theirs stays (PRD AC-12). Editing
+  // the card and the entry asks AI for nothing (AC-03). The card screen
+  // is checked with axe (AC-23).
   test("is kept when its source entry changes, while an unedited AI card is removed", async ({
     page,
   }) => {

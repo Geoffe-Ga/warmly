@@ -1,6 +1,6 @@
 /**
  * Writing after a conversation, in the browser (PRD PC-001 to PC-004;
- * AC-03, AC-23).
+ * AC-23).
  *
  * It is always the person's own choice: nothing asks for it when
  * presentation closes. What is written is its own kind of thing, listed
@@ -71,6 +71,7 @@ test.describe("writing after a conversation", () => {
     await expect(page.getByText(/after a conversation/i)).toHaveCount(0);
   });
 
+  // Each screen on the way is checked with axe (PRD AC-23).
   test("chosen from the journal, written, found again, and asked about", async ({
     page,
   }) => {

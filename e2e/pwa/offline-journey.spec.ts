@@ -1,5 +1,5 @@
 /**
- * The whole app with the network off (PRD SYNC-001, §8; AC-28, AC-02,
+ * The whole app with the network off (PRD SYNC-001, §8; AC-28,
  * AC-03).
  *
  * The app is loaded once and an account made while online. Then the
@@ -215,6 +215,8 @@ const OFFLINE_JOURNEY: readonly Step[] = [
 ];
 
 test.describe("the installed app, offline", () => {
+  // Writing, editing, searching, deleting and leaving a presentation try
+  // no network at all, so no AI is called (PRD AC-03).
   test("every offline-required feature works with the network off (AC-28)", async ({
     page,
     context,

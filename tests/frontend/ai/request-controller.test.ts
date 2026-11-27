@@ -1,6 +1,6 @@
 /**
  * One shared behaviour for every AI request: failure, cancellation and
- * cost (PRD AI-014, AI-016, AI-017; AC-15, AC-03; invariant 2).
+ * cost (PRD AI-014, AI-016, AI-017; AC-15; invariant 2).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

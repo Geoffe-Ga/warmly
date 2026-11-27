@@ -62,6 +62,8 @@ async function expectNoReflections(page: Page): Promise<void> {
 }
 
 test.describe("a reflection whose entry changes", () => {
+  // Editing the entry removes the reflection built from it (PRD AC-12)
+  // and asks AI for nothing (AC-03).
   test("is removed when the entry is edited: warned before, told after, and nothing is sent", async ({
     page,
   }) => {
@@ -99,6 +101,7 @@ test.describe("a reflection whose entry changes", () => {
     await expect(page.getByText(REMOVED)).toHaveCount(0);
   });
 
+  // Deleting the entry removes the reflection built from it (PRD AC-12).
   test("is removed when the entry is deleted, after the confirmation says so", async ({
     page,
   }) => {

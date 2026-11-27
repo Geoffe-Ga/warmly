@@ -215,9 +215,14 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   `python -m scripts.release.traceability --write` from the PRD's
   acceptance criteria and the IDs test files cite. Never edit it by
   hand: a test fails when it is out of date, so run the command after
-  adding or removing a citation. It shows that a test names a criterion,
-  not that the test is enough. `docs/README.md` is the index of every
-  document and says which required ones are not written yet.
+  adding or removing a citation. An ID counts only on a test that serves
+  it: in the docstring of a Python test or `Test` class, or in the title
+  of a TypeScript test or group or the comment directly above it. Never
+  name a criterion in a test file's header or a helper (a test fails),
+  and never cite one a test is not about to fill a gap. It shows that a
+  test names a criterion, not that the test is enough. `docs/README.md`
+  is the index of every document and says which required ones are not
+  written yet.
 
 ## Frontend conventions
 

@@ -73,6 +73,8 @@ async function sundayTexts(services: TestServices): Promise<string[]> {
   return (await services.cards.cards(SEED.sunday)).map(readingText);
 }
 
+// A card, like an entry: both versions are shown, the person picks one, and
+// nothing is written over without being asked (PRD AC-16).
 describe("a card changed in two places", () => {
   it("shows both versions and removes neither until the person chooses", async () => {
     const services = await seeded();

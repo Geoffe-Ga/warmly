@@ -1,6 +1,5 @@
 /**
- * Two accounts in one browser never see each other (PRD SEC-005, SEC-006;
- * AC-04, AC-27).
+ * Two accounts in one browser never see each other (PRD SEC-005, SEC-006).
  *
  * Accounts are independent: there is no partner link and nothing is shared.
  * This runs both accounts in the same browser profile, the closest two

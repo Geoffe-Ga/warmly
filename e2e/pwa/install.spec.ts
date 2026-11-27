@@ -36,6 +36,7 @@ function pngSize(bytes: Buffer): { width: number; height: number } {
   return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
 }
 
+// What a browser needs before it offers to install the app (PRD AC-28).
 test.describe("installing the app", () => {
   test("the manifest names the app, starts at its front page and opens without browser chrome", async ({
     page,

@@ -1,5 +1,5 @@
 /**
- * Opening a long journal does a bounded amount of work (PRD §8; AC-28).
+ * Opening a long journal does a bounded amount of work (PRD §8).
  *
  * The target a person feels is time: unlock to the list of entries in
  * about two seconds with 2,000 entries on a mid-range phone. A stopwatch

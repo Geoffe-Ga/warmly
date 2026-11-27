@@ -54,6 +54,8 @@ function sessions(page: Page) {
 }
 
 test.describe("saved reflections", () => {
+  // A follow-up, a session resumed after a reload, and Finish making it
+  // read-only (PRD AC-08).
   test("two sessions survive a reload; one is resumed, one finished and read-only, one deleted", async ({
     page,
   }) => {

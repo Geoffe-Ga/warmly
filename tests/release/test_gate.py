@@ -107,7 +107,7 @@ class TestEvaluate:
         ],
     )
     def test_gate_fails_closed(self, state: str) -> None:
-        """Gate fails closed."""
+        """Gate fails closed (AC-24)."""
         results = all_green() | {"isolation-suite": state}
 
         decision = evaluate(REQUIRED, results)
@@ -117,7 +117,7 @@ class TestEvaluate:
         assert decision.blocked[0].state == state
 
     def test_a_check_with_no_result_at_all_blocks_as_missing(self) -> None:
-        """A check with no result at all blocks as missing."""
+        """A check with no result at all blocks as missing (AC-24)."""
         results = all_green()
         del results["secret-scan"]
 
@@ -393,7 +393,7 @@ class TestRun:
         assert message == "Release gate: allowed. All 2 required checks passed."
 
     def test_a_skipped_job_exits_one_and_names_the_check(self, tmp_path: Path) -> None:
-        """A skipped job exits one and names the check."""
+        """A skipped job exits one and names the check (AC-24)."""
         results = {
             "check_runs": [
                 check_run("Quality (3.12)", "success"),

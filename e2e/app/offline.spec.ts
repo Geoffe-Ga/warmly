@@ -1,6 +1,6 @@
 /**
  * The installed app with the network off, and a suspended tab (PRD
- * SYNC-001, UI-008; AC-28, AC-02, AC-03, AC-21).
+ * SYNC-001, UI-008; AC-28, AC-21).
  *
  * Once the app shell is cached, the journal works with no network at all:
  * a reload comes from the service worker and an entry can be finished. The
@@ -47,6 +47,7 @@ async function cacheContents(
 }
 
 test.describe("offline", () => {
+  // Writing works offline once the app shell is cached (PRD AC-28).
   test("load once, go offline, reload from the service worker, and finish an entry; the caches hold the app shell only", async ({
     page,
     context,
@@ -112,6 +113,8 @@ test.describe("offline", () => {
     await expect(notice).toHaveText("");
   });
 
+  // A tab that was suspended wakes up locked, with the draft kept
+  // (PRD AC-28).
   test("a tab suspended for more than 30 minutes resumes to the locked screen with the draft intact (AC-21)", async ({
     page,
   }) => {

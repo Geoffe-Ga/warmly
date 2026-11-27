@@ -66,7 +66,7 @@ async def test_an_account_starts_with_no_envelope(
 async def test_create_then_read_returns_the_same_opaque_value(
     store: PostgresRecoveryStore,
 ) -> None:
-    """The stored value is exactly what was sent, at version 1."""
+    """The stored value is exactly what was sent, at version 1 (AC-18)."""
     created = await store.write(OWNER_A, _request(0))
 
     assert created == RecoveryEnvelope(

@@ -29,6 +29,8 @@ async function expectNoViolations(page: Page): Promise<void> {
 }
 
 test.describe("an entry changed in two places", () => {
+  // Both versions are shown and the person keeps either one (PRD AC-16).
+  // The screen passes axe and works from the keyboard (AC-23).
   test("shows both versions, keeps the one chosen, and removes the other", async ({
     page,
     context,
@@ -104,6 +106,7 @@ test.describe("an entry changed in two places", () => {
     ).toHaveCount(0);
   });
 
+  // The person may write one version from both (PRD AC-16).
   test("writing one version from both keeps what was written", async ({
     page,
     context,

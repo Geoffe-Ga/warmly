@@ -25,6 +25,7 @@ async function expectNoViolations(page: Page): Promise<void> {
 }
 
 test.describe("sync status", () => {
+  // The status line is a polite live region and passes axe (PRD AC-23).
   test("sends changes on its own, shows what is waiting while offline, and says nothing private", async ({
     page,
     context,

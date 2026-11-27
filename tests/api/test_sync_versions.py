@@ -1,4 +1,4 @@
-"""Old and new clients at the same time (PRD §8, REL-004; AC-28; D-20).
+"""Old and new clients at the same time (PRD §8, REL-004; D-20).
 
 Every sync request says which sync protocol version the client speaks. A
 version the server does not speak is refused with 426 before anything is

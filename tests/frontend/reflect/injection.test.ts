@@ -134,6 +134,8 @@ describe("journal text stays where it was put (SEC-010)", () => {
   });
 });
 
+// A citation must point at an entry that was sent, and at words that are
+// in it (PRD AC-26).
 describe("what an injected answer must still pass (AI-012, AC-07)", () => {
   const real = entryWith("We cooked dinner together.");
   const manifest = buildManifest([real]);

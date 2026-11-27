@@ -188,7 +188,7 @@ def test_a_revoked_device_cannot_revoke_the_others(
 def test_another_owner_cannot_revoke_my_device(
     app: FastAPI, signer: Signer, device_store: InMemoryDeviceStore
 ) -> None:
-    """Their request gets the same 404 as for a device that does not exist."""
+    """Their request gets the same 404 as for a device that does not exist (AC-05)."""
     theirs = TestDevice(device_id="d0000000-0000-4000-8000-0000000000ee")
     device_store.add(OTHER_OWNER_ID, theirs)
     other = _client(app, signer, theirs, sub=OTHER_OWNER_ID)

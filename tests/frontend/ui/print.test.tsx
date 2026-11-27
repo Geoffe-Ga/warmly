@@ -78,6 +78,7 @@ function sheet(): HTMLElement {
   return screen.getByRole("region", { name: "What will be printed" });
 }
 
+// A collection can be printed: its name and its cards' words (PRD AC-13).
 describe("what the sheet holds (CC-013)", () => {
   it("is the collection's name and each card's words, in order, and nothing else", async () => {
     await printing();
@@ -141,6 +142,7 @@ describe("printing is the person's act (CC-013)", () => {
     expect(sheet().textContent).not.toContain(PAPER_NOTE);
   });
 
+  // Printing happens when the person presses Print (PRD AC-13).
   it("opens the browser's print dialog only when Print is pressed, once per press", async () => {
     const print = vi.spyOn(window, "print").mockImplementation(() => undefined);
     await printing();
