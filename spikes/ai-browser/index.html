@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Warmly spike: can a browser call each AI provider?</title>
+  </head>
+  <body>
+    <h1>Can a page call each AI provider directly?</h1>
+    <p>
+      Throwaway spike for ADR-0007. It sends an empty request with a key that
+      is not a key, so nothing is generated and nothing is billed. It shows
+      only whether the browser lets the page read the provider's answer.
+    </p>
+    <pre id="results">Running…</pre>
+    <script type="module" src="./probe-page.js"></script>
+  </body>
+</html>
