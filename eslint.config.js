@@ -45,6 +45,16 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
+    // Throwaway spikes: pages that run in a browser, and the Node scripts
+    // that drive them (whose `page.evaluate` callbacks run in the page).
+    files: ["spikes/**/*.js"],
+    languageOptions: { globals: globals.browser },
+  },
+  {
+    files: ["spikes/**/*.mjs"],
+    languageOptions: { globals: { ...globals.node, ...globals.browser } },
+  },
+  {
     rules: {
       // Logging is a privacy risk (PRD §8): no stray console output of content.
       "no-console": "error",

@@ -1,0 +1,29 @@
+{
+  "engine": "webkit",
+  "origin": "http://127.0.0.1:35941",
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/27.2 Safari/605.1.15",
+  "requests": [
+    "POST https://api.openai.com/v1/responses",
+    "POST https://api.anthropic.com/v1/messages",
+    "POST https://api.anthropic.com/v1/messages"
+  ],
+  "results": [
+    {
+      "name": "openai-responses",
+      "readable": true,
+      "status": 401,
+      "body": "{\n  \"error\": {\n    \"code\": \"invalid_api_key\",\n    \"message\": \"Incorrect API key provided: not-a-re**-key. You can find your API key at https://platform.openai.com/account/api-keys.\",\n    \"param\": null,\n    \"type\": \"invalid_request_error\"\n  }\n}"
+    },
+    {
+      "name": "anthropic-messages-without-browser-header",
+      "readable": false,
+      "error": "TypeError: Load failed"
+    },
+    {
+      "name": "anthropic-messages-with-browser-header",
+      "readable": true,
+      "status": 401,
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011ChSU6Tvh6h2fDjyAoVS2V\"}"
+    }
+  ]
+}

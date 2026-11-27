@@ -20,7 +20,7 @@ the working rules.
 | Retention and deletion flow | [architecture/overview.md](architecture/overview.md), [ADR-0006](adr/0006-sync-protocol.md) | Written. The 30-day backup limit is not verified (issue 65) |
 | Dependency-invalidation cascade | [ADR-0010](adr/0010-dependency-invalidation.md), [architecture/overview.md](architecture/overview.md) | Written |
 | Local development and CI | [`README.md`](../README.md), [`CLAUDE.md`](../CLAUDE.md), [runbooks/release-gates.md](runbooks/release-gates.md) | Written |
-| Provider compatibility report | None | **Not written.** Needs real provider accounts (issue 41) |
+| Provider compatibility report | [security/provider-compatibility-report.md](security/provider-compatibility-report.md), decided in [ADR-0007](adr/0007-ai-provider-browser-access.md) | **Partly.** Written from each provider's documentation and a spike with no key. Nothing has been checked with a real key, and ADR-0007 is proposed, not accepted (issue 41) |
 | Backup and restore drill | None | **Not written.** Needs hosting and a real backup service (issue 65) |
 | Incident response and rollback runbook | None | **Not written.** Needs a deploy pipeline to roll back (issues 61 and 64) |
 | Machine-executable release checklist | [release-checklist.md](release-checklist.md) is a list for people; the checks that are executable today are the Release Gate ([runbooks/release-gates.md](runbooks/release-gates.md)) | **Partly.** The items that need hosting cannot be run yet |

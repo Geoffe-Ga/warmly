@@ -401,6 +401,18 @@ coverage ≥95%, zero lint and type errors, and zero high or critical security f
   store or reuse a token anywhere else, never call a provider directly, and
   never add a retry or a second provider. A lint rule and
   `tests/frontend/ai/dependencies.test.ts` enforce the imports.
+- How each real provider is called is in `PROVIDERS` (`src/ai/config.ts`,
+  ADR-0007): one endpoint, one model, the headers and body fields every
+  request carries (`store: false` for OpenAI; Anthropic's version and its
+  switch for browser requests). ADR-0007 is proposed, not accepted: never
+  call a real provider, or add one's origin to the Content Security
+  Policy, until the owner has accepted it. Changing a value there means
+  reading the provider's documentation again and updating the ADR and
+  `docs/security/provider-compatibility-report.md` with the date. What
+  the person is told is `PROVIDER_DISCLOSURE`: each sentence is the
+  provider's own claim or true of any key in a browser. Never call
+  bring-your-own-key secure. Never commit a key, and never put one in
+  `spikes/`.
 - A provider's answer is `unknown` until the gateway has checked it
   (ADR-0008): its form (`src/ai/contracts.ts`) and every citation against
   what that request sent (`src/ai/grounding.ts`). A provider is given
