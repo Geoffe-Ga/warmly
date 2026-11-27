@@ -1,5 +1,6 @@
 {
-  "origin": "http://127.0.0.1:37507",
+  "engine": "chromium",
+  "origin": "http://127.0.0.1:32991",
   "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/159.0.8154.6 Safari/537.36",
   "requests": [
     "POST https://api.openai.com/v1/responses",
@@ -22,7 +23,7 @@
       "name": "anthropic-messages-with-browser-header",
       "readable": true,
       "status": 401,
-      "body": "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011ChSTqrYJehVTm9gb5fkTi\"}"
+      "body": "{\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011ChSU6JrzDfEGLsfxxm9TR\"}"
     }
   ]
 }

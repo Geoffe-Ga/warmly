@@ -13,6 +13,7 @@ else was considered, and why. Write one before the code that depends on it.
 | [0004](0004-trusted-device-unlock.md) | Trusted-device unlock and the inactivity lock | Accepted |
 | [0005](0005-device-identity-and-pairing.md) | Device identity, request signing and pairing | Accepted (pairing pending #22) |
 | [0006](0006-sync-protocol.md) | The sync protocol: per-record revisions with compare-and-swap, an idempotent operation log and a per-owner change feed | Accepted |
+| [0007](0007-ai-provider-browser-access.md) | Calling an AI provider from the browser with the person's own key: both accepted with conditions, pending the owner's acceptance of the risks | Proposed |
 | [0008](0008-ai-grounding-contract.md) | The AI answer contract: per-request names and exact quotes, checked against what was sent, all or nothing | Accepted |
 | [0009](0009-reflect-context-selection.md) | Which entries a Reflect request sends when the journal is too long: newest, relevant, then an even spread; whole entries; always disclosed | Accepted |
 | [0010](0010-dependency-invalidation.md) | What is removed when a journal entry changes: every reflection built from it, whole, as an ordinary deletion, decided on the device from the records themselves | Accepted |

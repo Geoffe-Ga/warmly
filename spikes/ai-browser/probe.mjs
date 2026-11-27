@@ -2,7 +2,7 @@
  * Serves the spike page on localhost, opens it in Chromium and prints what
  * the page could and could not read from each provider (ADR-0007).
  *
- * Usage: node spikes/ai-browser/probe.mjs
+ * Usage: node spikes/ai-browser/probe.mjs [chromium|webkit|firefox]
  *
  * No key is used. Every request carries a key that is not a key.
  */
@@ -11,7 +11,7 @@ import { createServer } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { chromium } from "playwright";
+import * as playwright from "playwright";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const TYPES = { ".html": "text/html", ".js": "text/javascript" };
@@ -30,7 +30,8 @@ await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${server.address().port}`;
 
 const proxy = process.env.HTTPS_PROXY ?? process.env.https_proxy;
-const browser = await chromium.launch(
+const engine = process.argv[2] ?? "chromium";
+const browser = await playwright[engine].launch(
   proxy === undefined ? {} : { proxy: { server: proxy, bypass: "127.0.0.1" } },
 );
 const requests = [];
@@ -47,7 +48,7 @@ try {
   });
   const results = await page.evaluate(() => window.spikeResults);
   process.stdout.write(
-    `${JSON.stringify({ origin, userAgent: await page.evaluate(() => navigator.userAgent), requests, results }, null, 2)}\n`,
+    `${JSON.stringify({ engine, origin, userAgent: await page.evaluate(() => navigator.userAgent), requests, results }, null, 2)}\n`,
   );
 } finally {
   await browser.close();
