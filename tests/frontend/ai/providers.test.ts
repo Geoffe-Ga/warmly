@@ -22,7 +22,7 @@ const IDS = Object.keys(PROVIDERS) as RealProviderId[];
 
 describe("the providers the app can call", () => {
   it("are OpenAI and Anthropic, and no other", () => {
-    expect(IDS.sort()).toEqual(["anthropic", "openai"]);
+    expect([...IDS].sort()).toEqual(["anthropic", "openai"]);
   });
 
   it("are called as ADR-0007 records", () => {

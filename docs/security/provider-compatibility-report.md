@@ -170,11 +170,13 @@ button can cost is about:
 | Anthropic `claude-opus-5-5` | 60,000 × $4 / 1M = $0.24 | 4,000 × $20 / 1M = $0.08 | **$0.32** |
 
 Two cautions. The token count is Warmly's estimate, with a margin; the
-provider's own count decides the bill. And OpenAI's limit on output is
-"including visible output tokens and reasoning tokens", so the model's
-reasoning uses part of the 4,000. Whether 4,000 is enough for a full
-answer, on either provider, is not known until a real request is made.
-It is the first thing to measure with a test key.
+provider's own count decides the bill. And both default models think
+before they answer. OpenAI's limit on output is "including visible
+output tokens and reasoning tokens", and Anthropic's models page lists
+`claude-opus-5-5` with thinking "Adaptive (always on)". So part of the
+4,000 goes on thinking the person never sees. Whether 4,000 is enough
+for a full answer, on either provider, is not known until a real request
+is made. It is the first thing to measure with a test key.
 
 ## What has to be checked with real keys
 
